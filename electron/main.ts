@@ -1,0 +1,134 @@
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import * as path from 'path'
+import * as fs from 'fs'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+let mainWindow: BrowserWindow | null = null
+
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 600,
+    frame: false,
+    backgroundColor: '#0a0a0f',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 15, y: 15 },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.webContents.openDevTools()
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'))
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+}
+
+app.whenReady().then(() => {
+  createWindow()
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow()
+    }
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
+
+// IPC Handlers for window controls
+ipcMain.handle('window:minimize', () => {
+  mainWindow?.minimize()
+})
+
+ipcMain.handle('window:maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.unmaximize()
+  } else {
+    mainWindow?.maximize()
+  }
+})
+
+ipcMain.handle('window:close', () => {
+  mainWindow?.close()
+})
+
+// IPC Handlers for file system
+ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+    return entries.map(entry => ({
+      name: entry.name,
+      path: path.join(dirPath, entry.name),
+      isDirectory: entry.isDirectory(),
+    }))
+  } catch (error) {
+    console.error('Error reading directory:', error)
+    return []
+  }
+})
+
+ipcMain.handle('fs:readFile', async (_, filePath: string) => {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf-8')
+    return content
+  } catch (error) {
+    console.error('Error reading file:', error)
+    return null
+  }
+})
+
+ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
+  try {
+    await fs.promises.writeFile(filePath, content, 'utf-8')
+    return true
+  } catch (error) {
+    console.error('Error writing file:', error)
+    return false
+  }
+})
+
+ipcMain.handle('fs:selectFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory']
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('fs:createDir', async (_, dirPath: string) => {
+  try {
+    await fs.promises.mkdir(dirPath, { recursive: true })
+    return true
+  } catch (error) {
+    console.error('Error creating directory:', error)
+    return false
+  }
+})
+
+ipcMain.handle('fs:exists', async (_, filePath: string) => {
+  try {
+    await fs.promises.access(filePath)
+    return true
+  } catch {
+    return false
+  }
+})
