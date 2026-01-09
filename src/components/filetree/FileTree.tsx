@@ -40,10 +40,21 @@ export function FileTree() {
   }, [workspacePath])
 
   const handleSelectFolder = async () => {
-    if (!window.electronAPI) return
-    const path = await window.electronAPI.fs.selectFolder()
-    if (path) {
-      setWorkspacePath(path)
+    console.log('handleSelectFolder called')
+    console.log('electronAPI available:', !!window.electronAPI)
+    if (!window.electronAPI) {
+      console.error('electronAPI not available')
+      return
+    }
+    try {
+      console.log('Calling selectFolder...')
+      const path = await window.electronAPI.fs.selectFolder()
+      console.log('Selected path:', path)
+      if (path) {
+        setWorkspacePath(path)
+      }
+    } catch (error) {
+      console.error('Error selecting folder:', error)
     }
   }
 
@@ -61,7 +72,7 @@ export function FileTree() {
     setExpandedPaths(newExpanded)
   }
 
-  const updateFileEntry = (entries: FileEntry[], path: string, updates: Partial<FileEntry>) => {
+  const updateFileEntry = (_entries: FileEntry[], path: string, updates: Partial<FileEntry>) => {
     setFiles(prevFiles => updateEntryRecursive(prevFiles, path, updates))
   }
 
