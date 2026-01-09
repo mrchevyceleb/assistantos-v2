@@ -8,5 +8,6 @@
     "strict": true,
     "outDir": "dist-electron"
   },
-  "include": ["electron/**/*", "vite.config.ts"]
+  "include": ["electron/main.ts", "vite.config.ts"],
+  "exclude": ["electron/preload.ts"]
 }

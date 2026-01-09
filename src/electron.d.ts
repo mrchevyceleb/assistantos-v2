@@ -11,6 +11,9 @@ export interface ElectronAPI {
     createDir: (dirPath: string) => Promise<boolean>
     exists: (filePath: string) => Promise<boolean>
   }
+  bash: {
+    execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+  }
 }
 
 declare global {

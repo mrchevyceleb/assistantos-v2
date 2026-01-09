@@ -221,7 +221,9 @@ Guidelines:
     <div
       className="h-full flex flex-col relative"
       style={{
-        background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
+        background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)',
+        zIndex: 200,
+        position: 'relative'
       }}
     >
       {/* Header */}
@@ -282,8 +284,9 @@ Guidelines:
         <div
           className="p-4 relative"
           style={{
-            background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.8) 0%, rgba(15, 20, 35, 0.9) 100%)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+            background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.95) 0%, rgba(15, 20, 35, 0.98) 100%)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+            zIndex: 300
           }}
         >
           <label className="block text-sm text-slate-400 mb-2 font-medium">Anthropic API Key</label>
@@ -293,6 +296,7 @@ Guidelines:
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="sk-ant-..."
             className="input-metallic w-full text-sm"
+            style={{ position: 'relative', zIndex: 301 }}
           />
           <p className="text-xs text-slate-500 mt-2">
             Your API key is stored locally and never sent to any server except Anthropic.
