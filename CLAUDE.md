@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AssistantOS is an Electron-based desktop application that provides a personal AI assistant interface with file management capabilities. Built with React, TypeScript, Vite, and Tailwind CSS.
+AssistantOS is an Electron-based desktop application that provides a personal AI assistant interface with file management capabilities and Claude-powered agent functionality. Built with React, TypeScript, Vite, and Tailwind CSS.
 
 ## Development Commands
 
@@ -36,12 +36,40 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
   - `fs:selectFolder` - Open folder selection dialog
   - `fs:createDir` - Create directories
   - `fs:exists` - Check file/directory existence
+- Provides bash/shell command execution:
+  - `bash:execute` - Execute shell commands (PowerShell on Windows, bash on Mac/Linux)
 - Dev mode: loads `http://localhost:5173` with DevTools
 - Production: loads from `dist/index.html`
 
 **Preload Script** (`electron/preload.ts`):
 - Exposes `window.electronAPI` to renderer via context bridge
 - Provides type-safe IPC communication between renderer and main process
+- Exposes `fs` and `bash` APIs
+
+### Claude Agent Architecture
+
+**Claude Service** (`src/services/claude.ts`):
+- Initializes Anthropic SDK with user's API key
+- Implements streaming chat with tool use
+- Manages conversation history
+- Implements agentic loop: `while(tool_use) → execute → feed results → repeat`
+- Max 20 iterations per request for safety
+
+**Tool System** (`src/services/tools/`):
+- `schemas.ts` - Tool definitions following Anthropic's format
+- `index.ts` - Tool registry and executor factory
+- `fileTools.ts` - File system tool handlers (read, write, list, exists, mkdir)
+- `bashTool.ts` - Shell command execution handler
+
+**Available Tools**:
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file contents |
+| `write_file` | Write/create file |
+| `list_directory` | List directory contents |
+| `file_exists` | Check if path exists |
+| `create_directory` | Create new directory |
+| `bash` | Execute shell commands |
 
 ### React Application Structure
 
@@ -65,7 +93,7 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
 - `TitleBar.tsx` - Custom window controls for frameless window
 - `FileTree.tsx` - File system navigation
 - `MarkdownEditor.tsx` - Monaco-based editor
-- `AgentChat.tsx` - Chat interface with Claude (integration incomplete)
+- `AgentChat.tsx` - Chat interface with Claude agent (streaming, tool use, conversation history)
 
 ### Styling
 
@@ -89,7 +117,12 @@ TypeScript and Vite configured with `@/*` alias pointing to `src/*` directory.
 
 ## API Integration
 
-The app stores an Anthropic API key in Zustand state (persisted to localStorage). Chat functionality with Claude is not yet fully implemented - currently shows placeholder responses.
+The app uses the Anthropic SDK (`@anthropic-ai/sdk`) for Claude integration:
+- API key stored in Zustand state (persisted to localStorage)
+- SDK initialized with `dangerouslyAllowBrowser: true` for client-side use
+- Uses `claude-sonnet-4-20250514` model
+- Streaming enabled for real-time responses
+- Tool use enabled for file/bash operations
 
 ## Development Notes
 
@@ -97,3 +130,14 @@ The app stores an Anthropic API key in Zustand state (persisted to localStorage)
 - Electron files use `import.meta.url` for `__dirname` equivalent
 - Window is frameless with custom title bar and traffic light positioning for macOS
 - File operations are async and go through Electron IPC for security
+- Shell commands use PowerShell on Windows, bash on Mac/Linux
+- Path resolution uses `path-browserify` for browser compatibility
+
+## Future Enhancements
+
+Planned layers to add:
+- Conversation persistence (save/load chats)
+- Context compaction (handle long conversations)
+- MCP integration (external services)
+- Subagents (parallel task execution)
+- Skills system (reusable workflows)

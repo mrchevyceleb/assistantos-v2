@@ -1,21 +1,26 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { ClaudeService, type ChatChunk } from '../../services/claude'
+import { allTools, createToolExecutor } from '../../services/tools'
 
 interface Message {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
   timestamp: Date
+  toolName?: string
+  toolResult?: string
 }
 
 export function AgentChat() {
-  const { apiKey, setApiKey } = useAppStore()
+  const { apiKey, setApiKey, workspacePath } = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const claudeServiceRef = useRef<ClaudeService | null>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -25,8 +30,63 @@ export function AgentChat() {
     scrollToBottom()
   }, [messages])
 
+  // Initialize or update Claude service when API key changes
+  useEffect(() => {
+    if (apiKey) {
+      claudeServiceRef.current = new ClaudeService(apiKey)
+    } else {
+      claudeServiceRef.current = null
+    }
+  }, [apiKey])
+
+  const getSystemPrompt = () => {
+    const workspace = workspacePath || 'No workspace selected'
+    return `You are an AI assistant with access to the user's file system and can execute commands.
+
+Current workspace: ${workspace}
+
+You have access to the following tools:
+- read_file: Read file contents
+- write_file: Write content to a file
+- list_directory: List directory contents
+- file_exists: Check if a path exists
+- create_directory: Create a new directory
+- bash: Execute shell commands (PowerShell on Windows, bash on Mac/Linux)
+
+Guidelines:
+- Always use tools to interact with the filesystem rather than asking the user to do it manually
+- When editing files, read them first to understand the context
+- For bash commands, prefer simple one-liners when possible
+- Report errors clearly and suggest solutions
+- Be concise but helpful in your responses`
+  }
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
+
+    if (!apiKey) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: 'Please configure your Anthropic API key in settings to chat with Claude.',
+        timestamp: new Date(),
+      }])
+      return
+    }
+
+    if (!workspacePath) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: 'Please select a workspace folder first using the file tree.',
+        timestamp: new Date(),
+      }])
+      return
+    }
+
+    if (!claudeServiceRef.current) {
+      claudeServiceRef.current = new ClaudeService(apiKey)
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -39,22 +99,107 @@ export function AgentChat() {
     setInput('')
     setIsLoading(true)
 
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
+    // Create assistant message that will be updated with streaming content
+    const assistantMessageId = (Date.now() + 1).toString()
+    setMessages(prev => [...prev, {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    }])
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: apiKey
-          ? 'Claude integration coming soon! Your API key is configured.'
-          : 'Please configure your Anthropic API key in settings to chat with Claude.',
-        timestamp: new Date(),
+    try {
+      const toolExecutor = createToolExecutor(workspacePath)
+      const stream = claudeServiceRef.current.chat(
+        input.trim(),
+        allTools,
+        getSystemPrompt(),
+        toolExecutor
+      )
+
+      for await (const chunk of stream) {
+        handleChunk(chunk, assistantMessageId)
       }
-      setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('Error sending message:', error)
+      setMessages(prev => {
+        const updated = [...prev]
+        const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+        if (lastIndex !== -1) {
+          updated[lastIndex] = {
+            ...updated[lastIndex],
+            content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+          }
+        }
+        return updated
+      })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleChunk = (chunk: ChatChunk, assistantMessageId: string) => {
+    switch (chunk.type) {
+      case 'text':
+        setMessages(prev => {
+          const updated = [...prev]
+          const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+          if (lastIndex !== -1) {
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              content: updated[lastIndex].content + (chunk.text || '')
+            }
+          }
+          return updated
+        })
+        break
+
+      case 'tool_use':
+        if (chunk.toolName && chunk.toolInput) {
+          // Add tool use message
+          setMessages(prev => [...prev, {
+            id: `tool-${chunk.toolId}`,
+            role: 'tool',
+            content: `Using ${chunk.toolName}`,
+            toolName: chunk.toolName,
+            timestamp: new Date(),
+          }])
+        }
+        break
+
+      case 'tool_result':
+        // Update tool message with result
+        setMessages(prev => {
+          const updated = [...prev]
+          const toolIndex = updated.findIndex(m => m.id === `tool-${chunk.toolId}`)
+          if (toolIndex !== -1) {
+            updated[toolIndex] = {
+              ...updated[toolIndex],
+              toolResult: chunk.result
+            }
+          }
+          return updated
+        })
+        break
+
+      case 'error':
+        setMessages(prev => {
+          const updated = [...prev]
+          const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+          if (lastIndex !== -1) {
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              content: updated[lastIndex].content + `\n\nError: ${chunk.error}`
+            }
+          }
+          return updated
+        })
+        break
+
+      case 'done':
+        // Clean up empty assistant messages
+        setMessages(prev => prev.filter(m => m.role !== 'assistant' || m.content.trim() !== ''))
+        break
     }
   }
 
@@ -62,6 +207,13 @@ export function AgentChat() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
+    }
+  }
+
+  const clearConversation = () => {
+    setMessages([])
+    if (claudeServiceRef.current) {
+      claudeServiceRef.current.clearHistory()
     }
   }
 
@@ -102,17 +254,27 @@ export function AgentChat() {
             <span className="text-xs text-slate-500 ml-2">Agent</span>
           </div>
         </div>
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className={`p-2.5 rounded-xl transition-all ${
-            showSettings ? 'bg-white/10' : 'hover:bg-white/5'
-          }`}
-          style={{
-            border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent'
-          }}
-        >
-          <Settings2 className={`w-5 h-5 ${showSettings ? 'text-cyan-400' : 'text-slate-400'}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <button
+              onClick={clearConversation}
+              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className={`p-2.5 rounded-xl transition-all ${
+              showSettings ? 'bg-white/10' : 'hover:bg-white/5'
+            }`}
+            style={{
+              border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent'
+            }}
+          >
+            <Settings2 className={`w-5 h-5 ${showSettings ? 'text-cyan-400' : 'text-slate-400'}`} />
+          </button>
+        </div>
       </div>
 
       {/* Settings Panel */}
@@ -154,59 +316,87 @@ export function AgentChat() {
             </div>
             <h3 className="text-xl font-semibold text-white mb-2">Welcome to AssistantOS</h3>
             <p className="text-sm text-slate-400 max-w-sm">
-              Your personal AI assistant. Ask questions, get help with tasks, or just chat.
+              Your AI assistant with file access and command execution. Ask me to read files, write code, or run commands.
             </p>
+            {!workspacePath && (
+              <p className="text-xs text-amber-400 mt-3">
+                Select a workspace folder to get started.
+              </p>
+            )}
           </div>
         ) : (
           messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}
-            >
-              {message.role === 'assistant' && (
+            <div key={message.id}>
+              {message.role === 'tool' ? (
+                // Tool execution display
                 <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  className="mx-8 px-3 py-2 rounded-lg text-xs font-mono"
                   style={{
-                    background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
-                    boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)'
                   }}
                 >
-                  <Bot className="w-4 h-4 text-white" />
+                  <div className="flex items-center gap-2 text-slate-400">
+                    {message.toolName === 'bash' ? (
+                      <Terminal className="w-3 h-3" />
+                    ) : (
+                      <FileText className="w-3 h-3" />
+                    )}
+                    <span>{message.toolName}</span>
+                  </div>
+                  {message.toolResult && (
+                    <pre className="mt-1 text-slate-500 whitespace-pre-wrap overflow-hidden">
+                      {message.toolResult}
+                    </pre>
+                  )}
                 </div>
-              )}
-              <div
-                className={`max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden ${
-                  message.role === 'user' ? '' : ''
-                }`}
-                style={message.role === 'user' ? {
-                  background: 'linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%)',
-                  color: '#0c0f1a',
-                  boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
-                } : {
-                  background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 28, 45, 0.9) 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  color: '#e2e8f0'
-                }}
-              >
-                {message.role === 'assistant' && (
+              ) : (
+                // User or assistant message
+                <div className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>
+                  {message.role === 'assistant' && (
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+                        boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
+                      }}
+                    >
+                      <Bot className="w-4 h-4 text-white" />
+                    </div>
+                  )}
                   <div
-                    className="absolute top-0 left-[10%] right-[10%] h-px"
-                    style={{
-                      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)'
+                    className={`max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden`}
+                    style={message.role === 'user' ? {
+                      background: 'linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%)',
+                      color: '#0c0f1a',
+                      boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
+                    } : {
+                      background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 28, 45, 0.9) 100%)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      color: '#e2e8f0'
                     }}
-                  />
-                )}
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-              </div>
-              {message.role === 'user' && (
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{
-                    background: 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)'
-                  }}
-                >
-                  <User className="w-4 h-4 text-slate-300" />
+                  >
+                    {message.role === 'assistant' && (
+                      <div
+                        className="absolute top-0 left-[10%] right-[10%] h-px"
+                        style={{
+                          background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)'
+                        }}
+                      />
+                    )}
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  </div>
+                  {message.role === 'user' && (
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)'
+                      }}
+                    >
+                      <User className="w-4 h-4 text-slate-300" />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

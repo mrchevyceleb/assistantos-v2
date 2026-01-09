@@ -2,6 +2,10 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { fileURLToPath } from 'url'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -130,5 +134,25 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
     return true
   } catch {
     return false
+  }
+})
+
+// IPC Handler for bash command execution
+ipcMain.handle('bash:execute', async (_, command: string, cwd: string) => {
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      cwd,
+      timeout: 60000, // 60 second timeout
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+      shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash'
+    })
+    return { stdout, stderr, exitCode: 0 }
+  } catch (error: unknown) {
+    const execError = error as { stdout?: string; stderr?: string; code?: number }
+    return {
+      stdout: execError.stdout || '',
+      stderr: execError.stderr || String(error),
+      exitCode: execError.code || 1
+    }
   }
 })

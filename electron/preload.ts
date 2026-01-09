@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+console.log('Preload script loading...')
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -17,7 +19,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
     exists: (filePath: string) => ipcRenderer.invoke('fs:exists', filePath),
   },
+
+  // Bash command execution
+  bash: {
+    execute: (command: string, cwd: string) => ipcRenderer.invoke('bash:execute', command, cwd),
+  },
 })
+
+console.log('Preload script loaded, electronAPI exposed')
 
 // Type definitions for the exposed API
 declare global {
@@ -33,6 +42,9 @@ declare global {
         selectFolder: () => Promise<string | null>
         createDir: (dirPath: string) => Promise<boolean>
         exists: (filePath: string) => Promise<boolean>
+      }
+      bash: {
+        execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
       }
     }
   }
