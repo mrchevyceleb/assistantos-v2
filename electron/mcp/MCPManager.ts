@@ -73,10 +73,18 @@ export class MCPManager {
       }
     }
 
+    // Build environment with configured vars
+    const envWithVars: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) {
+        envWithVars[key] = value;
+      }
+    }
+    Object.assign(envWithVars, envVars);
+
     // Spawn the process
-    const env = { ...process.env, ...envVars };
     const serverProcess = spawn(integration.command, integration.args, {
-      env,
+      env: envWithVars,
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: process.platform === 'win32'
     });
@@ -85,7 +93,7 @@ export class MCPManager {
     const transport = new StdioClientTransport({
       command: integration.command,
       args: integration.args,
-      env
+      env: envWithVars
     });
 
     const client = new Client({
@@ -168,7 +176,7 @@ export class MCPManager {
    * Stop all servers
    */
   async stopAll(): Promise<void> {
-    const ids = [...this.servers.keys()];
+    const ids = Array.from(this.servers.keys());
     await Promise.all(ids.map(id => this.stopServer(id)));
   }
 

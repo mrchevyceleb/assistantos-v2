@@ -177,3 +177,115 @@ ipcMain.handle('shell:openExternal', async (_, url: string) => {
     return false
   }
 })
+
+// Constants for file search
+const FILE_SEARCH_MAX_RESULTS = 20
+const FILE_SEARCH_MAX_DEPTH = 4
+const EXCLUDED_DIRECTORIES = new Set([
+  '.git', 'node_modules', '.obsidian', '.vscode',
+  'dist', 'build', 'coverage', '__pycache__', '.next', '.cache'
+])
+
+/**
+ * Check if all keywords match somewhere in the path
+ * Keywords can appear in any order and anywhere in the path
+ */
+function matchesKeywords(pathLower: string, keywords: string[]): boolean {
+  return keywords.every(keyword => pathLower.includes(keyword))
+}
+
+/**
+ * Recursively search a directory for files matching the search term
+ * Supports keyword-based matching: "agent chat" matches "src/chat/AgentChat.tsx"
+ */
+async function searchDirectoryRecursively(
+  dirPath: string,
+  keywords: string[],
+  results: Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>,
+  relativePath: string = ''
+): Promise<void> {
+  if (results.length >= FILE_SEARCH_MAX_RESULTS) return
+
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+
+    for (const entry of entries) {
+      if (results.length >= FILE_SEARCH_MAX_RESULTS) break
+
+      const isHiddenDir = entry.name.startsWith('.') && entry.isDirectory()
+      const isExcludedDir = entry.isDirectory() && EXCLUDED_DIRECTORIES.has(entry.name)
+
+      if (isHiddenDir || isExcludedDir) continue
+
+      const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+      const fullPath = path.join(dirPath, entry.name)
+      const pathLower = entryRelativePath.toLowerCase()
+
+      // Match against full path using keyword matching
+      if (matchesKeywords(pathLower, keywords)) {
+        results.push({
+          name: entry.name,
+          path: fullPath,
+          relativePath: entryRelativePath,
+          isDirectory: entry.isDirectory()
+        })
+      }
+
+      // Recurse into directories (respecting max depth)
+      const currentDepth = entryRelativePath.split('/').length
+      if (entry.isDirectory() && currentDepth < FILE_SEARCH_MAX_DEPTH) {
+        await searchDirectoryRecursively(fullPath, keywords, results, entryRelativePath)
+      }
+    }
+  } catch {
+    // Ignore permission errors during directory traversal
+  }
+}
+
+/**
+ * Sort search results with smart ranking:
+ * 1. Filename matches all keywords
+ * 2. Filename starts with first keyword
+ * 3. Path matches (sorted by path length - shorter = more relevant)
+ */
+function sortSearchResults(
+  results: Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>,
+  keywords: string[]
+): void {
+  results.sort((a, b) => {
+    const aNameLower = a.name.toLowerCase()
+    const bNameLower = b.name.toLowerCase()
+
+    // Score: filename matches all keywords (highest priority)
+    const aNameMatchesAll = keywords.every(k => aNameLower.includes(k))
+    const bNameMatchesAll = keywords.every(k => bNameLower.includes(k))
+    if (aNameMatchesAll !== bNameMatchesAll) return aNameMatchesAll ? -1 : 1
+
+    // Score: filename starts with first keyword
+    const aStartsWith = keywords.length > 0 && aNameLower.startsWith(keywords[0])
+    const bStartsWith = keywords.length > 0 && bNameLower.startsWith(keywords[0])
+    if (aStartsWith !== bStartsWith) return aStartsWith ? -1 : 1
+
+    // Finally, prefer shorter paths (more relevant)
+    return a.relativePath.length - b.relativePath.length
+  })
+}
+
+// IPC Handler for searching workspace files (for @document mentions)
+ipcMain.handle('fs:searchFiles', async (_, workspacePath: string, searchTerm: string) => {
+  try {
+    const results: Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }> = []
+
+    // Split search term into keywords, filter empty strings
+    const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
+    if (keywords.length === 0) return []
+
+    await searchDirectoryRecursively(workspacePath, keywords, results)
+    sortSearchResults(results, keywords)
+
+    return results
+  } catch (error) {
+    console.error('Error searching files:', error)
+    return []
+  }
+})

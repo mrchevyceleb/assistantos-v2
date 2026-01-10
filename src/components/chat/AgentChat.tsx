@@ -1,11 +1,27 @@
-import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff, RefreshCw, Puzzle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+
+// Store
 import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appStore'
+
+// Services
 import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
 import { assembleSystemPrompt } from '../../services/systemPrompt'
 import { gatherDynamicContext, formatContextForPrompt } from '../../services/contextService'
+import {
+  parseMessage,
+  getUnifiedSuggestions,
+  getPartialMention,
+  completeMention,
+  clearMentionCache,
+  type UnifiedSuggestion,
+  type DocumentMention
+} from '../../services/mentions/parser'
+
+// Components
+import { IntegrationsModal } from '../settings/IntegrationsModal'
 
 interface Message {
   id: string
@@ -14,6 +30,49 @@ interface Message {
   timestamp: Date
   toolName?: string
   toolResult?: string
+}
+
+/**
+ * Read and format referenced document content
+ */
+async function readDocumentContext(documents: DocumentMention[]): Promise<string> {
+  const docContents: string[] = []
+
+  for (const doc of documents) {
+    try {
+      const content = await window.electronAPI.fs.readFile(doc.path)
+      if (content) {
+        docContents.push(`--- ${doc.relativePath} ---\n${content}\n`)
+      }
+    } catch (e) {
+      console.error(`Failed to read document: ${doc.path}`, e)
+    }
+  }
+
+  if (docContents.length === 0) return ''
+  return `\n\n<referenced_documents>\n${docContents.join('\n')}</referenced_documents>`
+}
+
+/**
+ * Fetch and prepare MCP tools for active integrations
+ */
+async function prepareMCPTools(activeMentions: string[]) {
+  if (activeMentions.length === 0) return allTools
+
+  try {
+    const mcpTools = await window.electronAPI.mcp?.getTools(activeMentions) ?? []
+    return [
+      ...allTools,
+      ...mcpTools.map((t: any) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema
+      }))
+    ]
+  } catch (e) {
+    console.error('Failed to load MCP tools:', e)
+    return allTools
+  }
 }
 
 export function AgentChat() {
@@ -36,8 +95,14 @@ export function AgentChat() {
   const [showContextPreview, setShowContextPreview] = useState(false)
   const [contextPreview, setContextPreview] = useState('')
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
+  const [showIntegrations, setShowIntegrations] = useState(false)
+  const [mentionSuggestions, setMentionSuggestions] = useState<UnifiedSuggestion[]>([])
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const [activeMentions, setActiveMentions] = useState<string[]>([])
+  const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
@@ -84,6 +149,46 @@ export function AgentChat() {
     }
   }, [showContextPreview, workspacePath, openFiles, currentFile])
 
+  // Handle input change for @mention autocomplete
+  const handleInputChange = useCallback(async (value: string) => {
+    setInput(value)
+
+    // Check for partial mention at end of input
+    const partial = getPartialMention(value)
+    if (partial && partial.length > 1) {
+      const suggestions = await getUnifiedSuggestions(partial, workspacePath)
+      setMentionSuggestions(suggestions.slice(0, 10))
+      setSelectedSuggestionIndex(0)
+    } else {
+      setMentionSuggestions([])
+    }
+
+    // Parse and track active mentions (both integrations and documents)
+    const parsed = await parseMessage(value, workspacePath)
+    setActiveMentions(parsed.mentions)
+    setActiveDocuments(parsed.documentMentions)
+  }, [workspacePath])
+
+  // Complete a mention from autocomplete
+  const handleMentionSelect = useCallback((suggestion: UnifiedSuggestion) => {
+    const completed = completeMention(input, suggestion.mention)
+    setInput(completed)
+    setMentionSuggestions([])
+    inputRef.current?.focus()
+
+    // Update active mentions (both integrations and documents)
+    parseMessage(completed, workspacePath).then(parsed => {
+      setActiveMentions(parsed.mentions)
+      setActiveDocuments(parsed.documentMentions)
+    })
+  }, [input, workspacePath])
+
+  // Clear mention cache when integrations modal closes (in case configs changed)
+  const handleIntegrationsClose = useCallback(() => {
+    setShowIntegrations(false)
+    clearMentionCache()
+  }, [])
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
 
@@ -120,6 +225,9 @@ export function AgentChat() {
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
+    setMentionSuggestions([])
+    setActiveMentions([])
+    setActiveDocuments([])
     setIsLoading(true)
 
     // Create assistant message that will be updated with streaming content
@@ -132,7 +240,8 @@ export function AgentChat() {
     }])
 
     try {
-      const toolExecutor = createToolExecutor(workspacePath)
+      // Read content of referenced documents
+      const documentContext = await readDocumentContext(activeDocuments)
 
       // Assemble full system prompt with all three layers
       const fullSystemPrompt = await assembleSystemPrompt(
@@ -142,9 +251,20 @@ export function AgentChat() {
         customInstructions
       )
 
+      // Prepare tools (native + MCP)
+      const tools = await prepareMCPTools(activeMentions)
+
+      // Append document context to user message if documents were referenced
+      const messageWithContext = documentContext
+        ? `${input.trim()}${documentContext}`
+        : input.trim()
+
+      // Setup tool executor
+      const toolExecutor = createToolExecutor(workspacePath)
+
       const stream = claudeServiceRef.current.chat(
-        input.trim(),
-        allTools,
+        messageWithContext,
+        tools,
         fullSystemPrompt,
         toolExecutor
       )
@@ -170,78 +290,96 @@ export function AgentChat() {
     }
   }
 
+  const handleTextChunk = (chunk: ChatChunk, assistantMessageId: string) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+      if (lastIndex !== -1) {
+        updated[lastIndex] = {
+          ...updated[lastIndex],
+          content: updated[lastIndex].content + (chunk.text || '')
+        }
+      }
+      return updated
+    })
+  }
+
+  const handleToolUseChunk = (chunk: ChatChunk) => {
+    if (!chunk.toolName || !chunk.toolInput) return
+
+    // Insert tool message BEFORE the assistant message so assistant text stays at bottom
+    setMessages(prev => {
+      const newToolMessage: Message = {
+        id: `tool-${chunk.toolId}`,
+        role: 'tool',
+        content: `Using ${chunk.toolName}`,
+        toolName: chunk.toolName,
+        timestamp: new Date(),
+      }
+
+      // Find the last assistant message index
+      let lastAssistantIndex = -1
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].role === 'assistant') {
+          lastAssistantIndex = i
+          break
+        }
+      }
+
+      if (lastAssistantIndex !== -1) {
+        const updated = [...prev]
+        updated.splice(lastAssistantIndex, 0, newToolMessage)
+        return updated
+      }
+
+      return [...prev, newToolMessage]
+    })
+  }
+
+  const handleToolResultChunk = (chunk: ChatChunk) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const toolIndex = updated.findIndex(m => m.id === `tool-${chunk.toolId}`)
+      if (toolIndex !== -1) {
+        updated[toolIndex] = {
+          ...updated[toolIndex],
+          toolResult: chunk.result
+        }
+      }
+      return updated
+    })
+  }
+
+  const handleErrorChunk = (chunk: ChatChunk, assistantMessageId: string) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+      if (lastIndex !== -1) {
+        updated[lastIndex] = {
+          ...updated[lastIndex],
+          content: updated[lastIndex].content + `\n\nError: ${chunk.error}`
+        }
+      }
+      return updated
+    })
+  }
+
   const handleChunk = (chunk: ChatChunk, assistantMessageId: string) => {
     switch (chunk.type) {
       case 'text':
-        setMessages(prev => {
-          const updated = [...prev]
-          const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
-          if (lastIndex !== -1) {
-            updated[lastIndex] = {
-              ...updated[lastIndex],
-              content: updated[lastIndex].content + (chunk.text || '')
-            }
-          }
-          return updated
-        })
+        handleTextChunk(chunk, assistantMessageId)
         break
 
       case 'tool_use':
-        if (chunk.toolName && chunk.toolInput) {
-          // Insert tool message BEFORE the assistant message so assistant text stays at bottom
-          setMessages(prev => {
-            const newToolMessage: Message = {
-              id: `tool-${chunk.toolId}`,
-              role: 'tool',
-              content: `Using ${chunk.toolName}`,
-              toolName: chunk.toolName,
-              timestamp: new Date(),
-            }
-            // Find the last assistant message index (iterate backwards)
-            let lastAssistantIndex = -1
-            for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].role === 'assistant') {
-                lastAssistantIndex = i
-                break
-              }
-            }
-            if (lastAssistantIndex !== -1) {
-              const updated = [...prev]
-              updated.splice(lastAssistantIndex, 0, newToolMessage)
-              return updated
-            }
-            return [...prev, newToolMessage]
-          })
-        }
+        handleToolUseChunk(chunk)
         break
 
       case 'tool_result':
-        // Update tool message with result
-        setMessages(prev => {
-          const updated = [...prev]
-          const toolIndex = updated.findIndex(m => m.id === `tool-${chunk.toolId}`)
-          if (toolIndex !== -1) {
-            updated[toolIndex] = {
-              ...updated[toolIndex],
-              toolResult: chunk.result
-            }
-          }
-          return updated
-        })
+        handleToolResultChunk(chunk)
         break
 
       case 'error':
-        setMessages(prev => {
-          const updated = [...prev]
-          const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
-          if (lastIndex !== -1) {
-            updated[lastIndex] = {
-              ...updated[lastIndex],
-              content: updated[lastIndex].content + `\n\nError: ${chunk.error}`
-            }
-          }
-          return updated
-        })
+        handleErrorChunk(chunk, assistantMessageId)
         break
 
       case 'done':
@@ -252,6 +390,34 @@ export function AgentChat() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle autocomplete navigation
+    if (mentionSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedSuggestionIndex(prev =>
+          prev < mentionSuggestions.length - 1 ? prev + 1 : 0
+        )
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedSuggestionIndex(prev =>
+          prev > 0 ? prev - 1 : mentionSuggestions.length - 1
+        )
+        return
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault()
+        handleMentionSelect(mentionSuggestions[selectedSuggestionIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMentionSuggestions([])
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
@@ -326,6 +492,15 @@ export function AgentChat() {
           >
             <RefreshCw className="w-3.5 h-3.5" />
             New
+          </button>
+
+          {/* Integrations Button */}
+          <button
+            onClick={() => setShowIntegrations(true)}
+            className="p-2.5 rounded-xl hover:bg-white/5 transition-all"
+            title="Configure integrations"
+          >
+            <Puzzle className="w-5 h-5 text-slate-400" />
           </button>
 
           <button
@@ -602,12 +777,91 @@ export function AgentChat() {
 
       {/* Input */}
       <div className="p-4" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
-        <div className="flex gap-3">
+        {/* Active mentions indicator */}
+        {(activeMentions.length > 0 || activeDocuments.length > 0) && (
+          <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+            {activeMentions.length > 0 && (
+              <>
+                <span className="text-slate-500">Integrations:</span>
+                {activeMentions.map(id => (
+                  <span
+                    key={id}
+                    className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                  >
+                    @{id}
+                  </span>
+                ))}
+              </>
+            )}
+            {activeDocuments.length > 0 && (
+              <>
+                <span className="text-slate-500 ml-2">Documents:</span>
+                {activeDocuments.map(doc => (
+                  <span
+                    key={doc.path}
+                    className="px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30"
+                  >
+                    📄 {doc.name}
+                  </span>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="relative flex gap-3">
+          {/* Autocomplete dropdown */}
+          {mentionSuggestions.length > 0 && (
+            <div
+              className="absolute bottom-full left-0 right-12 mb-2 rounded-xl overflow-hidden z-10 max-h-80 overflow-y-auto"
+              style={{
+                background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.4)'
+              }}
+            >
+              {mentionSuggestions.map((suggestion, index) => {
+                const isDocument = suggestion.type === 'document'
+                return (
+                  <button
+                    key={suggestion.mention}
+                    onClick={() => handleMentionSelect(suggestion)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                      index === selectedSuggestionIndex
+                        ? isDocument ? 'bg-violet-500/20' : 'bg-cyan-500/20'
+                        : 'hover:bg-white/5'
+                    }`}
+                  >
+                    {isDocument ? (
+                      <span className="text-violet-400 text-sm">
+                        {(suggestion as import('../../services/mentions/parser').FileMentionSuggestion).isDirectory ? '📁' : '📄'}
+                      </span>
+                    ) : (
+                      <span className="text-cyan-400 text-sm">🔌</span>
+                    )}
+                    <code className={`text-sm font-medium ${isDocument ? 'text-violet-400' : 'text-cyan-400'}`}>
+                      {suggestion.mention}
+                    </code>
+                    <span className="text-white text-sm">{suggestion.name}</span>
+                    <span className="text-slate-500 text-xs truncate flex-1">
+                      {suggestion.description}
+                    </span>
+                  </button>
+                )
+              })}
+              <div className="px-4 py-1.5 text-xs text-slate-500 border-t border-white/5">
+                <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-400">Tab</kbd> or
+                <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-400 ml-1">Enter</kbd> to select
+              </div>
+            </div>
+          )}
+
           <input
+            ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
+            placeholder="Ask anything... Use @ for integrations or documents"
             className="input-metallic flex-1 text-sm"
           />
           <button
@@ -623,6 +877,9 @@ export function AgentChat() {
           </button>
         </div>
       </div>
+
+      {/* Integrations Modal */}
+      <IntegrationsModal isOpen={showIntegrations} onClose={handleIntegrationsClose} />
     </div>
   )
 }

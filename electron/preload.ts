@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectFolder: () => ipcRenderer.invoke('fs:selectFolder'),
     createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
     exists: (filePath: string) => ipcRenderer.invoke('fs:exists', filePath),
+    searchFiles: (workspacePath: string, searchTerm: string) => ipcRenderer.invoke('fs:searchFiles', workspacePath, searchTerm),
   },
 
   // Bash command execution
@@ -49,42 +50,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // Type definitions for the exposed API
 declare global {
-  interface Window {
-    electronAPI: {
-      minimize: () => Promise<void>
-      maximize: () => Promise<void>
-      close: () => Promise<void>
-      fs: {
-        readDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
-        readFile: (filePath: string) => Promise<string | null>
-        writeFile: (filePath: string, content: string) => Promise<boolean>
-        selectFolder: () => Promise<string | null>
-        createDir: (dirPath: string) => Promise<boolean>
-        exists: (filePath: string) => Promise<boolean>
-      }
-      bash: {
-        execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
-      }
-      shell: {
-        openExternal: (url: string) => Promise<boolean>
-      }
-      mcp: {
-        getIntegrations: () => Promise<MCPIntegration[]>
-        getMentionMap: () => Promise<Record<string, string>>
-        getAllMentions: () => Promise<MCPMention[]>
-        configure: (integrationId: string, config: Record<string, string>) => Promise<{ success: boolean; error?: string }>
-        start: (integrationId: string) => Promise<{ success: boolean; error?: string }>
-        stop: (integrationId: string) => Promise<{ success: boolean; error?: string }>
-        isReady: (integrationId: string) => Promise<boolean>
-        getTools: (integrationIds: string[]) => Promise<MCPToolDef[]>
-        executeTool: (integrationId: string, toolName: string, input: Record<string, unknown>) => Promise<MCPToolResult>
-        findIntegrationForTool: (toolName: string) => Promise<string | undefined>
-        getStatus: () => Promise<Record<string, MCPServerStatus>>
-        getConfig: (integrationId: string) => Promise<Record<string, string>>
-      }
-    }
-  }
-
   // MCP Types
   interface MCPIntegration {
     id: string
@@ -131,5 +96,43 @@ declare global {
     status: string
     error?: string
     toolCount?: number
+  }
+
+  // Main API Interface
+  interface Window {
+    electronAPI: {
+      minimize: () => Promise<void>
+      maximize: () => Promise<void>
+      close: () => Promise<void>
+      fs: {
+        readDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
+        readFile: (filePath: string) => Promise<string | null>
+        writeFile: (filePath: string, content: string) => Promise<boolean>
+        selectFolder: () => Promise<string | null>
+        createDir: (dirPath: string) => Promise<boolean>
+        exists: (filePath: string) => Promise<boolean>
+        searchFiles: (workspacePath: string, searchTerm: string) => Promise<Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>>
+      }
+      bash: {
+        execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+      }
+      shell: {
+        openExternal: (url: string) => Promise<boolean>
+      }
+      mcp: {
+        getIntegrations: () => Promise<MCPIntegration[]>
+        getMentionMap: () => Promise<Record<string, string>>
+        getAllMentions: () => Promise<MCPMention[]>
+        configure: (integrationId: string, config: Record<string, string>) => Promise<{ success: boolean; error?: string }>
+        start: (integrationId: string) => Promise<{ success: boolean; error?: string }>
+        stop: (integrationId: string) => Promise<{ success: boolean; error?: string }>
+        isReady: (integrationId: string) => Promise<boolean>
+        getTools: (integrationIds: string[]) => Promise<MCPToolDef[]>
+        executeTool: (integrationId: string, toolName: string, input: Record<string, unknown>) => Promise<MCPToolResult>
+        findIntegrationForTool: (toolName: string) => Promise<string | undefined>
+        getStatus: () => Promise<Record<string, MCPServerStatus>>
+        getConfig: (integrationId: string) => Promise<Record<string, string>>
+      }
+    }
   }
 }

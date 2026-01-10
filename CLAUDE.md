@@ -28,6 +28,8 @@ AssistantOS is an Electron-based desktop application that serves as your **perso
 
 **Main Process** (`electron/main.ts`):
 - Creates frameless BrowserWindow with custom title bar
+- Registers MCP handlers on startup via `registerMCPHandlers()` from `electron/mcp/ipcHandlers.ts`
+- Cleans up MCP servers on shutdown via `cleanupMCPHandlers()`
 - Handles IPC for window controls (minimize, maximize, close)
 - Provides file system operations via IPC handlers:
   - `fs:readDir` - Read directory contents
@@ -36,8 +38,10 @@ AssistantOS is an Electron-based desktop application that serves as your **perso
   - `fs:selectFolder` - Open folder selection dialog
   - `fs:createDir` - Create directories
   - `fs:exists` - Check file/directory existence
+  - `fs:searchFiles` - Search workspace files for @document mentions autocomplete
 - Provides bash/shell command execution:
   - `bash:execute` - Execute shell commands (PowerShell on Windows, bash on Mac/Linux)
+- Provides MCP integration handlers (see MCP section below)
 - Dev mode: loads `http://localhost:5173` with DevTools
 - Production: loads from `dist/index.html`
 
@@ -113,7 +117,27 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 - `TitleBar.tsx` - Custom window controls for frameless window
 - `FileTree.tsx` - File system navigation (auto-hides dotfiles starting with ".")
 - `MarkdownEditor.tsx` - Milkdown-based WYSIWYG markdown editor with GFM support
-- `AgentChat.tsx` - Chat interface with Claude agent (streaming, tool use, conversation history)
+- `AgentChat.tsx` - Chat interface with Claude agent
+  - Imports organized by category: React, libraries, store, services, components
+  - Helper functions:
+    - `readDocumentContext()` - Reads file contents and formats as XML for Claude
+    - `prepareMCPTools()` - Fetches and merges MCP tools with native tools
+  - Chunk handlers (separated for clarity):
+    - `handleTextChunk()` - Append streamed text to assistant message
+    - `handleToolUseChunk()` - Insert tool execution message before assistant
+    - `handleToolResultChunk()` - Update tool message with execution result
+    - `handleErrorChunk()` - Append error messages to assistant content
+  - State management:
+    - `messages` - Chat message history with role, content, tool metadata
+    - `input` - Current input text
+    - `mentionSuggestions` - Autocomplete dropdown suggestions
+    - `activeMentions` - Integration IDs from parsed message
+    - `activeDocuments` - Document references from parsed message
+  - Keyboard shortcuts:
+    - Arrow Up/Down - Navigate mention suggestions
+    - Tab/Enter - Select suggestion
+    - Escape - Close suggestions
+    - Enter - Send message (Shift+Enter for multiline)
 
 **External Links**:
 - Links in markdown editor and chat are clickable and open in the OS native browser
@@ -177,6 +201,13 @@ AssistantOS now includes support for MCP integrations, allowing the Claude agent
 - `electron/mcp/MCPManager.ts` - Manages lifecycle of MCP server processes and client connections
 - `electron/mcp/ipcHandlers.ts` - Electron IPC handlers bridging renderer to MCP Manager
 
+**Electron File System** (`electron/main.ts`):
+- File search implementation for @document mentions:
+  - Constants: `FILE_SEARCH_MAX_RESULTS`, `FILE_SEARCH_MAX_DEPTH`, `EXCLUDED_DIRECTORIES`
+  - `searchDirectoryRecursively()` - Async recursive directory traversal with max depth control
+  - `sortSearchResults()` - Sorts results: exact matches first, then by path length
+  - Excludes: node_modules, .git, dist, build, coverage, __pycache__, .next, .cache
+
 **Preload API** (`electron/preload.ts`):
 The MCP API is exposed via `window.electronAPI.mcp`:
 - `getIntegrations()` - List all available integrations
@@ -223,13 +254,44 @@ The registry defines 10+ integrations across 5 categories:
 5. **Execution** - Tools called by Claude agent during agentic loop
 6. **Cleanup** - Servers stopped on app shutdown via `before-quit` handler
 
-### MCP in Chat
+### @Mention System
 
-Users trigger MCP tools via @mentions in chat:
-- Type `@` to get autocomplete suggestions
-- Mention activates the integration's tool context
+The @mention system supports two types of mentions:
+
+**1. Integration Mentions (MCP)**
+- Type `@` followed by an integration name (e.g., `@gmail`, `@calendar`)
+- Activates the integration's tool context
 - Claude agent can discover and call tools from mentioned integrations
-- Tool results are displayed above assistant response (similar to native tools)
+- Tool results are displayed above assistant response
+
+**2. Document Mentions**
+- Type `@` followed by a filename or path from your workspace
+- Autocomplete searches your workspace files as you type
+- Selected documents have their content automatically injected into the message
+- Content is wrapped in `<referenced_documents>` XML tags for Claude
+
+**Autocomplete UI**:
+- Shows up to 10 suggestions (integrations first, then documents)
+- Integrations shown with 🔌 icon in cyan
+- Documents shown with 📄 (file) or 📁 (folder) icon in violet
+- Use Tab/Enter to select, Arrow keys to navigate, Escape to close
+
+**Mention Parser** (`src/services/mentions/parser.ts`):
+- Unified mention parsing for integrations and workspace documents
+- Regex patterns:
+  - `MENTION_WITH_PATHS_REGEX` - Matches @word, @path/to/file, @file.ext (paths with slashes, dots)
+  - `MENTION_SIMPLE_REGEX` - Matches @word only (integrations)
+- Functions:
+  - `parseMessage()` - Extracts both integration and document mentions from input
+  - `getFileMentionSuggestions()` - Searches workspace for file matches
+  - `getUnifiedSuggestions()` - Combined autocomplete with integrations first (limit 5), then files (limit 7)
+  - `getMentionSuggestions()` - Integration mentions only
+  - `getPartialMention()` - Extract partial mention at cursor
+  - `completeMention()` - Insert completed mention with trailing space
+  - `extractMentionsSync()` - Quick sync extraction using cached mention map
+  - `stripMentions()` - Remove all mentions from text
+  - `highlightMentions()` - Segment text into mention/non-mention parts
+- Types: `MentionSuggestion` (integrations), `FileMentionSuggestion` (documents), `UnifiedSuggestion` (combined)
 
 ### State Management
 
