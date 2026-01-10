@@ -1,6 +1,22 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+// Default custom instructions for new users
+export const DEFAULT_CUSTOM_INSTRUCTIONS = `## My Preferences
+
+### Coding Style
+- Use TypeScript with strict typing
+- Prefer functional components with hooks
+- Use descriptive variable names
+
+### Communication
+- Explain changes before making them
+- Provide examples when helpful
+
+### Workflow
+- Commit frequently with clear messages
+- Run tests after significant changes`
+
 interface AppState {
   // Workspace
   workspacePath: string | null
@@ -22,6 +38,15 @@ interface AppState {
   chatCollapsed: boolean
   toggleSidebar: () => void
   toggleChat: () => void
+
+  // Theme
+  isDarkMode: boolean
+  toggleTheme: () => void
+
+  // Custom Instructions
+  customInstructions: string
+  setCustomInstructions: (instructions: string) => void
+  resetCustomInstructions: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -70,6 +95,23 @@ export const useAppStore = create<AppState>()(
       chatCollapsed: false,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleChat: () => set((state) => ({ chatCollapsed: !state.chatCollapsed })),
+
+      // Theme
+      isDarkMode: true,
+      toggleTheme: () => {
+        const newIsDark = !get().isDarkMode
+        set({ isDarkMode: newIsDark })
+        if (newIsDark) {
+          document.documentElement.classList.add('dark')
+        } else {
+          document.documentElement.classList.remove('dark')
+        }
+      },
+
+      // Custom Instructions
+      customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS,
+      setCustomInstructions: (instructions) => set({ customInstructions: instructions }),
+      resetCustomInstructions: () => set({ customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS }),
     }),
     {
       name: 'assistantos-storage',
@@ -78,6 +120,8 @@ export const useAppStore = create<AppState>()(
         apiKey: state.apiKey,
         sidebarCollapsed: state.sidebarCollapsed,
         chatCollapsed: state.chatCollapsed,
+        isDarkMode: state.isDarkMode,
+        customInstructions: state.customInstructions,
       }),
     }
   )
