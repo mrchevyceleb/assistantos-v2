@@ -40,16 +40,9 @@ export function FileTree() {
   }, [workspacePath])
 
   const handleSelectFolder = async () => {
-    console.log('handleSelectFolder called')
-    console.log('electronAPI available:', !!window.electronAPI)
-    if (!window.electronAPI) {
-      console.error('electronAPI not available')
-      return
-    }
+    if (!window.electronAPI) return
     try {
-      console.log('Calling selectFolder...')
       const path = await window.electronAPI.fs.selectFolder()
-      console.log('Selected path:', path)
       if (path) {
         setWorkspacePath(path)
       }

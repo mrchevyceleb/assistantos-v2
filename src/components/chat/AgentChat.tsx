@@ -220,10 +220,12 @@ Guidelines:
   return (
     <div
       className="h-full flex flex-col relative"
+      onClick={(e) => console.log('Chat container clicked', e.target)}
       style={{
         background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)',
         zIndex: 200,
-        position: 'relative'
+        position: 'relative',
+        pointerEvents: 'auto'
       }}
     >
       {/* Header */}
@@ -231,7 +233,8 @@ Guidelines:
         className="h-14 flex items-center justify-between px-4 relative"
         style={{
           borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-          background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.8) 0%, rgba(16, 20, 32, 0.9) 100%)'
+          background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.8) 0%, rgba(16, 20, 32, 0.9) 100%)',
+          zIndex: 210
         }}
       >
         {/* Top edge highlight */}
@@ -266,12 +269,17 @@ Guidelines:
             </button>
           )}
           <button
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => {
+              console.log('Settings button clicked, current state:', showSettings)
+              setShowSettings(!showSettings)
+            }}
             className={`p-2.5 rounded-xl transition-all ${
               showSettings ? 'bg-white/10' : 'hover:bg-white/5'
             }`}
             style={{
-              border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent'
+              border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent',
+              zIndex: 220,
+              position: 'relative'
             }}
           >
             <Settings2 className={`w-5 h-5 ${showSettings ? 'text-cyan-400' : 'text-slate-400'}`} />

@@ -1,7 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-console.log('Preload script loading...')
-
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -25,8 +23,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     execute: (command: string, cwd: string) => ipcRenderer.invoke('bash:execute', command, cwd),
   },
 })
-
-console.log('Preload script loaded, electronAPI exposed')
 
 // Type definitions for the exposed API
 declare global {

@@ -42,7 +42,7 @@
       transparent 80%
     );
     pointer-events: none;
-    z-index: 100;
+    z-index: 0;
   }
 
   /* Secondary ambient glow - stronger */
@@ -60,7 +60,7 @@
       transparent 100%
     );
     pointer-events: none;
-    z-index: 99;
+    z-index: 0;
   }
 
   /* Custom scrollbar */
@@ -246,7 +246,7 @@
   height: 100% !important;
   width: 100% !important;
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 [data-panel-group][data-orientation="horizontal"] {
