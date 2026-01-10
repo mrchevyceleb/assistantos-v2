@@ -91,7 +91,7 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
 
 **Key Components**:
 - `TitleBar.tsx` - Custom window controls for frameless window
-- `FileTree.tsx` - File system navigation
+- `FileTree.tsx` - File system navigation (auto-hides dotfiles starting with ".")
 - `MarkdownEditor.tsx` - Monaco-based editor
 - `AgentChat.tsx` - Chat interface with Claude agent (streaming, tool use, conversation history)
 
@@ -132,6 +132,7 @@ The app uses the Anthropic SDK (`@anthropic-ai/sdk`) for Claude integration:
 - File operations are async and go through Electron IPC for security
 - Shell commands use PowerShell on Windows, bash on Mac/Linux
 - Path resolution uses `path-browserify` for browser compatibility
+- FileTree auto-hides dotfiles (files/folders starting with ".") like .git, .obsidian, etc.
 
 ## Future Enhancements
 

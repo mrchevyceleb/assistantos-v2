@@ -19,6 +19,7 @@ export function FileTree() {
     if (!window.electronAPI) return []
     const entries = await window.electronAPI.fs.readDir(dirPath)
     return entries
+      .filter(entry => !entry.name.startsWith('.')) // Hide dotfiles
       .sort((a, b) => {
         if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
         return a.name.localeCompare(b.name)

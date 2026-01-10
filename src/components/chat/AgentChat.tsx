@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../../stores/appStore'
 import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
@@ -220,12 +221,8 @@ Guidelines:
   return (
     <div
       className="h-full flex flex-col relative"
-      onClick={(e) => console.log('Chat container clicked', e.target)}
       style={{
-        background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)',
-        zIndex: 200,
-        position: 'relative',
-        pointerEvents: 'auto'
+        background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
       }}
     >
       {/* Header */}
@@ -233,8 +230,7 @@ Guidelines:
         className="h-14 flex items-center justify-between px-4 relative"
         style={{
           borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-          background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.8) 0%, rgba(16, 20, 32, 0.9) 100%)',
-          zIndex: 210
+          background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.8) 0%, rgba(16, 20, 32, 0.9) 100%)'
         }}
       >
         {/* Top edge highlight */}
@@ -269,17 +265,12 @@ Guidelines:
             </button>
           )}
           <button
-            onClick={() => {
-              console.log('Settings button clicked, current state:', showSettings)
-              setShowSettings(!showSettings)
-            }}
+            onClick={() => setShowSettings(!showSettings)}
             className={`p-2.5 rounded-xl transition-all ${
               showSettings ? 'bg-white/10' : 'hover:bg-white/5'
             }`}
             style={{
-              border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent',
-              zIndex: 220,
-              position: 'relative'
+              border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent'
             }}
           >
             <Settings2 className={`w-5 h-5 ${showSettings ? 'text-cyan-400' : 'text-slate-400'}`} />
@@ -290,11 +281,10 @@ Guidelines:
       {/* Settings Panel */}
       {showSettings && (
         <div
-          className="p-4 relative"
+          className="p-4"
           style={{
             background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.95) 0%, rgba(15, 20, 35, 0.98) 100%)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-            zIndex: 300
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
           }}
         >
           <label className="block text-sm text-slate-400 mb-2 font-medium">Anthropic API Key</label>
@@ -304,7 +294,6 @@ Guidelines:
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="sk-ant-..."
             className="input-metallic w-full text-sm"
-            style={{ position: 'relative', zIndex: 301 }}
           />
           <p className="text-xs text-slate-500 mt-2">
             Your API key is stored locally and never sent to any server except Anthropic.
@@ -396,7 +385,13 @@ Guidelines:
                         }}
                       />
                     )}
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'assistant' ? (
+                      <div className="prose prose-sm prose-invert max-w-none">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    )}
                   </div>
                   {message.role === 'user' && (
                     <div
@@ -414,7 +409,7 @@ Guidelines:
             </div>
           ))
         )}
-        {isLoading && (
+        {isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content.trim() === '' && (
           <div className="flex gap-3">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"

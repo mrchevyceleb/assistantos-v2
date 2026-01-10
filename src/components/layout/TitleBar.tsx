@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Minus, Square, X, Moon, Sun, Bell, Settings } from 'lucide-react'
+import { Minus, Square, X, Moon, Sun, Bell } from 'lucide-react'
 
 export function TitleBar() {
   const [isDark, setIsDark] = useState(true)
@@ -77,14 +77,6 @@ export function TitleBar() {
           style={{ border: '1px solid transparent' }}
         >
           <Bell className="w-5 h-5 text-slate-400" />
-        </button>
-
-        {/* Settings */}
-        <button
-          className="p-2.5 rounded-xl transition-all hover:bg-white/5"
-          style={{ border: '1px solid transparent' }}
-        >
-          <Settings className="w-5 h-5 text-slate-400" />
         </button>
 
         {/* Separator */}

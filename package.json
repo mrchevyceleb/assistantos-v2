@@ -41,11 +41,15 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@milkdown/kit": "^7.18.0",
+    "@milkdown/theme-nord": "^7.18.0",
     "@monaco-editor/react": "^4.7.0",
+    "@tailwindcss/typography": "^0.5.19",
     "lucide-react": "^0.562.0",
     "path-browserify": "^1.0.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.2.2",
     "zustand": "^5.0.9"
   },
