@@ -170,14 +170,30 @@ Guidelines:
 
       case 'tool_use':
         if (chunk.toolName && chunk.toolInput) {
-          // Add tool use message
-          setMessages(prev => [...prev, {
-            id: `tool-${chunk.toolId}`,
-            role: 'tool',
-            content: `Using ${chunk.toolName}`,
-            toolName: chunk.toolName,
-            timestamp: new Date(),
-          }])
+          // Insert tool message BEFORE the assistant message so assistant text stays at bottom
+          setMessages(prev => {
+            const newToolMessage: Message = {
+              id: `tool-${chunk.toolId}`,
+              role: 'tool',
+              content: `Using ${chunk.toolName}`,
+              toolName: chunk.toolName,
+              timestamp: new Date(),
+            }
+            // Find the last assistant message index (iterate backwards)
+            let lastAssistantIndex = -1
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].role === 'assistant') {
+                lastAssistantIndex = i
+                break
+              }
+            }
+            if (lastAssistantIndex !== -1) {
+              const updated = [...prev]
+              updated.splice(lastAssistantIndex, 0, newToolMessage)
+              return updated
+            }
+            return [...prev, newToolMessage]
+          })
         }
         break
 
