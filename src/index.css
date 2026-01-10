@@ -317,10 +317,13 @@
 .prose.prose-invert a {
   color: #22d3ee;
   text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.15s ease;
 }
 
 .prose.prose-invert a:hover {
   color: #67e8f9;
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
 }
 
 .prose.prose-invert blockquote {
@@ -379,4 +382,17 @@
 [data-separator][data-state="drag"] {
   background: rgba(0, 212, 255, 0.5);
   box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+/* Milkdown editor link styling */
+.milkdown-container a {
+  color: #22d3ee;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.milkdown-container a:hover {
+  color: #67e8f9;
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
 }

@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   bash: {
     execute: (command: string, cwd: string) => ipcRenderer.invoke('bash:execute', command, cwd),
   },
+
+  // Shell operations
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  },
 })
 
 // Type definitions for the exposed API
@@ -41,6 +46,9 @@ declare global {
       }
       bash: {
         execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+      }
+      shell: {
+        openExternal: (url: string) => Promise<boolean>
       }
     }
   }

@@ -389,7 +389,24 @@ Guidelines:
                     )}
                     {message.role === 'assistant' ? (
                       <div className="prose prose-sm prose-invert max-w-none">
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                        <ReactMarkdown
+                          components={{
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                onClick={(e) => {
+                                  if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+                                    e.preventDefault()
+                                    window.electronAPI?.shell.openExternal(href)
+                                  }
+                                }}
+                                className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                              >
+                                {children}
+                              </a>
+                            )
+                          }}
+                        >{message.content}</ReactMarkdown>
                       </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>

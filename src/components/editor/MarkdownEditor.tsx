@@ -127,6 +127,29 @@ export function MarkdownEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [content, currentFile, hasChanges])
 
+  // Handle link clicks to open in native browser
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const link = target.closest('a')
+      if (link && link.href) {
+        const url = link.href
+        // Only open external URLs (http/https)
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          e.preventDefault()
+          e.stopPropagation()
+          window.electronAPI?.shell.openExternal(url)
+        }
+      }
+    }
+
+    container.addEventListener('click', handleClick)
+    return () => container.removeEventListener('click', handleClick)
+  }, [currentFile, isLoading, error])
+
   // Toolbar commands
   const toggleBold = () => editorRef.current?.action(callCommand(toggleStrongCommand.key))
   const toggleItalic = () => editorRef.current?.action(callCommand(toggleEmphasisCommand.key))

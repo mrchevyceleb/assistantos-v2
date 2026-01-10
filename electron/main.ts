@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -155,5 +155,16 @@ ipcMain.handle('bash:execute', async (_, command: string, cwd: string) => {
       stderr: execError.stderr || String(error),
       exitCode: execError.code || 1
     }
+  }
+})
+
+// IPC Handler for opening external URLs in native browser
+ipcMain.handle('shell:openExternal', async (_, url: string) => {
+  try {
+    await shell.openExternal(url)
+    return true
+  } catch (error) {
+    console.error('Error opening external URL:', error)
+    return false
   }
 })

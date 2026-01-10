@@ -44,7 +44,8 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
 **Preload Script** (`electron/preload.ts`):
 - Exposes `window.electronAPI` to renderer via context bridge
 - Provides type-safe IPC communication between renderer and main process
-- Exposes `fs` and `bash` APIs
+- Exposes `fs`, `bash`, and `shell` APIs
+- Shell API includes `openExternal(url)` to open links in native browser
 
 ### Claude Agent Architecture
 
@@ -92,8 +93,12 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
 **Key Components**:
 - `TitleBar.tsx` - Custom window controls for frameless window
 - `FileTree.tsx` - File system navigation (auto-hides dotfiles starting with ".")
-- `MarkdownEditor.tsx` - Monaco-based editor
+- `MarkdownEditor.tsx` - Milkdown-based WYSIWYG markdown editor with GFM support
 - `AgentChat.tsx` - Chat interface with Claude agent (streaming, tool use, conversation history)
+
+**External Links**:
+- Links in markdown editor and chat are clickable and open in the OS native browser
+- Uses Electron's `shell.openExternal()` via IPC for security
 
 ### Styling
 
