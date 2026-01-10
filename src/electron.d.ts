@@ -14,6 +14,9 @@ export interface ElectronAPI {
   bash: {
     execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
   }
+  shell: {
+    openExternal: (url: string) => Promise<boolean>
+  }
 }
 
 declare global {

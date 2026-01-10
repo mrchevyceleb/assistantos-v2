@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../../stores/appStore'
 import { ClaudeService, type ChatChunk } from '../../services/claude'
@@ -20,8 +20,21 @@ export function AgentChat() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
+
+  const toggleToolExpanded = (toolId: string) => {
+    setExpandedTools(prev => {
+      const next = new Set(prev)
+      if (next.has(toolId)) {
+        next.delete(toolId)
+      } else {
+        next.add(toolId)
+      }
+      return next
+    })
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -213,6 +226,7 @@ Guidelines:
 
   const clearConversation = () => {
     setMessages([])
+    setExpandedTools(new Set())
     if (claudeServiceRef.current) {
       claudeServiceRef.current.clearHistory()
     }
@@ -331,24 +345,40 @@ Guidelines:
             .map((message) => (
             <div key={message.id}>
               {message.role === 'tool' ? (
-                // Tool execution display
+                // Collapsible tool execution display
                 <div
-                  className="mx-8 px-3 py-2 rounded-lg text-xs font-mono"
+                  className="mx-8 rounded-lg text-xs font-mono cursor-pointer select-none"
                   style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(255, 255, 255, 0.05)'
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    border: '1px solid rgba(255, 255, 255, 0.03)'
                   }}
+                  onClick={() => toggleToolExpanded(message.id)}
                 >
-                  <div className="flex items-center gap-2 text-slate-400">
+                  <div className="flex items-center gap-2 text-slate-500 px-3 py-1.5 hover:text-slate-400 transition-colors">
+                    {expandedTools.has(message.id) ? (
+                      <ChevronDown className="w-3 h-3" />
+                    ) : (
+                      <ChevronRight className="w-3 h-3" />
+                    )}
                     {message.toolName === 'bash' ? (
                       <Terminal className="w-3 h-3" />
                     ) : (
                       <FileText className="w-3 h-3" />
                     )}
                     <span>{message.toolName}</span>
+                    {message.toolResult && !expandedTools.has(message.id) && (
+                      <span className="text-slate-600 ml-1">
+                        {message.toolResult.split('\n').length > 1
+                          ? `(${message.toolResult.split('\n').length} lines)`
+                          : ''}
+                      </span>
+                    )}
                   </div>
-                  {message.toolResult && (
-                    <pre className="mt-1 text-slate-500 whitespace-pre-wrap overflow-hidden">
+                  {expandedTools.has(message.id) && message.toolResult && (
+                    <pre
+                      className="px-3 pb-2 text-slate-500 whitespace-pre-wrap overflow-hidden border-t border-white/5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {message.toolResult}
                     </pre>
                   )}
