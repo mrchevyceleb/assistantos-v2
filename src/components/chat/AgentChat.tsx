@@ -326,7 +326,9 @@ Guidelines:
             )}
           </div>
         ) : (
-          messages.map((message) => (
+          messages
+            .filter(m => m.role !== 'assistant' || m.content.trim() !== '')
+            .map((message) => (
             <div key={message.id}>
               {message.role === 'tool' ? (
                 // Tool execution display
