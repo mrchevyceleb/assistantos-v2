@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff, RefreshCw, Puzzle } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
@@ -10,7 +10,6 @@ import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
 import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
 import { getCachedMCPTools, invalidateToolCache } from '../../services/toolCache'
-import { gatherDynamicContext, formatContextForPrompt } from '../../services/contextService'
 import {
   parseMessage,
   getUnifiedSuggestions,
@@ -20,9 +19,19 @@ import {
   type UnifiedSuggestion,
   type DocumentMention
 } from '../../services/mentions/parser'
+import {
+  generateConversationId,
+  generateTitle,
+  exportToMarkdown,
+  type Conversation,
+  type ConversationMeta
+} from '../../services/conversationStorage'
 
 // Components
 import { IntegrationsModal } from '../settings/IntegrationsModal'
+import { SettingsModal } from '../settings/SettingsModal'
+import { MCPSlideout } from './MCPSlideout'
+import { ChatToolbar } from './ChatToolbar'
 
 interface Message {
   id: string
@@ -31,6 +40,21 @@ interface Message {
   timestamp: Date
   toolName?: string
   toolResult?: string
+  bookmarked?: boolean
+}
+
+/**
+ * Format timestamp for display
+ * Format: "Jan 10, 11:15 AM"
+ */
+function formatTimestamp(date: Date): string {
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  })
 }
 
 /**
@@ -82,29 +106,31 @@ async function prepareAllEnabledTools(
 export function AgentChat() {
   const {
     apiKey,
-    setApiKey,
     workspacePath,
     openFiles,
     currentFile,
     customInstructions,
-    setCustomInstructions,
-    resetCustomInstructions,
     selectedModel,
     setSelectedModel,
+    maxTokens,
     integrationConfigs,
   } = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showContextPreview, setShowContextPreview] = useState(false)
-  const [contextPreview, setContextPreview] = useState('')
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [showIntegrations, setShowIntegrations] = useState(false)
+  const [showMCPSlideout, setShowMCPSlideout] = useState(false)
   const [mentionSuggestions, setMentionSuggestions] = useState<UnifiedSuggestion[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [activeMentions, setActiveMentions] = useState<string[]>([])
   const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
+  // Conversation persistence state
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  const [savedConversations, setSavedConversations] = useState<ConversationMeta[]>([])
+  const [showLoadDropdown, setShowLoadDropdown] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -132,11 +158,11 @@ export function AgentChat() {
   // Initialize or update Claude service when API key changes
   useEffect(() => {
     if (apiKey) {
-      claudeServiceRef.current = new ClaudeService(apiKey, selectedModel)
+      claudeServiceRef.current = new ClaudeService(apiKey, selectedModel, maxTokens)
     } else {
       claudeServiceRef.current = null
     }
-  }, [apiKey, selectedModel])
+  }, [apiKey, selectedModel, maxTokens])
 
   // Update model when it changes mid-chat
   useEffect(() => {
@@ -145,14 +171,155 @@ export function AgentChat() {
     }
   }, [selectedModel])
 
-  // Update context preview when toggled or workspace changes
+  // Update maxTokens when it changes mid-chat
   useEffect(() => {
-    if (showContextPreview) {
-      gatherDynamicContext(workspacePath, openFiles, currentFile)
-        .then((context) => setContextPreview(formatContextForPrompt(context)))
-        .catch(() => setContextPreview('Error loading context'))
+    if (claudeServiceRef.current) {
+      claudeServiceRef.current.setMaxTokens(maxTokens)
     }
-  }, [showContextPreview, workspacePath, openFiles, currentFile])
+  }, [maxTokens])
+
+  // Load saved conversations list on mount
+  useEffect(() => {
+    const loadConversationsList = async () => {
+      try {
+        const list = await window.electronAPI.conversation.list()
+        setSavedConversations(list)
+      } catch (e) {
+        console.error('Failed to load conversations list:', e)
+      }
+    }
+    loadConversationsList()
+  }, [])
+
+  // Save conversation handler
+  const handleSaveConversation = useCallback(async () => {
+    if (messages.length === 0 || isSaving) return
+
+    setIsSaving(true)
+    try {
+      const convId = currentConversationId || generateConversationId()
+      const now = new Date().toISOString()
+
+      const conversation: Conversation = {
+        id: convId,
+        title: generateTitle(messages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp.toISOString()
+        }))),
+        createdAt: currentConversationId ? savedConversations.find(c => c.id === convId)?.createdAt || now : now,
+        updatedAt: now,
+        model: selectedModel,
+        messages: messages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp.toISOString(),
+          toolName: m.toolName,
+          toolResult: m.toolResult,
+          bookmarked: m.bookmarked
+        })),
+        bookmarks: messages.filter(m => m.bookmarked).map(m => m.id),
+        workspace: workspacePath
+      }
+
+      const result = await window.electronAPI.conversation.save(conversation)
+      if (result.success) {
+        setCurrentConversationId(convId)
+        // Refresh the list
+        const list = await window.electronAPI.conversation.list()
+        setSavedConversations(list)
+      }
+    } catch (e) {
+      console.error('Failed to save conversation:', e)
+    } finally {
+      setIsSaving(false)
+    }
+  }, [messages, currentConversationId, selectedModel, workspacePath, savedConversations, isSaving])
+
+  // Load conversation handler
+  const handleLoadConversation = useCallback(async (conversationId: string) => {
+    try {
+      const conversation = await window.electronAPI.conversation.load(conversationId)
+      if (conversation) {
+        // Clear current chat first
+        if (claudeServiceRef.current) {
+          claudeServiceRef.current.clearHistory()
+        }
+
+        // Convert to Message format (with bookmarks)
+        const loadedMessages: Message[] = conversation.messages.map((m: any) => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant' | 'tool',
+          content: m.content,
+          timestamp: new Date(m.timestamp),
+          toolName: m.toolName,
+          toolResult: m.toolResult,
+          bookmarked: m.bookmarked || conversation.bookmarks?.includes(m.id) || false
+        }))
+
+        setMessages(loadedMessages)
+        setCurrentConversationId(conversation.id)
+        setExpandedTools(new Set())
+        setShowLoadDropdown(false)
+      }
+    } catch (e) {
+      console.error('Failed to load conversation:', e)
+    }
+  }, [])
+
+  // Export conversation handler
+  const handleExportConversation = useCallback(async () => {
+    if (messages.length === 0) return
+
+    const conversation: Conversation = {
+      id: currentConversationId || 'export',
+      title: generateTitle(messages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp.toISOString()
+      }))),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      model: selectedModel,
+      messages: messages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp.toISOString(),
+        toolName: m.toolName,
+        toolResult: m.toolResult,
+        bookmarked: m.bookmarked
+      })),
+      bookmarks: messages.filter(m => m.bookmarked).map(m => m.id),
+      workspace: workspacePath
+    }
+
+    const markdown = exportToMarkdown(conversation)
+    const suggestedName = `${conversation.title.replace(/[^a-zA-Z0-9]/g, '-')}.md`
+
+    await window.electronAPI.conversation.export(markdown, suggestedName)
+  }, [messages, currentConversationId, selectedModel, workspacePath])
+
+  // Delete conversation handler
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
+    try {
+      await window.electronAPI.conversation.delete(conversationId)
+      const list = await window.electronAPI.conversation.list()
+      setSavedConversations(list)
+    } catch (e) {
+      console.error('Failed to delete conversation:', e)
+    }
+  }, [])
+
+  // Toggle message bookmark
+  const toggleBookmark = useCallback((messageId: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === messageId ? { ...m, bookmarked: !m.bookmarked } : m
+    ))
+  }, [])
 
   // Handle input change for @mention autocomplete
   const handleInputChange = useCallback(async (value: string) => {
@@ -195,6 +362,12 @@ export function AgentChat() {
     invalidateToolCache() // Refresh tools on next message
   }, [])
 
+  // Open full integrations modal from slideout
+  const handleOpenFullConfig = useCallback(() => {
+    setShowMCPSlideout(false)
+    setShowIntegrations(true)
+  }, [])
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
 
@@ -219,7 +392,7 @@ export function AgentChat() {
     }
 
     if (!claudeServiceRef.current) {
-      claudeServiceRef.current = new ClaudeService(apiKey, selectedModel)
+      claudeServiceRef.current = new ClaudeService(apiKey, selectedModel, maxTokens)
     }
 
     const userMessage: Message = {
@@ -457,6 +630,7 @@ export function AgentChat() {
   const clearConversation = () => {
     setMessages([])
     setExpandedTools(new Set())
+    setCurrentConversationId(null)
     if (claudeServiceRef.current) {
       claudeServiceRef.current.clearHistory()
     }
@@ -526,116 +700,95 @@ export function AgentChat() {
 
           {/* Integrations Button */}
           <button
-            onClick={() => setShowIntegrations(true)}
-            className="p-2.5 rounded-xl hover:bg-white/5 transition-all"
-            title="Configure integrations"
+            onClick={() => setShowMCPSlideout(!showMCPSlideout)}
+            className={`p-2.5 rounded-xl transition-all ${
+              showMCPSlideout ? 'bg-white/10' : 'hover:bg-white/5'
+            }`}
+            style={{
+              border: showMCPSlideout ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent'
+            }}
+            title="Toggle integrations"
           >
-            <Puzzle className="w-5 h-5 text-slate-400" />
+            <Puzzle className={`w-5 h-5 ${showMCPSlideout ? 'text-cyan-400' : 'text-slate-400'}`} />
           </button>
 
           <button
-            onClick={() => setShowSettings(!showSettings)}
-            className={`p-2.5 rounded-xl transition-all ${
-              showSettings ? 'bg-white/10' : 'hover:bg-white/5'
-            }`}
-            style={{
-              border: showSettings ? '1px solid rgba(0, 212, 255, 0.3)' : '1px solid transparent'
-            }}
+            onClick={() => setShowSettingsModal(true)}
+            className="p-2.5 rounded-xl transition-all hover:bg-white/5"
+            style={{ border: '1px solid transparent' }}
+            title="Settings"
           >
-            <Settings2 className={`w-5 h-5 ${showSettings ? 'text-cyan-400' : 'text-slate-400'}`} />
+            <Settings2 className="w-5 h-5 text-slate-400 hover:text-white" />
           </button>
         </div>
       </div>
 
-      {/* Settings Panel */}
-      {showSettings && (
-        <div
-          className="p-4 space-y-5 overflow-y-auto"
-          style={{
-            background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.95) 0%, rgba(15, 20, 35, 0.98) 100%)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-            maxHeight: '60vh',
-          }}
-        >
-          {/* API Key Section */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-2 font-medium">Anthropic API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-ant-..."
-              className="input-metallic w-full text-sm"
-            />
-            <p className="text-xs text-slate-500 mt-2">
-              Your API key is stored locally and never sent to any server except Anthropic.
-            </p>
-          </div>
+      {/* Chat Toolbar */}
+      <div className="relative">
+        <ChatToolbar
+          onSave={handleSaveConversation}
+          onLoad={() => setShowLoadDropdown(!showLoadDropdown)}
+          onExport={handleExportConversation}
+          onClear={clearConversation}
+          hasMessages={messages.length > 0}
+          savedCount={savedConversations.length}
+          isSaving={isSaving}
+        />
 
-          {/* Divider */}
-          <div className="border-t border-white/5" />
-
-          {/* Custom Instructions Section */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-slate-400 font-medium">Custom Instructions</label>
+        {/* Load Conversation Dropdown */}
+        {showLoadDropdown && (
+          <div
+            className="absolute top-full left-0 mt-1 w-80 max-h-80 overflow-y-auto z-30 rounded-xl"
+            style={{
+              background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+            }}
+          >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
+              <span className="text-sm font-medium text-white">Saved Conversations</span>
               <button
-                onClick={() => resetCustomInstructions()}
-                className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                onClick={() => setShowLoadDropdown(false)}
+                className="text-slate-400 hover:text-white transition-colors"
               >
-                <RotateCcw className="w-3 h-3" />
-                Reset to defaults
+                ×
               </button>
             </div>
-            <textarea
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="Add custom instructions to personalize AssistantOS..."
-              rows={8}
-              className="input-metallic w-full text-sm resize-y min-h-[120px]"
-              style={{ fontFamily: 'ui-monospace, monospace' }}
-            />
-            <p className="text-xs text-slate-500 mt-2">
-              These instructions are added to every conversation. Use Markdown formatting.
-              Examples: coding style preferences, communication style, project-specific rules.
-            </p>
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-white/5" />
-
-          {/* Context Preview Section */}
-          <div>
-            <button
-              onClick={() => setShowContextPreview(!showContextPreview)}
-              className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-300 transition-colors"
-            >
-              {showContextPreview ? (
-                <EyeOff className="w-4 h-4" />
-              ) : (
-                <Eye className="w-4 h-4" />
-              )}
-              <span>Current Context (auto-injected)</span>
-            </button>
-            {showContextPreview && (
-              <pre
-                className="mt-3 p-3 rounded-lg text-xs text-slate-500 overflow-auto whitespace-pre-wrap"
-                style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  maxHeight: '200px',
-                  fontFamily: 'ui-monospace, monospace',
-                  border: '1px solid rgba(255, 255, 255, 0.05)',
-                }}
-              >
-                {contextPreview || 'Loading context...'}
-              </pre>
+            {savedConversations.length === 0 ? (
+              <div className="px-4 py-6 text-center text-slate-500 text-sm">
+                No saved conversations yet
+              </div>
+            ) : (
+              savedConversations.map(conv => (
+                <div
+                  key={conv.id}
+                  className="group px-3 py-2.5 hover:bg-white/5 transition-colors cursor-pointer flex items-start gap-3"
+                  onClick={() => handleLoadConversation(conv.id)}
+                >
+                  <Clock className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white truncate">{conv.title}</div>
+                    <div className="text-xs text-slate-500 truncate">{conv.preview}</div>
+                    <div className="text-[10px] text-slate-600 mt-0.5">
+                      {new Date(conv.updatedAt).toLocaleDateString()} • {conv.messageCount} messages
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteConversation(conv.id)
+                    }}
+                    className="p-1 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all"
+                    title="Delete conversation"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))
             )}
-            <p className="text-xs text-slate-500 mt-2">
-              This context is automatically gathered and included in every message.
-            </p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-auto p-4 space-y-4">
@@ -763,6 +916,33 @@ export function AgentChat() {
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     )}
+                    {/* Message footer: timestamp + bookmark */}
+                    <div className={`flex items-center gap-2 mt-1.5 text-[10px] ${
+                      message.role === 'user' ? 'text-cyan-800/60' : 'text-slate-500'
+                    }`}>
+                      <span>{formatTimestamp(message.timestamp)}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleBookmark(message.id)
+                        }}
+                        className={`p-0.5 rounded transition-all ${
+                          message.bookmarked
+                            ? message.role === 'user'
+                              ? 'text-amber-600'
+                              : 'text-amber-400'
+                            : message.role === 'user'
+                              ? 'text-cyan-800/40 hover:text-amber-600'
+                              : 'text-slate-600 hover:text-amber-400'
+                        }`}
+                        title={message.bookmarked ? 'Remove bookmark' : 'Bookmark this message'}
+                      >
+                        <Star
+                          className="w-3 h-3"
+                          fill={message.bookmarked ? 'currentColor' : 'none'}
+                        />
+                      </button>
+                    </div>
                   </div>
                   {message.role === 'user' && (
                     <div
@@ -907,6 +1087,16 @@ export function AgentChat() {
           </button>
         </div>
       </div>
+
+      {/* MCP Slideout */}
+      <MCPSlideout
+        isOpen={showMCPSlideout}
+        onClose={() => setShowMCPSlideout(false)}
+        onOpenFullConfig={handleOpenFullConfig}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
 
       {/* Integrations Modal */}
       <IntegrationsModal isOpen={showIntegrations} onClose={handleIntegrationsClose} />

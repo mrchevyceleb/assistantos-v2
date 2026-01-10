@@ -48,10 +48,55 @@ contextBridge.exposeInMainWorld('electronAPI', {
     preStartEnabled: (configs: Record<string, { enabled: boolean; envVars: Record<string, string> }>) =>
       ipcRenderer.invoke('mcp:preStartEnabled', configs),
   },
+
+  // Conversation persistence
+  conversation: {
+    save: (conversation: ConversationData) =>
+      ipcRenderer.invoke('conversation:save', conversation),
+    load: (conversationId: string) =>
+      ipcRenderer.invoke('conversation:load', conversationId),
+    list: () =>
+      ipcRenderer.invoke('conversation:list'),
+    delete: (conversationId: string) =>
+      ipcRenderer.invoke('conversation:delete', conversationId),
+    export: (markdown: string, suggestedName: string) =>
+      ipcRenderer.invoke('conversation:export', markdown, suggestedName),
+  },
 })
 
 // Type definitions for the exposed API
 declare global {
+  // Conversation Types
+  interface ConversationMessage {
+    id: string
+    role: 'user' | 'assistant' | 'tool'
+    content: string
+    timestamp: string
+    toolName?: string
+    toolResult?: string
+    bookmarked?: boolean
+  }
+
+  interface ConversationData {
+    id: string
+    title: string
+    createdAt: string
+    updatedAt: string
+    model: string
+    messages: ConversationMessage[]
+    bookmarks: string[]
+    workspace: string | null
+  }
+
+  interface ConversationMeta {
+    id: string
+    title: string
+    createdAt: string
+    updatedAt: string
+    messageCount: number
+    preview: string
+  }
+
   // MCP Types
   interface MCPIntegration {
     id: string
@@ -135,6 +180,13 @@ declare global {
         getStatus: () => Promise<Record<string, MCPServerStatus>>
         getConfig: (integrationId: string) => Promise<Record<string, string>>
         preStartEnabled: (configs: Record<string, { enabled: boolean; envVars: Record<string, string> }>) => Promise<{ success: boolean; error?: string }>
+      }
+      conversation: {
+        save: (conversation: ConversationData) => Promise<{ success: boolean; id?: string; error?: string }>
+        load: (conversationId: string) => Promise<ConversationData | null>
+        list: () => Promise<ConversationMeta[]>
+        delete: (conversationId: string) => Promise<{ success: boolean; error?: string }>
+        export: (markdown: string, suggestedName: string) => Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
       }
     }
   }

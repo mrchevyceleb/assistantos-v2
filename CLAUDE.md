@@ -105,13 +105,20 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
   - Selected model (Opus/Sonnet/Haiku)
   - UI state (sidebar/chat collapsed states)
   - Custom instructions (persisted, editable via settings panel)
+  - Center panel view mode (editor/dashboard/tasks)
+  - Starred document paths
+  - Task display settings (show completed, sort order, group by file)
 
 **Component Layout**:
 - `App.tsx` - Root component with TitleBar and PanelLayout
 - `PanelLayout.tsx` - Three-panel resizable layout using `react-resizable-panels`:
-  - Left: FileTree (20% default, 15% min)
-  - Center: MarkdownEditor (45% default, 20% min)
+  - Left: FileTree with StarredSection (20% default, 15% min)
+  - Center: Tabbed view with CenterPanelTabs (45% default, 20% min)
+    - Editor tab: MarkdownEditor
+    - Dashboard tab: Dashboard with widgets
+    - Tasks tab: TaskPanel for task management
   - Right: AgentChat (35% default, 20% min)
+- Keyboard shortcuts: Ctrl+1 (Editor), Ctrl+2 (Dashboard), Ctrl+3 (Tasks)
 
 **Key Components**:
 - `TitleBar.tsx` - Custom window controls for frameless window
@@ -138,6 +145,73 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
     - Tab/Enter - Select suggestion
     - Escape - Close suggestions
     - Enter - Send message (Shift+Enter for multiline)
+
+### Dashboard Panel
+
+The Dashboard provides a configurable overview with widgets for quick information access.
+
+**Components** (`src/components/dashboard/`):
+- `Dashboard.tsx` - Main container with greeting, date display, and widget grid
+- `WidgetContainer.tsx` - Reusable wrapper with header, loading state, and refresh button
+- `CalendarWidget.tsx` - Upcoming calendar events via MCP @calendar integration
+- `TaskSummaryWidget.tsx` - Task statistics with progress bar (open, overdue, high priority)
+- `QuickLinksWidget.tsx` - Starred files for quick access
+
+**Features**:
+- Dynamic greeting based on time of day
+- Calendar integration with MCP (shows configure CTA if not set up)
+- Links to Task panel for detailed task management
+- Starred files quick access with click-to-open
+
+### Task Management Panel
+
+The Task panel provides a UI for managing tasks extracted from markdown files.
+
+**Components** (`src/components/tasks/`):
+- `TaskPanel.tsx` - Main container with header, filters, and task list
+- `TaskFilters.tsx` - Filter controls (show/hide completed, sort by file/date/priority)
+- `TaskList.tsx` - Renders tasks with optional grouping by file
+- `TaskItem.tsx` - Individual task row with checkbox, metadata badges, file link
+
+**Task Parser Service** (`src/services/taskParser.ts`):
+- Scans all `.md` files in workspace for task checkboxes
+- Parses `- [ ]` (incomplete) and `- [x]` (complete) patterns
+- Extracts optional metadata:
+  - Due dates: `@due(2024-01-15)` or `@due(tomorrow)`
+  - Priority: `!high`, `!medium`, `!low`
+- Functions:
+  - `parseTasksFromWorkspace()` - Scans workspace and returns parsed tasks
+  - `toggleTaskInFile()` - Updates checkbox state in source file
+  - `getFileName()` - Extracts filename from path for display
+
+**Task Type** (`src/types/task.ts`):
+```typescript
+interface ParsedTask {
+  id: string
+  text: string
+  completed: boolean
+  filePath: string
+  lineNumber: number
+  dueDate?: string
+  priority?: 'high' | 'medium' | 'low'
+  raw: string
+}
+```
+
+### Starred Documents
+
+Quick access bookmarks for frequently used files.
+
+**Components**:
+- `StarredSection.tsx` - Collapsible section at top of FileTree showing starred files
+- Star toggle button appears on file hover in FileTree
+
+**Features**:
+- Star/unstar files by clicking the star icon on hover
+- Starred files shown in amber with filled star icon
+- Collapsible section with file count badge
+- Click starred file to open, click star to unstar
+- Persisted to localStorage via Zustand
 
 **External Links**:
 - Links in markdown editor and chat are clickable and open in the OS native browser
@@ -304,9 +378,12 @@ The app store (`src/stores/appStore.ts`) manages:
 
 Planned expansions:
 - Conversation persistence (save/load chats)
-- Context compaction (handle long conversations)
+- **Context management** - Token counting, usage monitoring, auto-save on overflow (see `docs/CONTEXT_MANAGEMENT_PLAN.md`)
 - Additional MCP integrations (GitHub, Slack, Discord, etc.)
 - Subagents (parallel task execution across multiple MCPs)
 - Skills system (reusable workflows combining tools)
 - Project-level custom instructions (in addition to global)
 - Streaming MCP tool results for long-running operations
+- Configurable dashboard widget arrangement
+- Task creation from dashboard
+- Calendar event creation/editing via dashboard

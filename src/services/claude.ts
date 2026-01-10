@@ -19,14 +19,15 @@ export class ClaudeService {
   private client: Anthropic;
   private conversationHistory: MessageParam[] = [];
   private model: string;
-  private maxTokens = 8192;
+  private maxTokens: number;
 
-  constructor(apiKey: string, model: string = 'claude-sonnet-4-20250514') {
+  constructor(apiKey: string, model: string = 'claude-sonnet-4-20250514', maxTokens: number = 8192) {
     this.client = new Anthropic({
       apiKey,
       dangerouslyAllowBrowser: true
     });
     this.model = model;
+    this.maxTokens = maxTokens;
   }
 
   setModel(model: string) {
@@ -35,6 +36,14 @@ export class ClaudeService {
 
   getModel(): string {
     return this.model;
+  }
+
+  setMaxTokens(maxTokens: number) {
+    this.maxTokens = maxTokens;
+  }
+
+  getMaxTokens(): number {
+    return this.maxTokens;
   }
 
   clearHistory() {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { TaskSettings, DEFAULT_TASK_SETTINGS, CenterPanelView } from '@/types/task'
 
 // Available Claude models
 export const AVAILABLE_MODELS = [
@@ -64,6 +65,10 @@ interface AppState {
   selectedModel: ModelId
   setSelectedModel: (model: ModelId) => void
 
+  // Max Tokens
+  maxTokens: number
+  setMaxTokens: (tokens: number) => void
+
   // UI State
   sidebarCollapsed: boolean
   chatCollapsed: boolean
@@ -81,6 +86,19 @@ interface AppState {
   updateIntegrationEnvVars: (integrationId: string, envVars: Record<string, string>) => void
   setIntegrationEnabled: (integrationId: string, enabled: boolean) => void
   setIntegrationOAuthTokens: (integrationId: string, tokens: IntegrationConfig['oauthTokens']) => void
+
+  // Center Panel View Mode
+  centerPanelView: CenterPanelView
+  setCenterPanelView: (view: CenterPanelView) => void
+
+  // Starred Documents
+  starredPaths: string[]
+  toggleStarred: (path: string) => void
+  isStarred: (path: string) => boolean
+
+  // Task Settings
+  taskSettings: TaskSettings
+  setTaskSettings: (settings: Partial<TaskSettings>) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -128,6 +146,10 @@ export const useAppStore = create<AppState>()(
       selectedModel: DEFAULT_MODEL,
       setSelectedModel: (model) => set({ selectedModel: model }),
 
+      // Max Tokens
+      maxTokens: 8192,
+      setMaxTokens: (tokens) => set({ maxTokens: tokens }),
+
       // UI State
       sidebarCollapsed: false,
       chatCollapsed: false,
@@ -174,6 +196,28 @@ export const useAppStore = create<AppState>()(
           },
         },
       })),
+
+      // Center Panel View Mode
+      centerPanelView: 'editor' as CenterPanelView,
+      setCenterPanelView: (view) => set({ centerPanelView: view }),
+
+      // Starred Documents
+      starredPaths: [],
+      toggleStarred: (path) => set((state) => {
+        const isCurrentlyStarred = state.starredPaths.includes(path)
+        return {
+          starredPaths: isCurrentlyStarred
+            ? state.starredPaths.filter(p => p !== path)
+            : [...state.starredPaths, path]
+        }
+      }),
+      isStarred: (path) => get().starredPaths.includes(path),
+
+      // Task Settings
+      taskSettings: DEFAULT_TASK_SETTINGS,
+      setTaskSettings: (settings) => set((state) => ({
+        taskSettings: { ...state.taskSettings, ...settings }
+      })),
     }),
     {
       name: 'assistantos-storage',
@@ -181,10 +225,14 @@ export const useAppStore = create<AppState>()(
         workspacePath: state.workspacePath,
         apiKey: state.apiKey,
         selectedModel: state.selectedModel,
+        maxTokens: state.maxTokens,
         sidebarCollapsed: state.sidebarCollapsed,
         chatCollapsed: state.chatCollapsed,
         customInstructions: state.customInstructions,
         integrationConfigs: state.integrationConfigs,
+        centerPanelView: state.centerPanelView,
+        starredPaths: state.starredPaths,
+        taskSettings: state.taskSettings,
       }),
     }
   )

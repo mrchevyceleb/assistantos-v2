@@ -289,3 +289,148 @@ ipcMain.handle('fs:searchFiles', async (_, workspacePath: string, searchTerm: st
     return []
   }
 })
+
+// =============================================================================
+// Conversation Persistence Handlers
+// =============================================================================
+
+/**
+ * Get the directory where conversations are stored
+ */
+function getConversationsDir(): string {
+  return path.join(app.getPath('userData'), 'conversations')
+}
+
+/**
+ * Ensure the conversations directory exists
+ */
+async function ensureConversationsDir(): Promise<void> {
+  const dir = getConversationsDir()
+  await fs.promises.mkdir(dir, { recursive: true })
+}
+
+// Save a conversation
+ipcMain.handle('conversation:save', async (_, conversation: {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  model: string
+  messages: Array<{
+    id: string
+    role: string
+    content: string
+    timestamp: string
+    toolName?: string
+    toolResult?: string
+    bookmarked?: boolean
+  }>
+  bookmarks: string[]
+  workspace: string | null
+}) => {
+  try {
+    await ensureConversationsDir()
+    const filePath = path.join(getConversationsDir(), `${conversation.id}.json`)
+    await fs.promises.writeFile(filePath, JSON.stringify(conversation, null, 2), 'utf-8')
+    return { success: true, id: conversation.id }
+  } catch (error) {
+    console.error('Error saving conversation:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Load a conversation by ID
+ipcMain.handle('conversation:load', async (_, conversationId: string) => {
+  try {
+    const filePath = path.join(getConversationsDir(), `${conversationId}.json`)
+    const content = await fs.promises.readFile(filePath, 'utf-8')
+    return JSON.parse(content)
+  } catch (error) {
+    console.error('Error loading conversation:', error)
+    return null
+  }
+})
+
+// List all saved conversations (metadata only)
+ipcMain.handle('conversation:list', async () => {
+  try {
+    await ensureConversationsDir()
+    const dir = getConversationsDir()
+    const files = await fs.promises.readdir(dir)
+    const conversations: Array<{
+      id: string
+      title: string
+      createdAt: string
+      updatedAt: string
+      messageCount: number
+      preview: string
+    }> = []
+
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue
+      try {
+        const filePath = path.join(dir, file)
+        const content = await fs.promises.readFile(filePath, 'utf-8')
+        const conv = JSON.parse(content)
+
+        // Extract metadata
+        const lastMessage = conv.messages?.find((m: { role: string }) => m.role === 'assistant' || m.role === 'user')
+        const preview = lastMessage?.content?.slice(0, 100) || ''
+
+        conversations.push({
+          id: conv.id,
+          title: conv.title,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+          messageCount: conv.messages?.length || 0,
+          preview: preview.length === 100 ? preview + '...' : preview
+        })
+      } catch {
+        // Skip invalid files
+      }
+    }
+
+    // Sort by updatedAt (newest first)
+    conversations.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    return conversations
+  } catch (error) {
+    console.error('Error listing conversations:', error)
+    return []
+  }
+})
+
+// Delete a conversation
+ipcMain.handle('conversation:delete', async (_, conversationId: string) => {
+  try {
+    const filePath = path.join(getConversationsDir(), `${conversationId}.json`)
+    await fs.promises.unlink(filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('Error deleting conversation:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Export conversation to markdown file
+ipcMain.handle('conversation:export', async (_, markdown: string, suggestedName: string) => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Conversation',
+      defaultPath: suggestedName,
+      filters: [
+        { name: 'Markdown', extensions: ['md'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true }
+    }
+
+    await fs.promises.writeFile(result.filePath, markdown, 'utf-8')
+    return { success: true, filePath: result.filePath }
+  } catch (error) {
+    console.error('Error exporting conversation:', error)
+    return { success: false, error: String(error) }
+  }
+})

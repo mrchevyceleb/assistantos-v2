@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown, Folder, FileText, FolderOpen, Plus, RefreshCw } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FileText, FolderOpen, Plus, RefreshCw, Star } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { StarredSection } from './StarredSection'
 
 interface FileEntry {
   name: string
@@ -11,7 +12,7 @@ interface FileEntry {
 }
 
 export function FileTree() {
-  const { workspacePath, setWorkspacePath, openFile, currentFile } = useAppStore()
+  const { workspacePath, setWorkspacePath, openFile, currentFile, toggleStarred, isStarred } = useAppStore()
   const [files, setFiles] = useState<FileEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
 
@@ -93,11 +94,12 @@ export function FileTree() {
   const renderEntry = (entry: FileEntry, depth: number = 0) => {
     const isExpanded = expandedPaths.has(entry.path)
     const isSelected = currentFile === entry.path
+    const starred = isStarred(entry.path)
 
     return (
       <div key={entry.path}>
         <div
-          className={`flex items-center gap-2 py-1.5 cursor-pointer transition-all rounded-lg mx-2 ${
+          className={`group flex items-center gap-2 py-1.5 cursor-pointer transition-all rounded-lg mx-2 ${
             isSelected
               ? ''
               : 'hover:bg-white/5'
@@ -131,9 +133,22 @@ export function FileTree() {
               <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
             </>
           )}
-          <span className={`text-sm truncate ${isSelected ? 'text-cyan-400 font-medium' : 'text-slate-300'}`}>
+          <span className={`text-sm truncate flex-1 ${isSelected ? 'text-cyan-400 font-medium' : 'text-slate-300'}`}>
             {entry.name}
           </span>
+          {/* Star button - shows on hover or if starred */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleStarred(entry.path)
+            }}
+            className={`p-1 rounded hover:bg-white/10 transition-all flex-shrink-0 ${
+              starred ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            }`}
+            title={starred ? 'Unstar' : 'Star'}
+          >
+            <Star className={`w-3 h-3 ${starred ? 'text-amber-400 fill-amber-400' : 'text-slate-500'}`} />
+          </button>
         </div>
         {entry.isDirectory && isExpanded && entry.children && (
           <div>
@@ -184,6 +199,9 @@ export function FileTree() {
           </button>
         </div>
       </div>
+
+      {/* Starred Section */}
+      {workspacePath && <StarredSection />}
 
       {/* File List */}
       <div className="flex-1 overflow-auto py-2">
