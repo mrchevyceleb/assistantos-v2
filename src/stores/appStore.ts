@@ -39,10 +39,6 @@ interface AppState {
   toggleSidebar: () => void
   toggleChat: () => void
 
-  // Theme
-  isDarkMode: boolean
-  toggleTheme: () => void
-
   // Custom Instructions
   customInstructions: string
   setCustomInstructions: (instructions: string) => void
@@ -96,18 +92,6 @@ export const useAppStore = create<AppState>()(
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleChat: () => set((state) => ({ chatCollapsed: !state.chatCollapsed })),
 
-      // Theme
-      isDarkMode: true,
-      toggleTheme: () => {
-        const newIsDark = !get().isDarkMode
-        set({ isDarkMode: newIsDark })
-        if (newIsDark) {
-          document.documentElement.classList.add('dark')
-        } else {
-          document.documentElement.classList.remove('dark')
-        }
-      },
-
       // Custom Instructions
       customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS,
       setCustomInstructions: (instructions) => set({ customInstructions: instructions }),
@@ -120,7 +104,6 @@ export const useAppStore = create<AppState>()(
         apiKey: state.apiKey,
         sidebarCollapsed: state.sidebarCollapsed,
         chatCollapsed: state.chatCollapsed,
-        isDarkMode: state.isDarkMode,
         customInstructions: state.customInstructions,
       }),
     }

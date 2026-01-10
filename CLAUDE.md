@@ -56,6 +56,22 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
 - Implements agentic loop: `while(tool_use) → execute → feed results → repeat`
 - Max 20 iterations per request for safety
 
+**System Prompt Architecture** (`src/services/systemPrompt.ts`, `src/services/contextService.ts`):
+
+The AI agent uses a 3-layer system prompt that assembles at runtime:
+
+| Layer | Source | Description |
+|-------|--------|-------------|
+| **Core Identity** | Built-in constant | Defines AssistantOS identity, capabilities, tool policies, safety guidelines |
+| **Custom Instructions** | User-editable in settings | Personal preferences (coding style, communication, etc.) |
+| **Dynamic Context** | Auto-gathered at runtime | Git status, platform, date, open files, workspace structure |
+
+Files:
+- `systemPrompt.ts` - Core prompt constant + `assembleSystemPrompt()` function
+- `contextService.ts` - `gatherDynamicContext()` and `formatContextForPrompt()`
+
+The assembled prompt is passed to Claude on every message, ensuring consistent identity and context awareness.
+
 **Tool System** (`src/services/tools/`):
 - `schemas.ts` - Tool definitions following Anthropic's format
 - `index.ts` - Tool registry and executor factory
@@ -82,6 +98,7 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
   - Current file and open files array
   - Anthropic API key
   - UI state (sidebar/chat collapsed states)
+  - Custom instructions (persisted, editable via settings panel)
 
 **Component Layout**:
 - `App.tsx` - Root component with TitleBar and PanelLayout
@@ -147,3 +164,4 @@ Planned layers to add:
 - MCP integration (external services)
 - Subagents (parallel task execution)
 - Skills system (reusable workflows)
+- Project-level custom instructions (in addition to global)

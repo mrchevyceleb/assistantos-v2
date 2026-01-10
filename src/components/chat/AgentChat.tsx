@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../../stores/appStore'
 import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
+import { assembleSystemPrompt } from '../../services/systemPrompt'
+import { gatherDynamicContext, formatContextForPrompt } from '../../services/contextService'
 
 interface Message {
   id: string
@@ -15,11 +17,22 @@ interface Message {
 }
 
 export function AgentChat() {
-  const { apiKey, setApiKey, workspacePath } = useAppStore()
+  const {
+    apiKey,
+    setApiKey,
+    workspacePath,
+    openFiles,
+    currentFile,
+    customInstructions,
+    setCustomInstructions,
+    resetCustomInstructions,
+  } = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showContextPreview, setShowContextPreview] = useState(false)
+  const [contextPreview, setContextPreview] = useState('')
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
@@ -53,27 +66,14 @@ export function AgentChat() {
     }
   }, [apiKey])
 
-  const getSystemPrompt = () => {
-    const workspace = workspacePath || 'No workspace selected'
-    return `You are an AI assistant with access to the user's file system and can execute commands.
-
-Current workspace: ${workspace}
-
-You have access to the following tools:
-- read_file: Read file contents
-- write_file: Write content to a file
-- list_directory: List directory contents
-- file_exists: Check if a path exists
-- create_directory: Create a new directory
-- bash: Execute shell commands (PowerShell on Windows, bash on Mac/Linux)
-
-Guidelines:
-- Always use tools to interact with the filesystem rather than asking the user to do it manually
-- When editing files, read them first to understand the context
-- For bash commands, prefer simple one-liners when possible
-- Report errors clearly and suggest solutions
-- Be concise but helpful in your responses`
-  }
+  // Update context preview when toggled or workspace changes
+  useEffect(() => {
+    if (showContextPreview) {
+      gatherDynamicContext(workspacePath, openFiles, currentFile)
+        .then((context) => setContextPreview(formatContextForPrompt(context)))
+        .catch(() => setContextPreview('Error loading context'))
+    }
+  }, [showContextPreview, workspacePath, openFiles, currentFile])
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
@@ -124,10 +124,19 @@ Guidelines:
 
     try {
       const toolExecutor = createToolExecutor(workspacePath)
+
+      // Assemble full system prompt with all three layers
+      const fullSystemPrompt = await assembleSystemPrompt(
+        workspacePath,
+        openFiles,
+        currentFile,
+        customInstructions
+      )
+
       const stream = claudeServiceRef.current.chat(
         input.trim(),
         allTools,
-        getSystemPrompt(),
+        fullSystemPrompt,
         toolExecutor
       )
 
@@ -311,23 +320,90 @@ Guidelines:
       {/* Settings Panel */}
       {showSettings && (
         <div
-          className="p-4"
+          className="p-4 space-y-5 overflow-y-auto"
           style={{
             background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.95) 0%, rgba(15, 20, 35, 0.98) 100%)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+            maxHeight: '60vh',
           }}
         >
-          <label className="block text-sm text-slate-400 mb-2 font-medium">Anthropic API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-ant-..."
-            className="input-metallic w-full text-sm"
-          />
-          <p className="text-xs text-slate-500 mt-2">
-            Your API key is stored locally and never sent to any server except Anthropic.
-          </p>
+          {/* API Key Section */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-2 font-medium">Anthropic API Key</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-..."
+              className="input-metallic w-full text-sm"
+            />
+            <p className="text-xs text-slate-500 mt-2">
+              Your API key is stored locally and never sent to any server except Anthropic.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-white/5" />
+
+          {/* Custom Instructions Section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm text-slate-400 font-medium">Custom Instructions</label>
+              <button
+                onClick={() => resetCustomInstructions()}
+                className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Reset to defaults
+              </button>
+            </div>
+            <textarea
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="Add custom instructions to personalize AssistantOS..."
+              rows={8}
+              className="input-metallic w-full text-sm resize-y min-h-[120px]"
+              style={{ fontFamily: 'ui-monospace, monospace' }}
+            />
+            <p className="text-xs text-slate-500 mt-2">
+              These instructions are added to every conversation. Use Markdown formatting.
+              Examples: coding style preferences, communication style, project-specific rules.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-white/5" />
+
+          {/* Context Preview Section */}
+          <div>
+            <button
+              onClick={() => setShowContextPreview(!showContextPreview)}
+              className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-300 transition-colors"
+            >
+              {showContextPreview ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+              <span>Current Context (auto-injected)</span>
+            </button>
+            {showContextPreview && (
+              <pre
+                className="mt-3 p-3 rounded-lg text-xs text-slate-500 overflow-auto whitespace-pre-wrap"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  maxHeight: '200px',
+                  fontFamily: 'ui-monospace, monospace',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
+                }}
+              >
+                {contextPreview || 'Loading context...'}
+              </pre>
+            )}
+            <p className="text-xs text-slate-500 mt-2">
+              This context is automatically gathered and included in every message.
+            </p>
+          </div>
         </div>
       )}
 
