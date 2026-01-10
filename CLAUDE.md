@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AssistantOS is an Electron-based desktop application that provides a personal AI assistant interface with file management capabilities and Claude-powered agent functionality. Built with React, TypeScript, Vite, and Tailwind CSS.
+AssistantOS is an Electron-based desktop application that serves as your **personal AI executive assistant**. It's a versatile assistant capable of research, writing, organization, technical work, and problem-solving - with direct access to your file system and shell commands. Built with React, TypeScript, Vite, and Tailwind CSS.
 
 ## Development Commands
 
@@ -44,8 +44,9 @@ AssistantOS is an Electron-based desktop application that provides a personal AI
 **Preload Script** (`electron/preload.ts`):
 - Exposes `window.electronAPI` to renderer via context bridge
 - Provides type-safe IPC communication between renderer and main process
-- Exposes `fs`, `bash`, and `shell` APIs
+- Exposes `fs`, `bash`, `shell`, and `mcp` APIs
 - Shell API includes `openExternal(url)` to open links in native browser
+- MCP API provides access to Model Context Protocol integrations (see MCP Integration section below)
 
 ### Claude Agent Architecture
 
@@ -97,6 +98,7 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
   - Workspace path
   - Current file and open files array
   - Anthropic API key
+  - Selected model (Opus/Sonnet/Haiku)
   - UI state (sidebar/chat collapsed states)
   - Custom instructions (persisted, editable via settings panel)
 
@@ -142,9 +144,17 @@ TypeScript and Vite configured with `@/*` alias pointing to `src/*` directory.
 The app uses the Anthropic SDK (`@anthropic-ai/sdk`) for Claude integration:
 - API key stored in Zustand state (persisted to localStorage)
 - SDK initialized with `dangerouslyAllowBrowser: true` for client-side use
-- Uses `claude-sonnet-4-20250514` model
+- **Model selection**: User can switch between Opus 4, Sonnet 4, and Haiku 3.5 mid-chat via dropdown in chat header
 - Streaming enabled for real-time responses
 - Tool use enabled for file/bash operations
+
+### Available Models
+
+| Model | ID | Description |
+|-------|-----|-------------|
+| Claude Opus 4 | `claude-opus-4-20250514` | Most capable, best for complex tasks |
+| Claude Sonnet 4 | `claude-sonnet-4-20250514` | Balanced performance (default) |
+| Claude Haiku 3.5 | `claude-haiku-3-5-20241022` | Fastest, best for quick tasks |
 
 ## Development Notes
 
@@ -156,12 +166,85 @@ The app uses the Anthropic SDK (`@anthropic-ai/sdk`) for Claude integration:
 - Path resolution uses `path-browserify` for browser compatibility
 - FileTree auto-hides dotfiles (files/folders starting with ".") like .git, .obsidian, etc.
 
+## MCP (Model Context Protocol) Integration
+
+AssistantOS now includes support for MCP integrations, allowing the Claude agent to access external services and tools through standardized protocol handlers.
+
+### MCP Architecture
+
+**Files**:
+- `electron/mcp/registry.ts` - Central registry of all available MCP integrations with @mention syntax
+- `electron/mcp/MCPManager.ts` - Manages lifecycle of MCP server processes and client connections
+- `electron/mcp/ipcHandlers.ts` - Electron IPC handlers bridging renderer to MCP Manager
+
+**Preload API** (`electron/preload.ts`):
+The MCP API is exposed via `window.electronAPI.mcp`:
+- `getIntegrations()` - List all available integrations
+- `getMentionMap()` - Get mention → integrationId mapping for @mentions in chat
+- `getAllMentions()` - Get all mentions (primary + aliases) for autocomplete
+- `configure(integrationId, config)` - Set environment variables/credentials for an integration
+- `start(integrationId)` - Start an MCP server instance
+- `stop(integrationId)` - Stop an MCP server instance
+- `isReady(integrationId)` - Check if server is running and ready
+- `getTools(integrationIds)` - Get available tools from one or more integrations
+- `executeTool(integrationId, toolName, input)` - Execute a tool from an integration
+- `findIntegrationForTool(toolName)` - Find which integration provides a tool
+- `getStatus()` - Get status of all MCP servers
+- `getConfig(integrationId)` - Get current configuration for an integration
+
+### Available MCP Integrations
+
+The registry defines 10+ integrations across 5 categories:
+
+**Browser Automation**:
+- `@browser`/`@playwright` - Local browser testing via Playwright
+- `@cloud-browser`/`@browserbase` - Cloud browser automation with BrowserBase
+
+**Google Services**:
+- `@gmail`/`@email`/`@mail` - Multi-account email via Unified Gmail (OAuth)
+- `@calendar`/`@cal`/`@schedule` - Calendar management via Google Calendar (OAuth)
+
+**Search & Research**:
+- `@perplexity`/`@pplx`/`@research` - AI-powered web search
+- `@brave`/`@search`/`@web` - Privacy-focused search
+
+**Cloud Platforms**:
+- `@vercel`/`@deploy`/`@hosting` - Deployment and project management
+
+**Media & Generation**:
+- `@image`/`@img`/`@generate`/`@nanobanana` - AI image generation with Gemini
+
+### MCP Server Lifecycle
+
+1. **Registration** - Integrations defined in `registry.ts` with command, args, required env vars
+2. **Configuration** - User provides API keys/credentials via settings panel
+3. **Startup** - MCP server spawned as child process on first use
+4. **Discovery** - Client establishes stdio connection and discovers available tools
+5. **Execution** - Tools called by Claude agent during agentic loop
+6. **Cleanup** - Servers stopped on app shutdown via `before-quit` handler
+
+### MCP in Chat
+
+Users trigger MCP tools via @mentions in chat:
+- Type `@` to get autocomplete suggestions
+- Mention activates the integration's tool context
+- Claude agent can discover and call tools from mentioned integrations
+- Tool results are displayed above assistant response (similar to native tools)
+
+### State Management
+
+The app store (`src/stores/appStore.ts`) manages:
+- `integrationConfigs` - Persisted configuration for each MCP integration
+- Environment variables and OAuth tokens
+- UI state for integration settings panel
+
 ## Future Enhancements
 
-Planned layers to add:
+Planned expansions:
 - Conversation persistence (save/load chats)
 - Context compaction (handle long conversations)
-- MCP integration (external services)
-- Subagents (parallel task execution)
-- Skills system (reusable workflows)
+- Additional MCP integrations (GitHub, Slack, Discord, etc.)
+- Subagents (parallel task execution across multiple MCPs)
+- Skills system (reusable workflows combining tools)
 - Project-level custom instructions (in addition to global)
+- Streaming MCP tool results for long-running operations

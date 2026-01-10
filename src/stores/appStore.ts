@@ -1,21 +1,48 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+// Available Claude models
+export const AVAILABLE_MODELS = [
+  { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', tier: 'opus' },
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', tier: 'sonnet' },
+  { id: 'claude-haiku-3-5-20241022', name: 'Claude Haiku 3.5', tier: 'haiku' },
+] as const
+
+export type ModelId = typeof AVAILABLE_MODELS[number]['id']
+
+export const DEFAULT_MODEL: ModelId = 'claude-sonnet-4-20250514'
+
 // Default custom instructions for new users
+// Integration configuration
+export interface IntegrationConfig {
+  enabled: boolean
+  envVars: Record<string, string>
+  oauthTokens?: {
+    accessToken: string
+    refreshToken: string
+    expiresAt?: number
+  }
+}
+
 export const DEFAULT_CUSTOM_INSTRUCTIONS = `## My Preferences
 
-### Coding Style
+### Communication Style
+- Be direct and concise
+- Explain your reasoning for important decisions
+- Ask clarifying questions when needed
+
+### When Writing
+- Match my voice and tone
+- Prioritize clarity over formality
+
+### When Coding
 - Use TypeScript with strict typing
-- Prefer functional components with hooks
-- Use descriptive variable names
+- Follow existing patterns in the codebase
+- Comment complex logic
 
-### Communication
-- Explain changes before making them
-- Provide examples when helpful
-
-### Workflow
-- Commit frequently with clear messages
-- Run tests after significant changes`
+### General
+- Be proactive - take action rather than just explaining
+- Consider the bigger picture, not just the immediate task`
 
 interface AppState {
   // Workspace
@@ -33,6 +60,10 @@ interface AppState {
   apiKey: string
   setApiKey: (key: string) => void
 
+  // Model Selection
+  selectedModel: ModelId
+  setSelectedModel: (model: ModelId) => void
+
   // UI State
   sidebarCollapsed: boolean
   chatCollapsed: boolean
@@ -43,6 +74,13 @@ interface AppState {
   customInstructions: string
   setCustomInstructions: (instructions: string) => void
   resetCustomInstructions: () => void
+
+  // MCP Integrations
+  integrationConfigs: Record<string, IntegrationConfig>
+  setIntegrationConfig: (integrationId: string, config: IntegrationConfig) => void
+  updateIntegrationEnvVars: (integrationId: string, envVars: Record<string, string>) => void
+  setIntegrationEnabled: (integrationId: string, enabled: boolean) => void
+  setIntegrationOAuthTokens: (integrationId: string, tokens: IntegrationConfig['oauthTokens']) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -86,6 +124,10 @@ export const useAppStore = create<AppState>()(
       apiKey: '',
       setApiKey: (key) => set({ apiKey: key }),
 
+      // Model Selection
+      selectedModel: DEFAULT_MODEL,
+      setSelectedModel: (model) => set({ selectedModel: model }),
+
       // UI State
       sidebarCollapsed: false,
       chatCollapsed: false,
@@ -96,15 +138,53 @@ export const useAppStore = create<AppState>()(
       customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS,
       setCustomInstructions: (instructions) => set({ customInstructions: instructions }),
       resetCustomInstructions: () => set({ customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS }),
+
+      // MCP Integrations
+      integrationConfigs: {},
+      setIntegrationConfig: (integrationId, config) => set((state) => ({
+        integrationConfigs: {
+          ...state.integrationConfigs,
+          [integrationId]: config,
+        },
+      })),
+      updateIntegrationEnvVars: (integrationId, envVars) => set((state) => ({
+        integrationConfigs: {
+          ...state.integrationConfigs,
+          [integrationId]: {
+            ...state.integrationConfigs[integrationId] || { enabled: false, envVars: {} },
+            envVars,
+          },
+        },
+      })),
+      setIntegrationEnabled: (integrationId, enabled) => set((state) => ({
+        integrationConfigs: {
+          ...state.integrationConfigs,
+          [integrationId]: {
+            ...state.integrationConfigs[integrationId] || { enabled: false, envVars: {} },
+            enabled,
+          },
+        },
+      })),
+      setIntegrationOAuthTokens: (integrationId, tokens) => set((state) => ({
+        integrationConfigs: {
+          ...state.integrationConfigs,
+          [integrationId]: {
+            ...state.integrationConfigs[integrationId] || { enabled: false, envVars: {} },
+            oauthTokens: tokens,
+          },
+        },
+      })),
     }),
     {
       name: 'assistantos-storage',
       partialize: (state) => ({
         workspacePath: state.workspacePath,
         apiKey: state.apiKey,
+        selectedModel: state.selectedModel,
         sidebarCollapsed: state.sidebarCollapsed,
         chatCollapsed: state.chatCollapsed,
         customInstructions: state.customInstructions,
+        integrationConfigs: state.integrationConfigs,
       }),
     }
   )

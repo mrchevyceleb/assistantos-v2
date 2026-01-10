@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import { fileURLToPath } from 'url'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { registerMCPHandlers, cleanupMCPHandlers } from './mcp/ipcHandlers.js'
 
 const execAsync = promisify(exec)
 
@@ -45,6 +46,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Register MCP handlers
+  registerMCPHandlers()
+
   createWindow()
 
   app.on('activate', () => {
@@ -58,6 +62,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// Cleanup MCP servers before quitting
+app.on('before-quit', async () => {
+  await cleanupMCPHandlers()
 })
 
 // IPC Handlers for window controls

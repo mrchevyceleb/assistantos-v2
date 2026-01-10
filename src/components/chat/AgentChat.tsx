@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RotateCcw, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { useAppStore } from '../../stores/appStore'
+import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appStore'
 import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
 import { assembleSystemPrompt } from '../../services/systemPrompt'
@@ -26,6 +26,8 @@ export function AgentChat() {
     customInstructions,
     setCustomInstructions,
     resetCustomInstructions,
+    selectedModel,
+    setSelectedModel,
   } = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -60,11 +62,18 @@ export function AgentChat() {
   // Initialize or update Claude service when API key changes
   useEffect(() => {
     if (apiKey) {
-      claudeServiceRef.current = new ClaudeService(apiKey)
+      claudeServiceRef.current = new ClaudeService(apiKey, selectedModel)
     } else {
       claudeServiceRef.current = null
     }
-  }, [apiKey])
+  }, [apiKey, selectedModel])
+
+  // Update model when it changes mid-chat
+  useEffect(() => {
+    if (claudeServiceRef.current) {
+      claudeServiceRef.current.setModel(selectedModel)
+    }
+  }, [selectedModel])
 
   // Update context preview when toggled or workspace changes
   useEffect(() => {
@@ -99,7 +108,7 @@ export function AgentChat() {
     }
 
     if (!claudeServiceRef.current) {
-      claudeServiceRef.current = new ClaudeService(apiKey)
+      claudeServiceRef.current = new ClaudeService(apiKey, selectedModel)
     }
 
     const userMessage: Message = {
@@ -295,14 +304,30 @@ export function AgentChat() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {messages.length > 0 && (
-            <button
-              onClick={clearConversation}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-            >
-              Clear
-            </button>
-          )}
+          {/* Model Selector */}
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value as ModelId)}
+            className="text-xs bg-transparent border border-white/10 rounded-lg px-2 py-1.5 text-slate-400 hover:text-white hover:border-white/20 transition-all cursor-pointer focus:outline-none focus:border-cyan-500/50"
+            style={{ minWidth: '120px' }}
+          >
+            {AVAILABLE_MODELS.map((model) => (
+              <option key={model.id} value={model.id} className="bg-slate-900">
+                {model.name}
+              </option>
+            ))}
+          </select>
+
+          {/* New Chat Button */}
+          <button
+            onClick={clearConversation}
+            className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all flex items-center gap-1.5"
+            title="Start new conversation"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            New
+          </button>
+
           <button
             onClick={() => setShowSettings(!showSettings)}
             className={`p-2.5 rounded-xl transition-all ${

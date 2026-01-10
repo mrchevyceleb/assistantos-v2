@@ -18,14 +18,23 @@ export interface ToolExecutor {
 export class ClaudeService {
   private client: Anthropic;
   private conversationHistory: MessageParam[] = [];
-  private model = 'claude-sonnet-4-20250514';
+  private model: string;
   private maxTokens = 8192;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, model: string = 'claude-sonnet-4-20250514') {
     this.client = new Anthropic({
       apiKey,
       dangerouslyAllowBrowser: true
     });
+    this.model = model;
+  }
+
+  setModel(model: string) {
+    this.model = model;
+  }
+
+  getModel(): string {
+    return this.model;
   }
 
   clearHistory() {

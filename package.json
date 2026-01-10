@@ -43,6 +43,7 @@
     "@anthropic-ai/sdk": "^0.71.2",
     "@milkdown/kit": "^7.18.0",
     "@milkdown/theme-nord": "^7.18.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/typography": "^0.5.19",
     "lucide-react": "^0.562.0",
