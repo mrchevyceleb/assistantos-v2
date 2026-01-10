@@ -1,18 +1,12 @@
 import { useEffect } from 'react'
 import { PanelLayout } from './components/layout/PanelLayout'
 import { TitleBar } from './components/layout/TitleBar'
-import { useAppStore } from './stores/appStore'
 
 function App() {
-  const isDarkMode = useAppStore((state) => state.isDarkMode)
-
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, [isDarkMode])
+    // Always use dark mode
+    document.documentElement.classList.add('dark')
+  }, [])
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
