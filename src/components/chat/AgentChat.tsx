@@ -8,7 +8,8 @@ import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appSto
 // Services
 import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
-import { assembleSystemPrompt } from '../../services/systemPrompt'
+import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
+import { getCachedMCPTools, invalidateToolCache } from '../../services/toolCache'
 import { gatherDynamicContext, formatContextForPrompt } from '../../services/contextService'
 import {
   parseMessage,
@@ -54,21 +55,24 @@ async function readDocumentContext(documents: DocumentMention[]): Promise<string
 }
 
 /**
- * Fetch and prepare MCP tools for active integrations
+ * Prepare all enabled MCP tools (Claude Code-like behavior)
+ * Tools are loaded based on enabled integrations, not @mentions
+ * @param integrationConfigs - Integration configurations from store
  */
-async function prepareMCPTools(activeMentions: string[]) {
-  if (activeMentions.length === 0) return allTools
+async function prepareAllEnabledTools(
+  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
+) {
+  // Get all enabled integration IDs
+  const enabledIds = Object.entries(integrationConfigs)
+    .filter(([_, config]) => config.enabled)
+    .map(([id]) => id)
+
+  if (enabledIds.length === 0) return allTools
 
   try {
-    const mcpTools = await window.electronAPI.mcp?.getTools(activeMentions) ?? []
-    return [
-      ...allTools,
-      ...mcpTools.map((t: any) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.input_schema
-      }))
-    ]
+    // Use cached tools for performance
+    const mcpTools = await getCachedMCPTools(enabledIds)
+    return [...allTools, ...mcpTools]
   } catch (e) {
     console.error('Failed to load MCP tools:', e)
     return allTools
@@ -87,6 +91,7 @@ export function AgentChat() {
     resetCustomInstructions,
     selectedModel,
     setSelectedModel,
+    integrationConfigs,
   } = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -183,10 +188,11 @@ export function AgentChat() {
     })
   }, [input, workspacePath])
 
-  // Clear mention cache when integrations modal closes (in case configs changed)
+  // Clear caches when integrations modal closes (in case configs changed)
   const handleIntegrationsClose = useCallback(() => {
     setShowIntegrations(false)
     clearMentionCache()
+    invalidateToolCache() // Refresh tools on next message
   }, [])
 
   const sendMessage = async () => {
@@ -243,16 +249,40 @@ export function AgentChat() {
       // Read content of referenced documents
       const documentContext = await readDocumentContext(activeDocuments)
 
-      // Assemble full system prompt with all three layers
+      // Get enabled integration IDs for tool loading and capability awareness
+      const enabledIds = Object.entries(integrationConfigs)
+        .filter(([_, config]) => config.enabled)
+        .map(([id]) => id)
+
+      // Fetch integration metadata for capability awareness in system prompt
+      let enabledIntegrations: EnabledIntegration[] = []
+      if (enabledIds.length > 0) {
+        try {
+          const allIntegrations = await window.electronAPI.mcp.getIntegrations()
+          enabledIntegrations = allIntegrations
+            .filter((int: any) => enabledIds.includes(int.id))
+            .map((int: any) => ({
+              id: int.id,
+              name: int.name,
+              description: int.description
+            }))
+        } catch (e) {
+          console.error('Failed to fetch integration metadata:', e)
+        }
+      }
+
+      // Assemble full system prompt with capability awareness
       const fullSystemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
-        customInstructions
+        customInstructions,
+        enabledIntegrations
       )
 
-      // Prepare tools (native + MCP)
-      const tools = await prepareMCPTools(activeMentions)
+      // Prepare tools (native + all enabled MCP integrations)
+      // Claude Code-like behavior: all enabled tools available, no @mention required
+      const tools = await prepareAllEnabledTools(integrationConfigs)
 
       // Append document context to user message if documents were referenced
       const messageWithContext = documentContext

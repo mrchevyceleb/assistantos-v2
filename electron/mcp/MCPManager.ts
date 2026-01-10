@@ -290,6 +290,55 @@ export class MCPManager {
   }
 
   /**
+   * Pre-start all enabled integrations in the background
+   * Used at app startup for Claude Code-like instant tool availability
+   * @param configs - Integration configurations with enabled flags and envVars
+   */
+  async preStartEnabled(
+    configs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
+  ): Promise<void> {
+    // Get enabled integration IDs that have required config
+    const enabledIds: string[] = [];
+    for (const [id, config] of Object.entries(configs)) {
+      if (!config.enabled) continue;
+
+      const integration = getIntegration(id);
+      if (!integration) continue;
+
+      // Check if all required non-OAuth env vars are configured
+      const hasRequiredConfig = integration.requiredEnvVars.every(
+        req => req.type === 'oauth' || config.envVars[req.key]
+      );
+
+      if (hasRequiredConfig) {
+        // Set env vars first
+        this.setEnvVars(id, config.envVars);
+        enabledIds.push(id);
+      }
+    }
+
+    if (enabledIds.length === 0) {
+      console.log('[MCPManager] No enabled integrations to pre-start');
+      return;
+    }
+
+    console.log(`[MCPManager] Pre-starting ${enabledIds.length} integrations:`, enabledIds);
+
+    // Start all in parallel, don't fail if individual servers fail
+    const results = await Promise.allSettled(
+      enabledIds.map(id => this.startServer(id))
+    );
+
+    // Log results
+    for (let i = 0; i < enabledIds.length; i++) {
+      const result = results[i];
+      if (result.status === 'rejected') {
+        console.warn(`[MCPManager] Failed to pre-start ${enabledIds[i]}:`, result.reason);
+      }
+    }
+  }
+
+  /**
    * Find which integration a prefixed tool belongs to
    */
   findIntegrationForTool(prefixedToolName: string): string | undefined {

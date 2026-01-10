@@ -10,6 +10,15 @@
 import { gatherDynamicContext, formatContextForPrompt } from './contextService'
 
 /**
+ * Enabled integration info for capability awareness
+ */
+export interface EnabledIntegration {
+  id: string
+  name: string
+  description: string
+}
+
+/**
  * Core system prompt defining AssistantOS identity and capabilities.
  * This is the built-in, non-editable foundation.
  */
@@ -79,24 +88,57 @@ You're a general-purpose assistant who excels at:
 - Provide examples when helpful`
 
 /**
+ * Build capability awareness section for enabled integrations
+ * This tells Claude what external services are available
+ */
+function buildCapabilitySection(enabledIntegrations: EnabledIntegration[]): string {
+  if (enabledIntegrations.length === 0) return ''
+
+  const integrationList = enabledIntegrations
+    .map(int => `- **${int.name}**: ${int.description}`)
+    .join('\n')
+
+  return `## Available Integrations
+
+You have access to these external services via MCP (Model Context Protocol). Use them naturally based on user intent - no special syntax required:
+
+${integrationList}
+
+When a user's request relates to these services, proactively use the appropriate tools. For example:
+- "check my email" → use Gmail tools
+- "what's on my calendar" → use Calendar tools
+- "search the web for..." → use search tools
+
+The tools are already loaded and ready to use.`
+}
+
+/**
  * Assembles the complete system prompt from all three layers.
  *
  * @param workspacePath - Current workspace directory
  * @param openFiles - Array of currently open file paths
  * @param currentFile - Path of the file being edited
  * @param customInstructions - User's custom instructions from settings
+ * @param enabledIntegrations - Optional list of enabled MCP integrations for capability awareness
  * @returns Complete system prompt string
  */
 export async function assembleSystemPrompt(
   workspacePath: string | null,
   openFiles: string[],
   currentFile: string | null,
-  customInstructions: string
+  customInstructions: string,
+  enabledIntegrations: EnabledIntegration[] = []
 ): Promise<string> {
   const sections: string[] = []
 
   // Layer 1: Core identity (always present)
   sections.push(CORE_SYSTEM_PROMPT)
+
+  // Layer 1.5: Capability awareness (enabled integrations)
+  const capabilitySection = buildCapabilitySection(enabledIntegrations)
+  if (capabilitySection) {
+    sections.push(capabilitySection)
+  }
 
   // Layer 2: User custom instructions (if provided)
   if (customInstructions.trim()) {

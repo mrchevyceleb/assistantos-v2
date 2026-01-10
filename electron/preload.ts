@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     findIntegrationForTool: (toolName: string) => ipcRenderer.invoke('mcp:findIntegrationForTool', toolName),
     getStatus: () => ipcRenderer.invoke('mcp:getStatus'),
     getConfig: (integrationId: string) => ipcRenderer.invoke('mcp:getConfig', integrationId),
+    preStartEnabled: (configs: Record<string, { enabled: boolean; envVars: Record<string, string> }>) =>
+      ipcRenderer.invoke('mcp:preStartEnabled', configs),
   },
 })
 
@@ -132,6 +134,7 @@ declare global {
         findIntegrationForTool: (toolName: string) => Promise<string | undefined>
         getStatus: () => Promise<Record<string, MCPServerStatus>>
         getConfig: (integrationId: string) => Promise<Record<string, string>>
+        preStartEnabled: (configs: Record<string, { enabled: boolean; envVars: Record<string, string> }>) => Promise<{ success: boolean; error?: string }>
       }
     }
   }

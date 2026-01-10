@@ -97,6 +97,22 @@ export function registerMCPHandlers(): void {
     return manager.getEnvVars(integrationId) || {};
   });
 
+  // Pre-start all enabled integrations (Claude Code-like behavior)
+  ipcMain.handle('mcp:preStartEnabled', async (
+    _event,
+    configs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
+  ) => {
+    try {
+      await manager.preStartEnabled(configs);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
   console.log('[MCP] IPC handlers registered');
 }
 
