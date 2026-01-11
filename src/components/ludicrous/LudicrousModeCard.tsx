@@ -104,7 +104,7 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
         [],
         null
       )
-      const toolExecutor = createToolExecutor(workspacePath)
+      const toolExecutor = createToolExecutor(workspacePath, agent.id, agent.name)
 
       // Stream response
       for await (const chunk of claudeServiceRef.current.chat(

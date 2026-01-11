@@ -16,11 +16,13 @@ const LOCAL_TOOLS = new Set([...FILE_TOOLS, 'bash', 'create_mcp_integration']);
 export async function executeTool(
   name: string,
   input: Record<string, unknown>,
-  workspacePath: string
+  workspacePath: string,
+  agentId?: string,
+  agentName?: string
 ): Promise<string> {
   // Handle local file tools
   if (FILE_TOOLS.includes(name)) {
-    return executeFileTool(name, input, workspacePath);
+    return executeFileTool(name, input, workspacePath, agentId, agentName);
   }
 
   // Handle bash
@@ -57,11 +59,11 @@ export async function executeTool(
 }
 
 /**
- * Create a tool executor bound to a workspace
+ * Create a tool executor bound to a workspace and optionally an agent
  */
-export function createToolExecutor(workspacePath: string) {
+export function createToolExecutor(workspacePath: string, agentId?: string, agentName?: string) {
   return async (name: string, input: Record<string, unknown>): Promise<string> => {
-    return executeTool(name, input, workspacePath);
+    return executeTool(name, input, workspacePath, agentId, agentName);
   };
 }
 

@@ -1,4 +1,5 @@
 import * as pathUtils from 'path-browserify';
+import { useFileLockStore } from '../../stores/fileLockStore';
 
 function resolvePath(inputPath: string, workspacePath: string): string {
   // If it's an absolute path, use it directly
@@ -12,28 +13,78 @@ function resolvePath(inputPath: string, workspacePath: string): string {
 export async function executeFileTool(
   name: string,
   input: Record<string, unknown>,
-  workspacePath: string
+  workspacePath: string,
+  agentId?: string,
+  agentName?: string
 ): Promise<string> {
   const api = window.electronAPI.fs;
 
   switch (name) {
     case 'read_file': {
       const filePath = resolvePath(input.path as string, workspacePath);
-      const content = await api.readFile(filePath);
-      if (content === null) {
-        throw new Error(`File not found or could not be read: ${filePath}`);
+
+      // Acquire read lock if agent info provided
+      let operationId: string | undefined;
+      if (agentId && agentName) {
+        operationId = await useFileLockStore.getState().requestOperation(
+          agentId,
+          agentName,
+          filePath,
+          'read'
+        );
       }
-      return content;
+
+      try {
+        const content = await api.readFile(filePath);
+        if (content === null) {
+          throw new Error(`File not found or could not be read: ${filePath}`);
+        }
+        return content;
+      } finally {
+        // Release lock
+        if (operationId) {
+          useFileLockStore.getState().releaseOperation(operationId);
+        }
+      }
     }
 
     case 'write_file': {
       const filePath = resolvePath(input.path as string, workspacePath);
       const content = input.content as string;
-      const success = await api.writeFile(filePath, content);
-      if (!success) {
-        throw new Error(`Failed to write file: ${filePath}`);
+
+      // Acquire write lock if agent info provided
+      let operationId: string | undefined;
+      if (agentId && agentName) {
+        operationId = await useFileLockStore.getState().requestOperation(
+          agentId,
+          agentName,
+          filePath,
+          'write'
+        );
       }
-      return `Successfully wrote ${content.length} characters to ${filePath}`;
+
+      try {
+        const success = await api.writeFile(filePath, content);
+        if (!success) {
+          throw new Error(`Failed to write file: ${filePath}`);
+        }
+
+        // Release lock on success
+        if (operationId) {
+          useFileLockStore.getState().releaseOperation(operationId);
+        }
+
+        return `Successfully wrote ${content.length} characters to ${filePath}`;
+      } catch (error) {
+        // Release lock with error
+        if (operationId) {
+          useFileLockStore.getState().releaseOperation(
+            operationId,
+            error instanceof Error ? error.message : 'Unknown error'
+          );
+        }
+        throw error;
+      }
     }
 
     case 'list_directory': {

@@ -256,8 +256,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         null // memory context
       )
 
-      // Create tool executor
-      const toolExecutor = createToolExecutor(workspacePath)
+      // Create tool executor with agent context for file locking
+      const toolExecutor = createToolExecutor(workspacePath, agentId, agent.name)
 
       // Create assistant message placeholder
       const assistantMessage: Message = {
