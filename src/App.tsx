@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { PanelLayout } from './components/layout/PanelLayout'
+import { AppLayout } from './components/layout/AppLayout'
 import { TitleBar } from './components/layout/TitleBar'
 import { WebBrowser } from './components/browser/WebBrowser'
 import { useAppStore } from './stores/appStore'
@@ -52,8 +52,9 @@ function App() {
     <div className="h-screen flex flex-col overflow-hidden">
       <TitleBar />
       <main className="flex-1 flex overflow-hidden">
-        <PanelLayout />
+        <AppLayout />
       </main>
+      {/* Legacy WebBrowser modal - kept for backward compatibility */}
       <WebBrowser />
     </div>
   )

@@ -116,16 +116,40 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
   - Task display settings (show completed, sort order, group by file)
   - Editor font size (12px-32px, default 16px)
 
-**Component Layout**:
-- `App.tsx` - Root component with TitleBar and PanelLayout
-- `PanelLayout.tsx` - Three-panel resizable layout using `react-resizable-panels`:
-  - Left: FileTree with StarredSection (20% default, 15% min)
-  - Center: Tabbed view with CenterPanelTabs (45% default, 20% min)
-    - Editor tab: MarkdownEditor
-    - Dashboard tab: Dashboard with widgets
-    - Tasks tab: TaskPanel for task management
-  - Right: AgentChat (35% default, 20% min)
-- Keyboard shortcuts: Ctrl+1 (Editor), Ctrl+2 (Dashboard), Ctrl+3 (Tasks)
+**Component Layout** (New Sidebar + Tabs Architecture):
+- `App.tsx` - Root component with TitleBar and AppLayout
+- `AppLayout.tsx` - Main layout with Sidebar + TabBar + TabContent
+- `Sidebar.tsx` - Fixed-width sidebar (220px) with:
+  - Agents section (up to 5 parallel agents)
+  - Collapsible Files section
+  - Settings and MCP indicators
+- `TabBar.tsx` - Dynamic tab bar for agents, files, browser, dashboard, tasks, LUDICROUS MODE
+- `TabContent.tsx` - Renders active tab content
+
+**Layout Structure**:
+```
+┌─────────────┬──────────────────────────────────────────────────────┐
+│ Sidebar     │ [Tab1] [Tab2] [Tab3] [+]                             │
+├─────────────┼──────────────────────────────────────────────────────┤
+│ AGENTS      │                                                      │
+│ ● Agent 1   │                                                      │
+│ ◐ Agent 2   │              Tab Content Area                        │
+│ [+ New]     │                                                      │
+├─────────────┤    (Agent Chat, File Editor, Browser, Dashboard,     │
+│ ▼ FILES     │     Tasks, or LUDICROUS MODE)                        │
+│ 📁 src/     │                                                      │
+├─────────────┤                                                      │
+│ ⚙️ Settings │                                                      │
+│ MCPs [⚙️]   │                                                      │
+└─────────────┴──────────────────────────────────────────────────────┘
+```
+
+**Keyboard Shortcuts**:
+- `Ctrl+T` - New agent tab
+- `Ctrl+W` - Close current tab
+- `Ctrl+Tab` / `Ctrl+Shift+Tab` - Navigate tabs
+- `Ctrl+1-9` - Switch to tab by index
+- `Ctrl+L` - Toggle LUDICROUS MODE
 
 **Key Components**:
 - `TitleBar.tsx` - Custom window controls for frameless window
@@ -351,6 +375,79 @@ Right-click context menu for file/folder operations in the FileTree.
 - `deleteTarget` - File entry pending deletion confirmation
 - `newItemState` - Type (file/folder) and parent path for creation dialog
 
+### Multi-Agent Architecture
+
+AssistantOS supports up to 5 parallel AI agents, each with independent state and model selection.
+
+**Agent Store** (`src/stores/agentStore.ts`):
+```typescript
+interface Agent {
+  id: string
+  name: string                    // Auto-generated from first prompt
+  status: 'idle' | 'working' | 'queued' | 'error'
+  model: ModelId                  // Per-agent model selection
+  messages: Message[]
+  conversationId: string | null
+  createdAt: Date
+}
+```
+
+**Key Features**:
+- Each agent has isolated conversation history
+- Per-agent model selection (Opus/Sonnet/Haiku)
+- Status indicators: ● idle, ◐ working, ○ queued, ✕ error
+- Auto-naming via Claude Haiku from first message
+- Fresh session on restart (agents don't persist)
+
+**Tab Store** (`src/stores/tabStore.ts`):
+- Dynamic tab management for multiple content types
+- Tab types: `agent` | `file` | `browser` | `dashboard` | `tasks` | `ludicrous`
+- Reorderable tabs via drag-and-drop
+- Tab state syncs with agent names
+
+**File Lock Store** (`src/stores/fileLockStore.ts`):
+- Prevents file conflicts between agents
+- Queue-based file operation locking
+- Second agent waits when first is writing to same file
+- Automatic lock release on completion
+
+**Components**:
+- `AgentSection.tsx` - Agent list in sidebar with status and model badges
+- `AgentChatContainer.tsx` - Chat interface for a specific agent
+- `LudicrousMode.tsx` - Grid view showing all agents simultaneously
+
+### LUDICROUS MODE
+
+Power-user view for monitoring and controlling all agents at once.
+
+**Components** (`src/components/ludicrous/`):
+- `LudicrousMode.tsx` - Grid container with responsive columns
+- `LudicrousModeCard.tsx` - Compact agent card with:
+  - Status indicator and model badge
+  - Last 5 messages (scrollable)
+  - Quick input for sending messages
+  - Expand button to open full agent tab
+
+**Features**:
+- Grid adapts to agent count (1-3 columns)
+- Real-time message updates
+- Quick input for sending messages without switching tabs
+- Click "Expand" to open agent in its own tab
+
+**Access**:
+- Click ⚡ in TabBar's [+] menu
+- Keyboard shortcut: `Ctrl+L`
+
+### Title Generator Service
+
+Auto-generates chat titles from the first user message.
+
+**Service** (`src/services/titleGenerator.ts`):
+- Uses Claude Haiku for speed and cost efficiency
+- Generates 2-4 word titles
+- Falls back to "New Chat" on error
+- Title updates in both agent store and tab bar
+
 ### Styling
 
 Uses Tailwind with custom theme extending:
@@ -521,12 +618,49 @@ The @mention system supports two types of mentions:
   - `highlightMentions()` - Segment text into mention/non-mention parts
 - Types: `MentionSuggestion` (integrations), `FileMentionSuggestion` (documents), `UnifiedSuggestion` (combined)
 
+### Slash Command Shortcuts
+
+Users can create slash command shortcuts that expand into full prompts in the chat.
+
+**Usage**:
+- Type `/` in chat to see all available shortcuts
+- Type `/mor` to filter to matching shortcuts (e.g., `/morning`)
+- Press Tab/Enter to expand the shortcut into its full prompt
+- Edit the expanded prompt before sending if needed
+
+**Built-in Shortcuts**:
+| Command | Description |
+|---------|-------------|
+| `/intake` | Process and organize inbox items |
+| `/morning` | Get a morning briefing (calendar, emails, tasks) |
+| `/check-email` | Summarize important emails |
+| `/check-calendar` | Show upcoming calendar events |
+| `/research` | Help research a topic |
+
+**Customization** (Settings → Prompt Shortcuts):
+- Edit built-in shortcuts (changes persist)
+- Add custom shortcuts with name, description, and prompt
+- Delete custom shortcuts
+- Reset built-in shortcuts to defaults
+
+**Files**:
+- `src/types/shortcut.ts` - `PromptShortcut` interface and default shortcuts
+- `src/services/shortcuts/parser.ts` - Command detection and completion
+- `src/stores/appStore.ts` - Shortcuts state with CRUD actions
+
+**Shortcut Parser Functions**:
+- `getPartialCommand(text)` - Detect `/command` at end of input
+- `getCommandSuggestions(partial, shortcuts)` - Filter shortcuts by name match
+- `completeCommand(text, shortcut)` - Replace `/partial` with full prompt
+- `isValidCommandName(name)` - Validate command name format
+
 ### State Management
 
 The app store (`src/stores/appStore.ts`) manages:
 - `integrationConfigs` - Persisted configuration for each MCP integration
 - Environment variables and OAuth tokens
 - UI state for integration settings panel
+- `shortcuts` - User's prompt shortcuts (built-in + custom)
 
 ## Persistent Memory System
 

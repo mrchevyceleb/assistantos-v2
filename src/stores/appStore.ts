@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { TaskSettings, DEFAULT_TASK_SETTINGS, KanbanSettings, DEFAULT_KANBAN_SETTINGS, CenterPanelView } from '@/types/task'
+import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
 
 // MCP Integration type (matching electron/mcp/registry.ts)
 export interface MCPIntegration {
@@ -169,6 +170,14 @@ interface AppState {
   setEditorFontSize: (size: number) => void
   increaseEditorFontSize: () => void
   decreaseEditorFontSize: () => void
+
+  // Prompt Shortcuts
+  shortcuts: PromptShortcut[]
+  addShortcut: (shortcut: Omit<PromptShortcut, 'id'>) => void
+  removeShortcut: (id: string) => void
+  updateShortcut: (id: string, updates: Partial<PromptShortcut>) => void
+  resetShortcut: (id: string) => void
+  resetAllShortcuts: () => void
 
   // Built-in Browser
   browserOpen: boolean
@@ -369,6 +378,30 @@ export const useAppStore = create<AppState>()(
         editorFontSize: Math.max(12, state.editorFontSize - 2)
       })),
 
+      // Prompt Shortcuts
+      shortcuts: DEFAULT_SHORTCUTS,
+      addShortcut: (shortcut) => set((state) => ({
+        shortcuts: [...state.shortcuts, { ...shortcut, id: `custom-${Date.now()}` }]
+      })),
+      removeShortcut: (id) => set((state) => ({
+        shortcuts: state.shortcuts.filter(s => s.id !== id)
+      })),
+      updateShortcut: (id, updates) => set((state) => ({
+        shortcuts: state.shortcuts.map(s =>
+          s.id === id ? { ...s, ...updates, id } : s
+        )
+      })),
+      resetShortcut: (id) => set((state) => {
+        const defaultShortcut = DEFAULT_SHORTCUTS.find(s => s.id === id)
+        if (!defaultShortcut) return state
+        return {
+          shortcuts: state.shortcuts.map(s =>
+            s.id === id ? defaultShortcut : s
+          )
+        }
+      }),
+      resetAllShortcuts: () => set({ shortcuts: DEFAULT_SHORTCUTS }),
+
       // Built-in Browser
       browserOpen: false,
       browserUrl: null,
@@ -407,6 +440,7 @@ export const useAppStore = create<AppState>()(
         memoryUserId: state.memoryUserId,
         memoryOpenaiKey: state.memoryOpenaiKey,
         editorFontSize: state.editorFontSize,
+        shortcuts: state.shortcuts,
       }),
     }
   )

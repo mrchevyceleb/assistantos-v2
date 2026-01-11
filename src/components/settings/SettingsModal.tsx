@@ -18,10 +18,16 @@ import {
   Brain,
   Copy,
   Check,
-  RefreshCw
+  RefreshCw,
+  Zap,
+  Plus,
+  Pencil,
+  Trash2,
+  Lock
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS } from '../../stores/appStore'
-// TaskSourceFolderPicker removed - now using standardized TASKS folder
+import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
+import { isValidCommandName } from '@/services/shortcuts/parser'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -90,7 +96,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setMemoryUserId,
     generateMemoryUserId,
     memoryOpenaiKey,
-    setMemoryOpenaiKey
+    setMemoryOpenaiKey,
+    shortcuts,
+    addShortcut,
+    removeShortcut,
+    updateShortcut,
+    resetShortcut,
+    resetAllShortcuts
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
@@ -101,6 +113,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [memoryStatus, setMemoryStatus] = useState<{ initialized: boolean; connected: boolean } | null>(null)
   const [copiedId, setCopiedId] = useState(false)
   const [importUserId, setImportUserId] = useState('')
+  // Shortcut editing state
+  const [editingShortcut, setEditingShortcut] = useState<PromptShortcut | null>(null)
+  const [isAddingShortcut, setIsAddingShortcut] = useState(false)
+  const [shortcutForm, setShortcutForm] = useState({ name: '', description: '', prompt: '' })
 
   // Fetch conversation count and memory status when modal opens
   useEffect(() => {
@@ -321,6 +337,209 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <p className="text-xs text-slate-600 mt-1.5">
                 These instructions are added to every conversation. Use Markdown formatting.
               </p>
+            </div>
+          </SettingsCard>
+
+          {/* Prompt Shortcuts */}
+          <SettingsCard
+            icon={<Zap className="w-5 h-5 text-purple-400" />}
+            title="Prompt Shortcuts"
+            description="Create slash commands that expand into prompts"
+          >
+            <div className="space-y-3">
+              {/* Shortcut List */}
+              {shortcuts.map((shortcut) => (
+                <div
+                  key={shortcut.id}
+                  className="flex items-center gap-3 p-3 rounded-lg transition-colors hover:bg-white/5"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)'
+                  }}
+                >
+                  <div className="flex-shrink-0">
+                    {shortcut.isBuiltIn ? (
+                      <Lock className="w-4 h-4 text-slate-500" title="Built-in shortcut" />
+                    ) : (
+                      <Zap className="w-4 h-4 text-purple-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <code className="text-sm font-medium text-purple-400">/{shortcut.name}</code>
+                    <p className="text-xs text-slate-500 truncate">{shortcut.description}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingShortcut(shortcut)
+                        setShortcutForm({
+                          name: shortcut.name,
+                          description: shortcut.description,
+                          prompt: shortcut.prompt
+                        })
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
+                      title="Edit shortcut"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    {shortcut.isBuiltIn ? (
+                      <button
+                        onClick={() => resetShortcut(shortcut.id)}
+                        className="p-1.5 text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                        title="Reset to default"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => removeShortcut(shortcut.id)}
+                        className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Delete shortcut"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Add Shortcut Button */}
+              <button
+                onClick={() => {
+                  setIsAddingShortcut(true)
+                  setShortcutForm({ name: '', description: '', prompt: '' })
+                }}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/50 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-sm">Add Shortcut</span>
+              </button>
+
+              {/* Edit/Add Form */}
+              {(editingShortcut || isAddingShortcut) && (
+                <div
+                  className="p-4 rounded-lg space-y-3"
+                  style={{
+                    background: 'rgba(168, 85, 247, 0.1)',
+                    border: '1px solid rgba(168, 85, 247, 0.3)'
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-purple-300">
+                      {editingShortcut ? 'Edit Shortcut' : 'New Shortcut'}
+                    </h4>
+                    <button
+                      onClick={() => {
+                        setEditingShortcut(null)
+                        setIsAddingShortcut(false)
+                        setShortcutForm({ name: '', description: '', prompt: '' })
+                      }}
+                      className="p-1 text-slate-500 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Name field (only for new shortcuts) */}
+                  {isAddingShortcut && (
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Command name</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-purple-400 font-mono">/</span>
+                        <input
+                          type="text"
+                          value={shortcutForm.name}
+                          onChange={(e) => setShortcutForm(prev => ({ ...prev, name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                          placeholder="my-command"
+                          className="input-metallic flex-1 text-sm font-mono"
+                          maxLength={30}
+                        />
+                      </div>
+                      {shortcutForm.name && !isValidCommandName(shortcutForm.name) && (
+                        <p className="text-xs text-red-400 mt-1">Use only letters, numbers, and hyphens</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={shortcutForm.description}
+                      onChange={(e) => setShortcutForm(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="What this shortcut does..."
+                      className="input-metallic w-full text-sm"
+                      maxLength={100}
+                    />
+                  </div>
+
+                  {/* Prompt */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Prompt</label>
+                    <textarea
+                      value={shortcutForm.prompt}
+                      onChange={(e) => setShortcutForm(prev => ({ ...prev, prompt: e.target.value }))}
+                      placeholder="The prompt that will be expanded when you use this command..."
+                      rows={4}
+                      className="input-metallic w-full text-sm resize-y min-h-[80px]"
+                    />
+                  </div>
+
+                  {/* Save/Cancel */}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        setEditingShortcut(null)
+                        setIsAddingShortcut(false)
+                        setShortcutForm({ name: '', description: '', prompt: '' })
+                      }}
+                      className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (editingShortcut) {
+                          updateShortcut(editingShortcut.id, {
+                            description: shortcutForm.description,
+                            prompt: shortcutForm.prompt
+                          })
+                          setEditingShortcut(null)
+                        } else if (isAddingShortcut && isValidCommandName(shortcutForm.name)) {
+                          addShortcut({
+                            name: shortcutForm.name,
+                            description: shortcutForm.description,
+                            prompt: shortcutForm.prompt
+                          })
+                          setIsAddingShortcut(false)
+                        }
+                        setShortcutForm({ name: '', description: '', prompt: '' })
+                      }}
+                      disabled={
+                        (!editingShortcut && !isValidCommandName(shortcutForm.name)) ||
+                        !shortcutForm.description.trim() ||
+                        !shortcutForm.prompt.trim()
+                      }
+                      className="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {editingShortcut ? 'Save Changes' : 'Add Shortcut'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Reset All */}
+              <div className="flex justify-end pt-2 border-t border-white/5">
+                <button
+                  onClick={resetAllShortcuts}
+                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-400 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset all to defaults
+                </button>
+              </div>
             </div>
           </SettingsCard>
 

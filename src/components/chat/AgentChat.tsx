@@ -1,9 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
 import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appStore'
+
+// Types
+import { PromptShortcut } from '@/types/shortcut'
+
+// Shortcut Parser
+import { getPartialCommand, getCommandSuggestions, completeCommand } from '@/services/shortcuts/parser'
 
 // Services
 import { ClaudeService, type ChatChunk } from '../../services/claude'
@@ -123,7 +129,8 @@ export function AgentChat() {
     memoryEnabled,
     memorySupabaseUrl,
     memorySupabaseAnonKey,
-    memoryUserId} = useAppStore()
+    memoryUserId,
+    shortcuts} = useAppStore()
   const { handleLinkClick } = useLinkHandler()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -133,6 +140,7 @@ export function AgentChat() {
   const [showIntegrations, setShowIntegrations] = useState(false)
   const [showMCPSlideout, setShowMCPSlideout] = useState(false)
   const [mentionSuggestions, setMentionSuggestions] = useState<UnifiedSuggestion[]>([])
+  const [commandSuggestions, setCommandSuggestions] = useState<PromptShortcut[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [activeMentions, setActiveMentions] = useState<string[]>([])
   const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
@@ -427,9 +435,22 @@ export function AgentChat() {
     ))
   }, [])
 
-  // Handle input change for @mention autocomplete
+  // Handle input change for @mention and /command autocomplete
   const handleInputChange = useCallback(async (value: string) => {
     setInput(value)
+
+    // Check for partial slash command at end of input (e.g., "/mor")
+    const partialCommand = getPartialCommand(value)
+    if (partialCommand) {
+      const suggestions = getCommandSuggestions(partialCommand, shortcuts)
+      setCommandSuggestions(suggestions.slice(0, 10))
+      setMentionSuggestions([])
+      setSelectedSuggestionIndex(0)
+      return
+    }
+
+    // Clear command suggestions if not typing a command
+    setCommandSuggestions([])
 
     // Check for partial mention at end of input
     const partial = getPartialMention(value)
@@ -445,7 +466,7 @@ export function AgentChat() {
     const parsed = await parseMessage(value, workspacePath)
     setActiveMentions(parsed.mentions)
     setActiveDocuments(parsed.documentMentions)
-  }, [workspacePath])
+  }, [workspacePath, shortcuts])
 
   // Complete a mention from autocomplete
   const handleMentionSelect = useCallback((suggestion: UnifiedSuggestion) => {
@@ -460,6 +481,14 @@ export function AgentChat() {
       setActiveDocuments(parsed.documentMentions)
     })
   }, [input, workspacePath])
+
+  // Complete a slash command from autocomplete
+  const handleCommandSelect = useCallback((shortcut: PromptShortcut) => {
+    const completed = completeCommand(input, shortcut)
+    setInput(completed)
+    setCommandSuggestions([])
+    inputRef.current?.focus()
+  }, [input])
 
   // Handle drag and drop of files/folders into chat
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -795,7 +824,35 @@ export function AgentChat() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Handle autocomplete navigation
+    // Handle command autocomplete navigation
+    if (commandSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedSuggestionIndex(prev =>
+          prev < commandSuggestions.length - 1 ? prev + 1 : 0
+        )
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedSuggestionIndex(prev =>
+          prev > 0 ? prev - 1 : commandSuggestions.length - 1
+        )
+        return
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault()
+        handleCommandSelect(commandSuggestions[selectedSuggestionIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setCommandSuggestions([])
+        return
+      }
+    }
+
+    // Handle mention autocomplete navigation
     if (mentionSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -1270,7 +1327,47 @@ export function AgentChat() {
         )}
 
         <div className="relative flex gap-3">
-          {/* Autocomplete dropdown */}
+          {/* Slash command autocomplete dropdown */}
+          {commandSuggestions.length > 0 && (
+            <div
+              className="absolute bottom-full left-0 right-12 mb-2 rounded-xl overflow-hidden z-10 max-h-80 overflow-y-auto"
+              style={{
+                background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                boxShadow: '0 -4px 20px rgba(168, 85, 247, 0.2)'
+              }}
+            >
+              <div className="px-4 py-2 border-b border-white/5 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-purple-400" />
+                <span className="text-sm text-purple-400 font-medium">Shortcuts</span>
+              </div>
+              {commandSuggestions.map((shortcut, index) => (
+                <button
+                  key={shortcut.id}
+                  onClick={() => handleCommandSelect(shortcut)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                    index === selectedSuggestionIndex
+                      ? 'bg-purple-500/20'
+                      : 'hover:bg-white/5'
+                  }`}
+                >
+                  <Zap className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <code className="text-sm font-medium text-purple-400">
+                    /{shortcut.name}
+                  </code>
+                  <span className="text-slate-400 text-sm truncate flex-1">
+                    {shortcut.description}
+                  </span>
+                </button>
+              ))}
+              <div className="px-4 py-1.5 text-xs text-slate-500 border-t border-white/5">
+                <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-400">Tab</kbd> or
+                <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-400 ml-1">Enter</kbd> to expand
+              </div>
+            </div>
+          )}
+
+          {/* Mention autocomplete dropdown */}
           {mentionSuggestions.length > 0 && (
             <div
               className="absolute bottom-full left-0 right-12 mb-2 rounded-xl overflow-hidden z-10 max-h-80 overflow-y-auto"
@@ -1321,7 +1418,7 @@ export function AgentChat() {
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything... Use @ for integrations or documents"
+            placeholder="Ask anything... Use / for shortcuts or @ for documents"
             className="input-metallic flex-1 text-sm"
           />
           <button
