@@ -15,14 +15,18 @@ export function TaskPanel() {
     if (!workspacePath) return
     setLoading(true)
     try {
-      const parsedTasks = await parseTasksFromWorkspace(workspacePath)
+      const parsedTasks = await parseTasksFromWorkspace(
+        workspacePath,
+        taskSettings.taskSourcePaths,
+        taskSettings.scanEntireWorkspace
+      )
       setTasks(parsedTasks)
     } catch (err) {
       console.error('Failed to parse tasks:', err)
     } finally {
       setLoading(false)
     }
-  }, [workspacePath])
+  }, [workspacePath, taskSettings.taskSourcePaths, taskSettings.scanEntireWorkspace])
 
   useEffect(() => {
     loadTasks()

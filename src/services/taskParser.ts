@@ -83,14 +83,52 @@ function getFilePriority(filePath: string): number {
   return 3
 }
 
+// Resolve a relative path against workspace root
+function resolvePath(workspacePath: string, relativePath: string): string {
+  // Normalize slashes for cross-platform compatibility
+  const normalized = relativePath.replace(/\\/g, '/')
+  const workspaceNormalized = workspacePath.replace(/\\/g, '/')
+
+  // Handle both forward and back slashes
+  if (workspaceNormalized.endsWith('/')) {
+    return workspaceNormalized + normalized
+  }
+  return workspaceNormalized + '/' + normalized
+}
+
 // Parse all tasks from workspace
-export async function parseTasksFromWorkspace(workspacePath: string): Promise<ParsedTask[]> {
+// sourcePaths: relative paths to scan (e.g., ["01-Active/tasks"])
+// scanAll: if true, scan entire workspace; if false, only scan sourcePaths
+export async function parseTasksFromWorkspace(
+  workspacePath: string,
+  sourcePaths: string[] = [],
+  scanAll: boolean = true
+): Promise<ParsedTask[]> {
   const tasks: ParsedTask[] = []
 
   if (!window.electronAPI) return tasks
 
   try {
-    const markdownFiles = await findMarkdownFiles(workspacePath)
+    let markdownFiles: string[] = []
+
+    if (scanAll || sourcePaths.length === 0) {
+      // Original behavior: scan entire workspace
+      markdownFiles = await findMarkdownFiles(workspacePath)
+    } else {
+      // New behavior: scan only specified folders
+      for (const relativePath of sourcePaths) {
+        const fullPath = resolvePath(workspacePath, relativePath)
+        try {
+          const exists = await window.electronAPI.fs.exists(fullPath)
+          if (exists) {
+            const filesInPath = await findMarkdownFiles(fullPath)
+            markdownFiles.push(...filesInPath)
+          }
+        } catch (err) {
+          console.warn('Error checking path:', fullPath, err)
+        }
+      }
+    }
 
     // Sort files by priority
     markdownFiles.sort((a, b) => getFilePriority(a) - getFilePriority(b))

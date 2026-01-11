@@ -114,6 +114,8 @@ export function AgentChat() {
     setSelectedModel,
     maxTokens,
     integrationConfigs,
+    pendingChatPrompt,
+    setPendingChatPrompt,
   } = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -190,6 +192,23 @@ export function AgentChat() {
     }
     loadConversationsList()
   }, [])
+
+  // Handle pending chat prompts (from onboarding, etc.)
+  useEffect(() => {
+    if (pendingChatPrompt && !isLoading) {
+      // Set the input and send the message
+      setInput(pendingChatPrompt)
+      setPendingChatPrompt(null)
+
+      // Use a small delay to ensure UI updates, then trigger send
+      setTimeout(() => {
+        const sendButton = document.querySelector('[data-send-button]') as HTMLButtonElement
+        if (sendButton) {
+          sendButton.click()
+        }
+      }, 100)
+    }
+  }, [pendingChatPrompt, isLoading, setPendingChatPrompt])
 
   // Save conversation handler
   const handleSaveConversation = useCallback(async () => {
@@ -1078,6 +1097,7 @@ export function AgentChat() {
             onClick={sendMessage}
             disabled={!input.trim() || isLoading}
             className="btn-primary px-4"
+            data-send-button
             style={{
               opacity: input.trim() && !isLoading ? 1 : 0.5,
               cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed'

@@ -174,15 +174,27 @@ The Task panel provides a UI for managing tasks extracted from markdown files.
 - `TaskItem.tsx` - Individual task row with checkbox, metadata badges, file link
 
 **Task Parser Service** (`src/services/taskParser.ts`):
-- Scans all `.md` files in workspace for task checkboxes
+- Scans `.md` files for task checkboxes (configurable source folders)
 - Parses `- [ ]` (incomplete) and `- [x]` (complete) patterns
 - Extracts optional metadata:
   - Due dates: `@due(2024-01-15)` or `@due(tomorrow)`
   - Priority: `!high`, `!medium`, `!low`
 - Functions:
-  - `parseTasksFromWorkspace()` - Scans workspace and returns parsed tasks
+  - `parseTasksFromWorkspace(workspacePath, sourcePaths?, scanAll?)` - Scans workspace with optional folder filtering
   - `toggleTaskInFile()` - Updates checkbox state in source file
   - `getFileName()` - Extracts filename from path for display
+
+**Task Source Configuration**:
+Users can configure which folders to scan for tasks via Settings > Task Sources:
+- **Scan entire workspace** (default) - Scans all markdown files
+- **Specific folders only** - Only scans configured relative paths (e.g., `01-Active/tasks`)
+
+Settings stored in `TaskSettings.taskSourcePaths` and `TaskSettings.scanEntireWorkspace`.
+
+**Task Settings Component** (`src/components/settings/TaskSourceFolderPicker.tsx`):
+- Lists configured source paths with add/remove functionality
+- "Type path" for manual relative path entry
+- "Browse" for folder picker dialog (converts to relative path)
 
 **Task Type** (`src/types/task.ts`):
 ```typescript
@@ -196,6 +208,45 @@ interface ParsedTask {
   priority?: 'high' | 'medium' | 'low'
   raw: string
 }
+
+interface TaskSettings {
+  showCompleted: boolean
+  groupByFile: boolean
+  sortBy: 'file' | 'date' | 'priority'
+  taskSourcePaths: string[]      // Relative paths to scan
+  scanEntireWorkspace: boolean   // true = scan all, false = use taskSourcePaths
+}
+```
+
+### Workspace Onboarding
+
+AI-driven workspace setup for new users.
+
+**Components**:
+- `OnboardingWidget.tsx` - Dashboard widget with setup options
+- `onboardingPrompt.ts` - Prompt templates for AI-guided setup
+
+**Features**:
+- Shows on Dashboard when workspace hasn't been onboarded
+- **Guided Setup** - AI asks about work style, creates personalized folder structure
+- **Quick Setup** - Instantly creates standard productivity folder structure
+- **Skip option** - Mark workspace as onboarded without changes
+
+**Onboarding State** (`src/stores/appStore.ts`):
+- `onboardedWorkspaces: string[]` - Tracks which workspaces completed onboarding
+- `pendingChatPrompt: string | null` - Allows programmatic chat prompt injection
+
+**Recommended Folder Structure**:
+```
+00-Inbox/           # Capture new items
+01-Active/
+  tasks/            # Active task files (configure in Settings)
+  projects/         # Current projects
+02-Someday/         # Deferred items
+03-Reference/       # Reference materials
+04-Archive/         # Completed work
+Templates/          # Reusable templates
+README.md           # Workspace guide
 ```
 
 ### Starred Documents

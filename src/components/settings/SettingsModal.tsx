@@ -13,9 +13,11 @@ import {
   ExternalLink,
   RotateCcw,
   Eye,
-  EyeOff
+  EyeOff,
+  CheckSquare
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS } from '../../stores/appStore'
+import { TaskSourceFolderPicker } from './TaskSourceFolderPicker'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -71,7 +73,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     customInstructions,
     setCustomInstructions,
     resetCustomInstructions,
-    workspacePath
+    workspacePath,
+    taskSettings,
+    setTaskSettings
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
@@ -238,9 +242,50 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
           </SettingsCard>
 
+          {/* Task Sources */}
+          <SettingsCard
+            icon={<CheckSquare className="w-5 h-5 text-emerald-400" />}
+            title="Task Sources"
+            description="Configure which folders to scan for tasks"
+          >
+            {/* Scan Mode Toggle */}
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">Scan mode</label>
+              <select
+                value={taskSettings.scanEntireWorkspace ? 'all' : 'specific'}
+                onChange={(e) => setTaskSettings({
+                  scanEntireWorkspace: e.target.value === 'all'
+                })}
+                className="input-metallic w-full text-sm"
+              >
+                <option value="all" className="bg-slate-900">Entire workspace</option>
+                <option value="specific" className="bg-slate-900">Specific folders only</option>
+              </select>
+              <p className="text-xs text-slate-600 mt-1.5">
+                {taskSettings.scanEntireWorkspace
+                  ? 'Scanning all markdown files in your workspace for tasks.'
+                  : 'Only scanning specified folders for tasks.'}
+              </p>
+            </div>
+
+            {/* Folder Picker (shown when specific folders selected) */}
+            {!taskSettings.scanEntireWorkspace && (
+              <div>
+                <label className="block text-sm text-slate-400 mb-1.5">Task folders</label>
+                <TaskSourceFolderPicker
+                  paths={taskSettings.taskSourcePaths}
+                  onChange={(paths) => setTaskSettings({ taskSourcePaths: paths })}
+                />
+                <p className="text-xs text-slate-600 mt-1.5">
+                  Paths are relative to your workspace root.
+                </p>
+              </div>
+            )}
+          </SettingsCard>
+
           {/* Storage */}
           <SettingsCard
-            icon={<HardDrive className="w-5 h-5 text-emerald-400" />}
+            icon={<HardDrive className="w-5 h-5 text-pink-400" />}
             title="Storage"
             description="Manage local data"
           >

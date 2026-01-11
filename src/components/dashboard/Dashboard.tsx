@@ -2,6 +2,7 @@ import { LayoutDashboard, RefreshCw } from 'lucide-react'
 import { CalendarWidget } from './CalendarWidget'
 import { TaskSummaryWidget } from './TaskSummaryWidget'
 import { QuickLinksWidget } from './QuickLinksWidget'
+import { OnboardingWidget } from './OnboardingWidget'
 
 export function Dashboard() {
   const today = new Date()
@@ -46,10 +47,16 @@ export function Dashboard() {
 
       {/* Widget Grid */}
       <div className="flex-1 overflow-auto p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-4xl">
-          <CalendarWidget />
-          <TaskSummaryWidget />
-          <QuickLinksWidget />
+        <div className="max-w-4xl space-y-4">
+          {/* Onboarding Widget - spans full width */}
+          <OnboardingWidget />
+
+          {/* Main widget grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <CalendarWidget />
+            <TaskSummaryWidget />
+            <QuickLinksWidget />
+          </div>
         </div>
       </div>
     </div>

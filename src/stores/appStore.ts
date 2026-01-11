@@ -99,6 +99,15 @@ interface AppState {
   // Task Settings
   taskSettings: TaskSettings
   setTaskSettings: (settings: Partial<TaskSettings>) => void
+
+  // Workspace Onboarding
+  onboardedWorkspaces: string[]
+  markWorkspaceOnboarded: (path: string) => void
+  isWorkspaceOnboarded: (path: string) => boolean
+
+  // Pending Chat Prompt (for programmatic injection)
+  pendingChatPrompt: string | null
+  setPendingChatPrompt: (prompt: string | null) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -218,6 +227,19 @@ export const useAppStore = create<AppState>()(
       setTaskSettings: (settings) => set((state) => ({
         taskSettings: { ...state.taskSettings, ...settings }
       })),
+
+      // Workspace Onboarding
+      onboardedWorkspaces: [],
+      markWorkspaceOnboarded: (path) => set((state) => ({
+        onboardedWorkspaces: state.onboardedWorkspaces.includes(path)
+          ? state.onboardedWorkspaces
+          : [...state.onboardedWorkspaces, path]
+      })),
+      isWorkspaceOnboarded: (path) => get().onboardedWorkspaces.includes(path),
+
+      // Pending Chat Prompt
+      pendingChatPrompt: null,
+      setPendingChatPrompt: (prompt) => set({ pendingChatPrompt: prompt }),
     }),
     {
       name: 'assistantos-storage',
@@ -233,6 +255,7 @@ export const useAppStore = create<AppState>()(
         centerPanelView: state.centerPanelView,
         starredPaths: state.starredPaths,
         taskSettings: state.taskSettings,
+        onboardedWorkspaces: state.onboardedWorkspaces,
       }),
     }
   )
