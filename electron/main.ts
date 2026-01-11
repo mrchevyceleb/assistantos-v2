@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -31,6 +31,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webviewTag: true,
     },
   })
 
@@ -147,6 +148,83 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
     return true
   } catch {
     return false
+  }
+})
+
+// IPC Handler for renaming files/folders
+ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
+  try {
+    // Check if target already exists
+    try {
+      await fs.promises.access(newPath)
+      return { success: false, error: 'A file or folder with that name already exists' }
+    } catch {
+      // Target doesn't exist, safe to rename
+    }
+
+    await fs.promises.rename(oldPath, newPath)
+    return { success: true }
+  } catch (error) {
+    console.error('Error renaming file:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// IPC Handler for deleting files/folders
+ipcMain.handle('fs:delete', async (_, targetPath: string) => {
+  try {
+    const stat = await fs.promises.stat(targetPath)
+    if (stat.isDirectory()) {
+      await fs.promises.rm(targetPath, { recursive: true, force: true })
+    } else {
+      await fs.promises.unlink(targetPath)
+    }
+    return { success: true }
+  } catch (error) {
+    console.error('Error deleting file:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// IPC Handler for copying path to clipboard
+ipcMain.handle('fs:copyPath', async (_, filePath: string) => {
+  try {
+    clipboard.writeText(filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('Error copying path:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// IPC Handler for showing file in system file explorer
+ipcMain.handle('fs:showInExplorer', async (_, filePath: string) => {
+  try {
+    shell.showItemInFolder(filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('Error showing in explorer:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// IPC Handler for getting file/folder info
+ipcMain.handle('fs:getInfo', async (_, filePath: string) => {
+  try {
+    const stat = await fs.promises.stat(filePath)
+    return {
+      success: true,
+      info: {
+        size: stat.size,
+        isDirectory: stat.isDirectory(),
+        isFile: stat.isFile(),
+        created: stat.birthtime.toISOString(),
+        modified: stat.mtime.toISOString(),
+      }
+    }
+  } catch (error) {
+    console.error('Error getting file info:', error)
+    return { success: false, error: String(error) }
   }
 })
 

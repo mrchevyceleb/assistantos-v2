@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { TaskSettings, DEFAULT_TASK_SETTINGS, CenterPanelView } from '@/types/task'
+import { TaskSettings, DEFAULT_TASK_SETTINGS, KanbanSettings, DEFAULT_KANBAN_SETTINGS, CenterPanelView } from '@/types/task'
 
 // MCP Integration type (matching electron/mcp/registry.ts)
 export interface MCPIntegration {
@@ -129,9 +129,13 @@ interface AppState {
   toggleStarred: (path: string) => void
   isStarred: (path: string) => boolean
 
-  // Task Settings
+  // Task Settings (legacy)
   taskSettings: TaskSettings
   setTaskSettings: (settings: Partial<TaskSettings>) => void
+
+  // Kanban Settings (new)
+  kanbanSettings: KanbanSettings
+  setKanbanSettings: (settings: Partial<KanbanSettings>) => void
 
   // Workspace Onboarding
   onboardedWorkspaces: string[]
@@ -152,15 +156,30 @@ interface AppState {
   setMemoryOpenaiKey: (key: string) => void
   generateMemoryUserId: () => string
 
-  // Pending Chat Prompt (for programmatic injection)
+  // Pending Chat Prompt (for programmatic injection - auto-sends)
   pendingChatPrompt: string | null
   setPendingChatPrompt: (prompt: string | null) => void
+
+  // Pending Chat Input (for populating input without sending)
+  pendingChatInput: string | null
+  setPendingChatInput: (input: string | null) => void
 
   // Editor Settings
   editorFontSize: number
   setEditorFontSize: (size: number) => void
   increaseEditorFontSize: () => void
   decreaseEditorFontSize: () => void
+
+  // Built-in Browser
+  browserOpen: boolean
+  browserUrl: string | null
+  openBrowser: (url: string) => void
+  closeBrowser: () => void
+  setBrowserUrl: (url: string) => void
+
+  // Hydration flag (for avoiding race conditions with persisted settings)
+  _hasHydrated: boolean
+  setHasHydrated: (state: boolean) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -293,10 +312,16 @@ export const useAppStore = create<AppState>()(
       }),
       isStarred: (path) => get().starredPaths.includes(path),
 
-      // Task Settings
+      // Task Settings (legacy)
       taskSettings: DEFAULT_TASK_SETTINGS,
       setTaskSettings: (settings) => set((state) => ({
         taskSettings: { ...state.taskSettings, ...settings }
+      })),
+
+      // Kanban Settings
+      kanbanSettings: DEFAULT_KANBAN_SETTINGS,
+      setKanbanSettings: (settings) => set((state) => ({
+        kanbanSettings: { ...state.kanbanSettings, ...settings }
       })),
 
       // Workspace Onboarding
@@ -326,9 +351,13 @@ export const useAppStore = create<AppState>()(
         return id
       },
 
-      // Pending Chat Prompt
+      // Pending Chat Prompt (auto-sends)
       pendingChatPrompt: null,
       setPendingChatPrompt: (prompt) => set({ pendingChatPrompt: prompt }),
+
+      // Pending Chat Input (just populates input, doesn't send)
+      pendingChatInput: null,
+      setPendingChatInput: (input) => set({ pendingChatInput: input }),
 
       // Editor Settings
       editorFontSize: 16, // default 16px (1rem)
@@ -339,9 +368,24 @@ export const useAppStore = create<AppState>()(
       decreaseEditorFontSize: () => set((state) => ({
         editorFontSize: Math.max(12, state.editorFontSize - 2)
       })),
+
+      // Built-in Browser
+      browserOpen: false,
+      browserUrl: null,
+      openBrowser: (url) => set({ browserOpen: true, browserUrl: url }),
+      closeBrowser: () => set({ browserOpen: false }),
+      setBrowserUrl: (url) => set({ browserUrl: url }),
+
+      // Hydration flag
+      _hasHydrated: false,
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
     }),
     {
       name: 'assistantos-storage',
+      onRehydrateStorage: () => (state) => {
+        // Set hydrated flag after persisted state loads
+        state?.setHasHydrated(true)
+      },
       partialize: (state) => ({
         workspacePath: state.workspacePath,
         apiKey: state.apiKey,
@@ -355,6 +399,7 @@ export const useAppStore = create<AppState>()(
         centerPanelView: state.centerPanelView,
         starredPaths: state.starredPaths,
         taskSettings: state.taskSettings,
+        kanbanSettings: state.kanbanSettings,
         onboardedWorkspaces: state.onboardedWorkspaces,
         memoryEnabled: state.memoryEnabled,
         memorySupabaseUrl: state.memorySupabaseUrl,

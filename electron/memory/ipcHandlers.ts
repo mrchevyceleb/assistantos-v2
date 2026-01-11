@@ -12,7 +12,7 @@ import {
   generateEmbedding,
   generateEmbeddings,
   formatEmbeddingForSupabase,
-} from './embeddingService'
+} from './embeddingService.js'
 
 // In-memory state for the memory service
 let supabaseClient: SupabaseClient | null = null

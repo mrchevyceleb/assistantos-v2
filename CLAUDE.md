@@ -39,6 +39,11 @@ AssistantOS is an Electron-based desktop application that serves as your **perso
   - `fs:createDir` - Create directories
   - `fs:exists` - Check file/directory existence
   - `fs:searchFiles` - Search workspace files for @document mentions autocomplete
+  - `fs:rename` - Rename files/folders
+  - `fs:delete` - Delete files/folders (recursive for directories)
+  - `fs:copyPath` - Copy file path to clipboard
+  - `fs:showInExplorer` - Open file in system file explorer
+  - `fs:getInfo` - Get file metadata (size, dates, type)
 - Provides bash/shell command execution:
   - `bash:execute` - Execute shell commands (PowerShell on Windows, bash on Mac/Linux)
 - Provides MCP integration handlers (see MCP section below)
@@ -127,10 +132,22 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 - `FileTree.tsx` - File system navigation (auto-hides dotfiles starting with ".")
   - Draggable file/folder entries for drag-and-drop to chat
   - Grip handle indicator shows on hover
+  - Right-click context menu with file operations (see Context Menu section below)
 - `MarkdownEditor.tsx` - Milkdown-based WYSIWYG markdown editor with GFM support
   - Adjustable font size (12px-32px) via toolbar controls
   - Keyboard shortcuts: Ctrl+Plus (increase), Ctrl+Minus (decrease), Ctrl+0 (reset to 16px)
   - Font size persists across sessions
+- `MediaViewer.tsx` - Native media file viewer for images, videos, and audio
+  - Automatically displays when media files are clicked in FileTree
+  - Supported formats:
+    - **Images**: .png, .jpg, .jpeg, .gif, .webp, .bmp, .ico, .svg
+    - **Videos**: .mp4, .webm, .mov, .avi
+    - **Audio**: .mp3, .wav, .ogg, .m4a
+  - Features:
+    - Images: Zoom controls (25%-400%), fullscreen, dimension display
+    - Videos: Native video player with controls, zoom, fullscreen
+    - Audio: Native audio player with album art placeholder
+  - File type detection via `src/utils/fileTypes.ts`
 - `AgentChat.tsx` - Chat interface with Claude agent
   - Drag-and-drop files/folders to add as @mentions
   - Drop overlay shows when dragging over chat area
@@ -172,60 +189,79 @@ The Dashboard provides a configurable overview with widgets for quick informatio
 - Links to Task panel for detailed task management
 - Starred files quick access with click-to-open
 
-### Task Management Panel
+### Kanban Board (Task Management)
 
-The Task panel provides a UI for managing tasks extracted from markdown files.
+The Tasks panel provides a Kanban board for managing tasks with a standardized folder structure.
+
+**Folder Structure** (standardized):
+```
+TASKS/                    # Fixed location at workspace root
+├── ProjectName/          # One folder per project
+│   ├── tasks.md          # Main task file
+│   └── *.md              # Additional task files
+└── AnotherProject/
+    └── tasks.md
+```
+
+**Extended Checkbox Syntax** (Kanban statuses):
+| Checkbox | Status | Description |
+|----------|--------|-------------|
+| `- [ ]` | Backlog | Task not yet scheduled |
+| `- [o]` | Todo | Task scheduled to do |
+| `- [>]` | In Progress | Currently working on |
+| `- [?]` | In Review | Awaiting review |
+| `- [x]` | Done | Completed |
 
 **Components** (`src/components/tasks/`):
-- `TaskPanel.tsx` - Main container with header, filters, and task list
-- `TaskFilters.tsx` - Filter controls (show/hide completed, sort by file/date/priority)
-- `TaskList.tsx` - Renders tasks with optional grouping by file
-- `TaskItem.tsx` - Individual task row with checkbox, metadata badges, file link
+- `TaskPanel.tsx` - Main container with Kanban board and project selector
+- `KanbanBoard.tsx` - 5-column Kanban layout with drag-and-drop
+- `KanbanColumn.tsx` - Single column with header and task list
+- `KanbanCard.tsx` - Task card with metadata badges
+- `ProjectSelector.tsx` - Dropdown to switch between projects or view all
 
 **Task Parser Service** (`src/services/taskParser.ts`):
-- Scans `.md` files for task checkboxes (configurable source folders)
-- Parses `- [ ]` (incomplete) and `- [x]` (complete) patterns
+- Scans only `TASKS/` folder at workspace root
+- Parses extended checkbox syntax for 5 statuses
+- Extracts project name from folder structure
 - Extracts optional metadata:
   - Due dates: `@due(2024-01-15)` or `@due(tomorrow)`
   - Priority: `!high`, `!medium`, `!low`
 - Functions:
-  - `parseTasksFromWorkspace(workspacePath, sourcePaths?, scanAll?)` - Scans workspace with optional folder filtering
-  - `toggleTaskInFile()` - Updates checkbox state in source file
-  - `getFileName()` - Extracts filename from path for display
+  - `parseTasksFromWorkspace(workspacePath, projectFilter?)` - Scans TASKS folder
+  - `updateTaskStatus(filePath, lineNumber, newStatus)` - Updates checkbox in file
+  - `getProjectList(workspacePath)` - Get list of project folders
+  - `createProject(workspacePath, projectName)` - Create new project folder
 
-**Task Source Configuration**:
-Users can configure which folders to scan for tasks via Settings > Task Sources:
-- **Scan entire workspace** (default) - Scans all markdown files
-- **Specific folders only** - Only scans configured relative paths (e.g., `01-Active/tasks`)
-
-Settings stored in `TaskSettings.taskSourcePaths` and `TaskSettings.scanEntireWorkspace`.
-
-**Task Settings Component** (`src/components/settings/TaskSourceFolderPicker.tsx`):
-- Lists configured source paths with add/remove functionality
-- "Type path" for manual relative path entry
-- "Browse" for folder picker dialog (converts to relative path)
-
-**Task Type** (`src/types/task.ts`):
+**Task Types** (`src/types/task.ts`):
 ```typescript
+type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done'
+
 interface ParsedTask {
   id: string
   text: string
-  completed: boolean
+  status: TaskStatus           // Kanban status
+  completed: boolean           // true when status === 'done'
   filePath: string
   lineNumber: number
+  projectName: string          // Extracted from folder name
   dueDate?: string
   priority?: 'high' | 'medium' | 'low'
   raw: string
 }
 
-interface TaskSettings {
-  showCompleted: boolean
-  groupByFile: boolean
-  sortBy: 'file' | 'date' | 'priority'
-  taskSourcePaths: string[]      // Relative paths to scan
-  scanEntireWorkspace: boolean   // true = scan all, false = use taskSourcePaths
+interface KanbanSettings {
+  selectedProject: string | null  // null = show all projects
+  hideEmptyColumns: boolean
+  showCompletedTasks: boolean
 }
 ```
+
+**Features**:
+- Drag-and-drop between columns (updates markdown file automatically)
+- Project selector to filter by project or view all
+- Toggle to show/hide completed tasks
+- Create new projects from the UI
+- Dashboard widget shows status breakdown
 
 ### Workspace Onboarding
 
@@ -247,10 +283,13 @@ AI-driven workspace setup for new users.
 
 **Recommended Folder Structure**:
 ```
+TASKS/              # Standardized Kanban task management
+  Project1/         # One folder per project
+    tasks.md        # Project tasks with extended checkboxes
+  Project2/
+    tasks.md
 00-Inbox/           # Capture new items
-01-Active/
-  tasks/            # Active task files (configure in Settings)
-  projects/         # Current projects
+01-Active/          # Active work (non-task files)
 02-Someday/         # Deferred items
 03-Reference/       # Reference materials
 04-Archive/         # Completed work
@@ -276,6 +315,41 @@ Quick access bookmarks for frequently used files.
 **External Links**:
 - Links in markdown editor and chat are clickable and open in the OS native browser
 - Uses Electron's `shell.openExternal()` via IPC for security
+
+### File Context Menu
+
+Right-click context menu for file/folder operations in the FileTree.
+
+**Components** (`src/components/filetree/`):
+- `FileContextMenu.tsx` - Portal-based context menu with file operations
+- `DeleteConfirmDialog.tsx` - Confirmation dialog for delete operations
+- `NewItemDialog.tsx` - Dialog for creating new files/folders
+
+**Context Menu Actions**:
+| Action | Description | Shortcut |
+|--------|-------------|----------|
+| New File | Create a new file in the folder (folders only) | - |
+| New Folder | Create a new folder inside (folders only) | - |
+| Send to Chat | Insert file as @mention in chat input | - |
+| Copy Path | Copy full file path to clipboard | - |
+| Show in Explorer | Open containing folder in system file manager | - |
+| Rename | Inline rename with validation | F2 |
+| Delete | Delete with confirmation dialog | Delete |
+
+**Features**:
+- Portal-based rendering for proper z-index handling
+- Auto-positions to stay within viewport bounds
+- Inline rename input with filename pre-selected (without extension for files)
+- Delete confirmation with warning for folders (recursive delete)
+- New file/folder dialogs with name validation
+- Keyboard shortcuts (F2 for rename, Delete for delete) when file is selected
+- ESC to cancel operations
+
+**State Management** (in FileTree.tsx):
+- `contextMenu` - Position and target entry for context menu
+- `renameState` - Currently renaming file path and original name
+- `deleteTarget` - File entry pending deletion confirmation
+- `newItemState` - Type (file/folder) and parent path for creation dialog
 
 ### Styling
 

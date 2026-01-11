@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
     exists: (filePath: string) => ipcRenderer.invoke('fs:exists', filePath),
     searchFiles: (workspacePath: string, searchTerm: string) => ipcRenderer.invoke('fs:searchFiles', workspacePath, searchTerm),
+    rename: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:rename', oldPath, newPath),
+    delete: (targetPath: string) => ipcRenderer.invoke('fs:delete', targetPath),
+    copyPath: (filePath: string) => ipcRenderer.invoke('fs:copyPath', filePath),
+    showInExplorer: (filePath: string) => ipcRenderer.invoke('fs:showInExplorer', filePath),
+    getInfo: (filePath: string) => ipcRenderer.invoke('fs:getInfo', filePath),
   },
 
   // Bash command execution
@@ -328,6 +333,11 @@ declare global {
         createDir: (dirPath: string) => Promise<boolean>
         exists: (filePath: string) => Promise<boolean>
         searchFiles: (workspacePath: string, searchTerm: string) => Promise<Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>>
+        rename: (oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>
+        delete: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+        copyPath: (filePath: string) => Promise<{ success: boolean; error?: string }>
+        showInExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>
+        getInfo: (filePath: string) => Promise<{ success: boolean; info?: { size: number; isDirectory: boolean; isFile: boolean; created: string; modified: string }; error?: string }>
       }
       bash: {
         execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>

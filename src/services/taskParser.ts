@@ -1,22 +1,78 @@
-import { ParsedTask } from '../types/task'
+import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG } from '../types/task'
+
+// Fixed tasks folder name at workspace root
+export const TASKS_FOLDER = 'TASKS'
 
 // Regex patterns for task parsing
-const TASK_REGEX = /^(\s*)- \[([ xX])\] (.+)$/
+// Extended checkbox syntax: [ ] backlog, [o] todo, [>] in progress, [?] review, [x]/[X] done
+const TASK_REGEX = /^(\s*)- \[([ xXo>?])\] (.+)$/
 const DUE_DATE_REGEX = /@due\(([^)]+)\)/
 const PRIORITY_REGEX = /!(high|medium|low)/i
+
+// Map checkbox character to TaskStatus
+function charToStatus(char: string): TaskStatus {
+  switch (char.toLowerCase()) {
+    case 'x': return 'done'
+    case 'o': return 'todo'
+    case '>': return 'in_progress'
+    case '?': return 'review'
+    case ' ':
+    default: return 'backlog'
+  }
+}
+
+// Map TaskStatus to checkbox character
+export function statusToChar(status: TaskStatus): string {
+  return TASK_STATUS_CONFIG[status].checkbox
+}
 
 // Generate a simple hash for task ID
 function generateTaskId(filePath: string, lineNumber: number): string {
   return `${filePath}:${lineNumber}`.replace(/[^a-zA-Z0-9]/g, '_')
 }
 
+// Extract project name from file path
+// Expected structure: TASKS/{ProjectName}/file.md
+function extractProjectName(filePath: string, workspacePath: string): string {
+  const normalizedFile = filePath.replace(/\\/g, '/')
+  const normalizedWorkspace = workspacePath.replace(/\\/g, '/')
+
+  // Get relative path from workspace
+  let relativePath = normalizedFile
+  if (normalizedFile.startsWith(normalizedWorkspace)) {
+    relativePath = normalizedFile.slice(normalizedWorkspace.length)
+    if (relativePath.startsWith('/')) {
+      relativePath = relativePath.slice(1)
+    }
+  }
+
+  // Expected: TASKS/ProjectName/file.md
+  const parts = relativePath.split('/')
+  if (parts.length >= 3 && parts[0].toUpperCase() === TASKS_FOLDER) {
+    return parts[1] // Return the project folder name
+  }
+
+  // Fallback to parent folder name
+  if (parts.length >= 2) {
+    return parts[parts.length - 2]
+  }
+
+  return 'Unknown'
+}
+
 // Parse a single line for task content
-function parseTaskLine(line: string, filePath: string, lineNumber: number): ParsedTask | null {
+function parseTaskLine(
+  line: string,
+  filePath: string,
+  lineNumber: number,
+  projectName: string
+): ParsedTask | null {
   const match = line.match(TASK_REGEX)
   if (!match) return null
 
   const [, , checkmark, content] = match
-  const completed = checkmark.toLowerCase() === 'x'
+  const status = charToStatus(checkmark)
+  const completed = status === 'done'
 
   // Extract due date
   const dueDateMatch = content.match(DUE_DATE_REGEX)
@@ -29,7 +85,7 @@ function parseTaskLine(line: string, filePath: string, lineNumber: number): Pars
     : undefined
 
   // Clean the text (remove metadata)
-  let text = content
+  const text = content
     .replace(DUE_DATE_REGEX, '')
     .replace(PRIORITY_REGEX, '')
     .trim()
@@ -37,16 +93,18 @@ function parseTaskLine(line: string, filePath: string, lineNumber: number): Pars
   return {
     id: generateTaskId(filePath, lineNumber),
     text,
+    status,
     completed,
     filePath,
     lineNumber,
+    projectName,
     dueDate,
     priority,
     raw: line,
   }
 }
 
-// Recursively find all markdown files
+// Recursively find all markdown files in a directory
 async function findMarkdownFiles(dirPath: string): Promise<string[]> {
   const files: string[] = []
 
@@ -58,6 +116,7 @@ async function findMarkdownFiles(dirPath: string): Promise<string[]> {
     for (const entry of entries) {
       // Skip hidden files and common non-content directories
       if (entry.name.startsWith('.')) continue
+      if (entry.name.startsWith('_')) continue // Skip _templates etc
       if (['node_modules', 'dist', 'build', '.git', '__pycache__'].includes(entry.name)) continue
 
       if (entry.isDirectory) {
@@ -74,72 +133,81 @@ async function findMarkdownFiles(dirPath: string): Promise<string[]> {
   return files
 }
 
-// Sort tasks by priority (files with task-related names first)
-function getFilePriority(filePath: string): number {
-  const fileName = filePath.toLowerCase()
-  if (fileName.includes('todo')) return 0
-  if (fileName.includes('task')) return 1
-  if (fileName.includes('project')) return 2
-  return 3
-}
+// Get list of project folders in TASKS directory
+export async function getProjectList(workspacePath: string): Promise<string[]> {
+  const projects: string[] = []
 
-// Resolve a relative path against workspace root
-function resolvePath(workspacePath: string, relativePath: string): string {
-  // Normalize slashes for cross-platform compatibility
-  const normalized = relativePath.replace(/\\/g, '/')
-  const workspaceNormalized = workspacePath.replace(/\\/g, '/')
+  if (!window.electronAPI) return projects
 
-  // Handle both forward and back slashes
-  if (workspaceNormalized.endsWith('/')) {
-    return workspaceNormalized + normalized
+  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+
+  try {
+    const exists = await window.electronAPI.fs.exists(tasksPath)
+    if (!exists) return projects
+
+    const entries = await window.electronAPI.fs.readDir(tasksPath)
+
+    for (const entry of entries) {
+      // Skip hidden folders and templates
+      if (entry.name.startsWith('.')) continue
+      if (entry.name.startsWith('_')) continue
+
+      if (entry.isDirectory) {
+        projects.push(entry.name)
+      }
+    }
+  } catch (err) {
+    console.error('Error reading projects:', err)
   }
-  return workspaceNormalized + '/' + normalized
+
+  return projects.sort()
 }
 
-// Parse all tasks from workspace
-// sourcePaths: relative paths to scan (e.g., ["01-Active/tasks"])
-// scanAll: if true, scan entire workspace; if false, only scan sourcePaths
+// Parse all tasks from the TASKS folder
 export async function parseTasksFromWorkspace(
   workspacePath: string,
-  sourcePaths: string[] = [],
-  scanAll: boolean = true
+  projectFilter?: string | null // Optional: filter to specific project
 ): Promise<ParsedTask[]> {
   const tasks: ParsedTask[] = []
 
   if (!window.electronAPI) return tasks
 
-  try {
-    let markdownFiles: string[] = []
+  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
 
-    if (scanAll || sourcePaths.length === 0) {
-      // Original behavior: scan entire workspace
-      markdownFiles = await findMarkdownFiles(workspacePath)
-    } else {
-      // New behavior: scan only specified folders
-      for (const relativePath of sourcePaths) {
-        const fullPath = resolvePath(workspacePath, relativePath)
-        try {
-          const exists = await window.electronAPI.fs.exists(fullPath)
-          if (exists) {
-            const filesInPath = await findMarkdownFiles(fullPath)
-            markdownFiles.push(...filesInPath)
-          }
-        } catch (err) {
-          console.warn('Error checking path:', fullPath, err)
-        }
-      }
+  try {
+    // Check if TASKS folder exists
+    const exists = await window.electronAPI.fs.exists(tasksPath)
+    if (!exists) {
+      console.log('[taskParser] TASKS folder does not exist:', tasksPath)
+      return tasks
     }
 
-    // Sort files by priority
-    markdownFiles.sort((a, b) => getFilePriority(a) - getFilePriority(b))
+    // Find all markdown files in TASKS folder (or specific project)
+    let markdownFiles: string[] = []
 
+    if (projectFilter) {
+      // Scan only the specified project folder
+      const projectPath = `${tasksPath}/${projectFilter}`
+      const projectExists = await window.electronAPI.fs.exists(projectPath)
+      if (projectExists) {
+        markdownFiles = await findMarkdownFiles(projectPath)
+      }
+    } else {
+      // Scan all projects
+      markdownFiles = await findMarkdownFiles(tasksPath)
+    }
+
+    console.log('[taskParser] Found markdown files:', markdownFiles.length)
+
+    // Parse each file
     for (const filePath of markdownFiles) {
       try {
+        const projectName = extractProjectName(filePath, workspacePath)
         const content = await window.electronAPI.fs.readFile(filePath)
         const lines = content.split('\n')
 
         for (let i = 0; i < lines.length; i++) {
-          const task = parseTaskLine(lines[i], filePath, i + 1) // 1-indexed line numbers
+          const task = parseTaskLine(lines[i], filePath, i + 1, projectName)
           if (task) {
             tasks.push(task)
           }
@@ -155,11 +223,11 @@ export async function parseTasksFromWorkspace(
   return tasks
 }
 
-// Toggle a task's completion status in its source file
-export async function toggleTaskInFile(
+// Update a task's status in its source file
+export async function updateTaskStatus(
   filePath: string,
   lineNumber: number,
-  completed: boolean
+  newStatus: TaskStatus
 ): Promise<boolean> {
   if (!window.electronAPI) return false
 
@@ -174,21 +242,76 @@ export async function toggleTaskInFile(
     const match = line.match(TASK_REGEX)
     if (!match) return false
 
-    // Replace the checkbox
-    const newCheckmark = completed ? 'x' : ' '
-    lines[lineIndex] = line.replace(/- \[[ xX]\]/, `- [${newCheckmark}]`)
+    // Replace the checkbox with new status character
+    const newCheckmark = statusToChar(newStatus)
+    lines[lineIndex] = line.replace(/- \[[ xXo>?]\]/, `- [${newCheckmark}]`)
 
     // Write back
     await window.electronAPI.fs.writeFile(filePath, lines.join('\n'))
     return true
   } catch (err) {
-    console.error('Error toggling task:', err)
+    console.error('Error updating task status:', err)
     return false
   }
+}
+
+// Toggle a task's completion status (legacy function for backward compat)
+export async function toggleTaskInFile(
+  filePath: string,
+  lineNumber: number,
+  completed: boolean
+): Promise<boolean> {
+  return updateTaskStatus(filePath, lineNumber, completed ? 'done' : 'backlog')
 }
 
 // Get filename from path
 export function getFileName(filePath: string): string {
   const parts = filePath.split(/[/\\]/)
   return parts[parts.length - 1]
+}
+
+// Create a new project folder with initial tasks.md
+export async function createProject(
+  workspacePath: string,
+  projectName: string
+): Promise<boolean> {
+  if (!window.electronAPI) return false
+
+  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+  const projectPath = `${tasksPath}/${projectName}`
+
+  try {
+    // Create TASKS folder if it doesn't exist
+    const tasksExists = await window.electronAPI.fs.exists(tasksPath)
+    if (!tasksExists) {
+      await window.electronAPI.fs.createDir(tasksPath)
+    }
+
+    // Create project folder
+    const projectExists = await window.electronAPI.fs.exists(projectPath)
+    if (projectExists) {
+      console.warn('Project already exists:', projectName)
+      return false
+    }
+
+    await window.electronAPI.fs.createDir(projectPath)
+
+    // Create initial tasks.md file
+    const initialContent = `# ${projectName} Tasks
+
+## Active Tasks
+
+- [ ] First task (edit or delete this)
+
+## Notes
+
+Add any project notes here.
+`
+    await window.electronAPI.fs.writeFile(`${projectPath}/tasks.md`, initialContent)
+
+    return true
+  } catch (err) {
+    console.error('Error creating project:', err)
+    return false
+  }
 }

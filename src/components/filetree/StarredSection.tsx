@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ChevronRight, ChevronDown, Star, FileText, Folder } from 'lucide-react'
+import { ChevronRight, ChevronDown, Star, FileText, Folder, Image, Film, Music } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { isImageFile, isVideoFile, isAudioFile } from '../../utils/fileTypes'
 
 export function StarredSection() {
-  const { starredPaths, toggleStarred, openFile, currentFile } = useAppStore()
+  const { starredPaths, toggleStarred, openFile, currentFile, setCenterPanelView } = useAppStore()
   const [isExpanded, setIsExpanded] = useState(true)
 
   if (starredPaths.length === 0) return null
@@ -55,10 +56,21 @@ export function StarredSection() {
                   background: 'linear-gradient(90deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   borderLeft: '2px solid #00d4ff'
                 } : {}}
-                onClick={() => !isDir && openFile(path)}
+                onClick={() => {
+                  if (!isDir) {
+                    openFile(path)
+                    setCenterPanelView('editor')
+                  }
+                }}
               >
                 {isDir ? (
                   <Folder className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                ) : isImageFile(path) ? (
+                  <Image className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                ) : isVideoFile(path) ? (
+                  <Film className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                ) : isAudioFile(path) ? (
+                  <Music className="w-4 h-4 text-pink-400 flex-shrink-0" />
                 ) : (
                   <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
                 )}

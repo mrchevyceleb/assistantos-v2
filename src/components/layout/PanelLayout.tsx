@@ -2,16 +2,18 @@ import { useEffect } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { FileTree } from '../filetree/FileTree'
 import { MarkdownEditor } from '../editor/MarkdownEditor'
+import { MediaViewer } from '../editor/MediaViewer'
 import { AgentChat } from '../chat/AgentChat'
 import { CenterPanelTabs } from './CenterPanelTabs'
 import { Dashboard } from '../dashboard/Dashboard'
 import { TaskPanel } from '../tasks/TaskPanel'
 import { useAppStore } from '../../stores/appStore'
+import { isMediaFile } from '../../utils/fileTypes'
 
 import './panels.css'
 
 export function PanelLayout() {
-  const { centerPanelView, setCenterPanelView } = useAppStore()
+  const { centerPanelView, setCenterPanelView, currentFile } = useAppStore()
 
   // Keyboard shortcuts for view switching
   useEffect(() => {
@@ -46,6 +48,10 @@ export function PanelLayout() {
         return <TaskPanel />
       case 'editor':
       default:
+        // Show MediaViewer for media files, MarkdownEditor for text files
+        if (currentFile && isMediaFile(currentFile)) {
+          return <MediaViewer />
+        }
         return <MarkdownEditor />
     }
   }

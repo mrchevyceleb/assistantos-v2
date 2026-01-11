@@ -21,7 +21,7 @@ import {
   RefreshCw
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS } from '../../stores/appStore'
-import { TaskSourceFolderPicker } from './TaskSourceFolderPicker'
+// TaskSourceFolderPicker removed - now using standardized TASKS folder
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -324,45 +324,30 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
           </SettingsCard>
 
-          {/* Task Sources */}
+          {/* Kanban Board */}
           <SettingsCard
             icon={<CheckSquare className="w-5 h-5 text-emerald-400" />}
-            title="Task Sources"
-            description="Configure which folders to scan for tasks"
+            title="Kanban Board"
+            description="Task management via standardized TASKS folder"
           >
-            {/* Scan Mode Toggle */}
-            <div>
-              <label className="block text-sm text-slate-400 mb-1.5">Scan mode</label>
-              <select
-                value={taskSettings.scanEntireWorkspace !== false ? 'all' : 'specific'}
-                onChange={(e) => setTaskSettings({
-                  scanEntireWorkspace: e.target.value === 'all'
-                })}
-                className="input-metallic w-full text-sm"
-              >
-                <option value="all" className="bg-slate-900">Entire workspace</option>
-                <option value="specific" className="bg-slate-900">Specific folders only</option>
-              </select>
-              <p className="text-xs text-slate-600 mt-1.5">
-                {taskSettings.scanEntireWorkspace !== false
-                  ? 'Scanning all markdown files in your workspace for tasks.'
-                  : 'Only scanning specified folders for tasks.'}
-              </p>
-            </div>
-
-            {/* Folder Picker (shown when specific folders selected) */}
-            {taskSettings.scanEntireWorkspace === false && (
-              <div>
-                <label className="block text-sm text-slate-400 mb-1.5">Task folders</label>
-                <TaskSourceFolderPicker
-                  paths={taskSettings.taskSourcePaths || []}
-                  onChange={(paths) => setTaskSettings({ taskSourcePaths: paths })}
-                />
-                <p className="text-xs text-slate-600 mt-1.5">
-                  Paths are relative to your workspace root.
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                <p className="text-sm text-slate-300 mb-2">
+                  Tasks are organized in a standardized folder structure:
                 </p>
+                <code className="text-xs text-cyan-400 block">
+                  TASKS/ProjectName/tasks.md
+                </code>
               </div>
-            )}
+              <div className="text-xs text-slate-500 space-y-1">
+                <p><strong className="text-slate-400">Checkbox syntax:</strong></p>
+                <p><code className="text-slate-400">- [ ]</code> Backlog</p>
+                <p><code className="text-blue-400">- [o]</code> Todo</p>
+                <p><code className="text-amber-400">- [&gt;]</code> In Progress</p>
+                <p><code className="text-purple-400">- [?]</code> In Review</p>
+                <p><code className="text-emerald-400">- [x]</code> Done</p>
+              </div>
+            </div>
           </SettingsCard>
 
           {/* Memory */}

@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
-import { CheckSquare, Circle, AlertCircle } from 'lucide-react'
+import { Kanban, Circle, AlertCircle, Play, HelpCircle, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { WidgetContainer } from './WidgetContainer'
-import { parseTasksFromWorkspace } from '../../services/taskParser'
-import { ParsedTask } from '../../types/task'
+import { parseTasksFromWorkspace, TASKS_FOLDER } from '../../services/taskParser'
+import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG } from '../../types/task'
 
 export function TaskSummaryWidget() {
   const { workspacePath, setCenterPanelView } = useAppStore()
   const [tasks, setTasks] = useState<ParsedTask[]>([])
   const [loading, setLoading] = useState(false)
+  const [tasksExist, setTasksExist] = useState(true)
 
   useEffect(() => {
     if (workspacePath) {
@@ -20,6 +21,18 @@ export function TaskSummaryWidget() {
     if (!workspacePath) return
     setLoading(true)
     try {
+      // Check if TASKS folder exists
+      if (window.electronAPI) {
+        const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+        const exists = await window.electronAPI.fs.exists(tasksPath)
+        setTasksExist(exists)
+        if (!exists) {
+          setTasks([])
+          setLoading(false)
+          return
+        }
+      }
+
       const parsedTasks = await parseTasksFromWorkspace(workspacePath)
       setTasks(parsedTasks)
     } catch (err) {
@@ -29,83 +42,109 @@ export function TaskSummaryWidget() {
     }
   }
 
-  const openTasks = tasks.filter(t => !t.completed)
-  const completedTasks = tasks.filter(t => t.completed)
-  const highPriorityTasks = openTasks.filter(t => t.priority === 'high')
+  // Group tasks by status
+  const tasksByStatus: Record<TaskStatus, number> = {
+    backlog: tasks.filter(t => t.status === 'backlog').length,
+    todo: tasks.filter(t => t.status === 'todo').length,
+    in_progress: tasks.filter(t => t.status === 'in_progress').length,
+    review: tasks.filter(t => t.status === 'review').length,
+    done: tasks.filter(t => t.status === 'done').length,
+  }
 
-  // Check for overdue tasks
+  const activeTasks = tasksByStatus.todo + tasksByStatus.in_progress + tasksByStatus.review
+  const completedTasks = tasksByStatus.done
+
+  // Check for overdue tasks (not done)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const overdueTasks = openTasks.filter(t => {
-    if (!t.dueDate) return false
+  const overdueTasks = tasks.filter(t => {
+    if (!t.dueDate || t.status === 'done') return false
     const dueDate = new Date(t.dueDate)
     return dueDate < today
   })
 
   const completionPercent = tasks.length > 0
-    ? Math.round((completedTasks.length / tasks.length) * 100)
+    ? Math.round((completedTasks / tasks.length) * 100)
     : 0
 
   return (
     <WidgetContainer
-      title="Tasks"
-      icon={<CheckSquare className="w-4 h-4" />}
+      title="Kanban"
+      icon={<Kanban className="w-4 h-4" />}
       loading={loading}
       onRefresh={loadTasks}
     >
       {!workspacePath ? (
         <p className="text-sm text-slate-400 text-center py-4">Open a workspace to see tasks</p>
+      ) : !tasksExist ? (
+        <div className="text-center py-4">
+          <Kanban className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+          <p className="text-sm text-slate-400">No TASKS folder</p>
+          <p className="text-xs text-slate-500 mt-1">Go to Tasks to set up your Kanban board</p>
+        </div>
       ) : tasks.length === 0 ? (
         <div className="text-center py-4">
-          <CheckSquare className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+          <Kanban className="w-8 h-8 text-slate-500 mx-auto mb-2" />
           <p className="text-sm text-slate-400">No tasks found</p>
-          <p className="text-xs text-slate-500 mt-1">Create a markdown file with - [ ] checkboxes</p>
+          <p className="text-xs text-slate-500 mt-1">Add tasks with - [ ] checkboxes</p>
         </div>
       ) : (
         <div className="space-y-4">
           {/* Progress bar */}
           <div>
             <div className="flex justify-between text-xs text-slate-400 mb-1">
-              <span>{completedTasks.length} of {tasks.length} completed</span>
-              <span>{completionPercent}%</span>
+              <span>{activeTasks} active</span>
+              <span>{completionPercent}% done</span>
             </div>
             <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
                 style={{
                   width: `${completionPercent}%`,
-                  background: 'linear-gradient(90deg, #00d4ff, #00a8cc)'
+                  background: 'linear-gradient(90deg, #10b981, #059669)'
                 }}
               />
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="text-center p-2 rounded-lg bg-white/5">
-              <div className="text-lg font-semibold text-cyan-400">{openTasks.length}</div>
-              <div className="text-xs text-slate-500">Open</div>
+          {/* Status breakdown */}
+          <div className="grid grid-cols-5 gap-1">
+            <div className="text-center p-1.5 rounded-lg bg-white/5" title="Backlog">
+              <Circle className="w-3 h-3 text-slate-400 mx-auto mb-0.5" />
+              <div className="text-sm font-semibold text-slate-400">{tasksByStatus.backlog}</div>
             </div>
-            <div className="text-center p-2 rounded-lg bg-white/5">
-              <div className={`text-lg font-semibold ${overdueTasks.length > 0 ? 'text-red-400' : 'text-slate-400'}`}>
-                {overdueTasks.length}
-              </div>
-              <div className="text-xs text-slate-500">Overdue</div>
+            <div className="text-center p-1.5 rounded-lg bg-white/5" title="Todo">
+              <Circle className="w-3 h-3 text-blue-400 mx-auto mb-0.5" />
+              <div className="text-sm font-semibold text-blue-400">{tasksByStatus.todo}</div>
             </div>
-            <div className="text-center p-2 rounded-lg bg-white/5">
-              <div className={`text-lg font-semibold ${highPriorityTasks.length > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
-                {highPriorityTasks.length}
-              </div>
-              <div className="text-xs text-slate-500">High Priority</div>
+            <div className="text-center p-1.5 rounded-lg bg-white/5" title="In Progress">
+              <Play className="w-3 h-3 text-amber-400 mx-auto mb-0.5" />
+              <div className="text-sm font-semibold text-amber-400">{tasksByStatus.in_progress}</div>
+            </div>
+            <div className="text-center p-1.5 rounded-lg bg-white/5" title="Review">
+              <HelpCircle className="w-3 h-3 text-purple-400 mx-auto mb-0.5" />
+              <div className="text-sm font-semibold text-purple-400">{tasksByStatus.review}</div>
+            </div>
+            <div className="text-center p-1.5 rounded-lg bg-white/5" title="Done">
+              <CheckCircle2 className="w-3 h-3 text-emerald-400 mx-auto mb-0.5" />
+              <div className="text-sm font-semibold text-emerald-400">{tasksByStatus.done}</div>
             </div>
           </div>
+
+          {/* Alerts */}
+          {overdueTasks.length > 0 && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span className="text-xs text-red-400">{overdueTasks.length} overdue</span>
+            </div>
+          )}
 
           {/* View all link */}
           <button
             onClick={() => setCenterPanelView('tasks')}
             className="w-full text-sm text-cyan-400 hover:text-cyan-300 py-2 hover:bg-white/5 rounded-lg transition-colors"
           >
-            View all tasks
+            Open Kanban Board
           </button>
         </div>
       )}

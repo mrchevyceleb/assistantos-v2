@@ -28,6 +28,7 @@ import {
 } from '../../services/conversationStorage'
 import { processConversationForMemory } from '../../services/memory/extractionService'
 import { isTrivialMessage } from '../../services/memory/retrievalService'
+import { useLinkHandler } from '../../hooks/useLinkHandler'
 
 // Components
 import { IntegrationsModal } from '../settings/IntegrationsModal'
@@ -117,10 +118,13 @@ export function AgentChat() {
     integrationConfigs,
     pendingChatPrompt,
     setPendingChatPrompt,
+    pendingChatInput,
+    setPendingChatInput,
     memoryEnabled,
     memorySupabaseUrl,
     memorySupabaseAnonKey,
     memoryUserId} = useAppStore()
+  const { handleLinkClick } = useLinkHandler()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -198,7 +202,7 @@ export function AgentChat() {
     loadConversationsList()
   }, [])
 
-  // Handle pending chat prompts (from onboarding, etc.)
+  // Handle pending chat prompts (from onboarding, etc.) - auto-sends
   useEffect(() => {
     if (pendingChatPrompt && !isLoading) {
       // Set the input and send the message
@@ -214,6 +218,24 @@ export function AgentChat() {
       }, 100)
     }
   }, [pendingChatPrompt, isLoading, setPendingChatPrompt])
+
+  // Handle pending chat input (from context menu, etc.) - just populates input
+  useEffect(() => {
+    if (pendingChatInput) {
+      // Append to existing input or set if empty
+      setInput(prev => prev ? `${prev}${pendingChatInput}` : pendingChatInput)
+      setPendingChatInput(null)
+      // Focus the input
+      setTimeout(() => {
+        const textarea = document.querySelector('textarea[placeholder*="Message"]') as HTMLTextAreaElement
+        if (textarea) {
+          textarea.focus()
+          // Move cursor to end
+          textarea.selectionStart = textarea.selectionEnd = textarea.value.length
+        }
+      }, 50)
+    }
+  }, [pendingChatInput, setPendingChatInput])
 
   // Save conversation handler
   const handleSaveConversation = useCallback(async () => {
@@ -1124,12 +1146,16 @@ export function AgentChat() {
                               <a
                                 href={href}
                                 onClick={(e) => {
-                                  if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+                                  if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('file://'))) {
                                     e.preventDefault()
-                                    window.electronAPI?.shell.openExternal(href)
+                                    // Ctrl+click opens in built-in browser
+                                    if (!handleLinkClick(e as unknown as React.MouseEvent, href)) {
+                                      window.electronAPI?.shell.openExternal(href)
+                                    }
                                   }
                                 }}
                                 className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                                title="Click to open, Ctrl+click for built-in browser"
                               >
                                 {children}
                               </a>

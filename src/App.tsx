@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { PanelLayout } from './components/layout/PanelLayout'
 import { TitleBar } from './components/layout/TitleBar'
+import { WebBrowser } from './components/browser/WebBrowser'
 import { useAppStore } from './stores/appStore'
 
 function App() {
@@ -53,6 +54,7 @@ function App() {
       <main className="flex-1 flex overflow-hidden">
         <PanelLayout />
       </main>
+      <WebBrowser />
     </div>
   )
 }
