@@ -12,21 +12,23 @@ interface TaskSourceFolderPickerProps {
   onChange: (paths: string[]) => void
 }
 
-export function TaskSourceFolderPicker({ paths, onChange }: TaskSourceFolderPickerProps) {
+export function TaskSourceFolderPicker({ paths = [], onChange }: TaskSourceFolderPickerProps) {
   const { workspacePath } = useAppStore()
+  // Ensure paths is always an array (handles undefined from persisted state)
+  const safePaths = paths || []
   const [isAdding, setIsAdding] = useState(false)
   const [newPath, setNewPath] = useState('')
 
   const handleAddPath = () => {
-    if (newPath.trim() && !paths.includes(newPath.trim())) {
-      onChange([...paths, newPath.trim()])
+    if (newPath.trim() && !safePaths.includes(newPath.trim())) {
+      onChange([...safePaths, newPath.trim()])
       setNewPath('')
       setIsAdding(false)
     }
   }
 
   const handleRemovePath = (pathToRemove: string) => {
-    onChange(paths.filter(p => p !== pathToRemove))
+    onChange(safePaths.filter(p => p !== pathToRemove))
   }
 
   const handleBrowseFolder = async () => {
@@ -47,8 +49,8 @@ export function TaskSourceFolderPicker({ paths, onChange }: TaskSourceFolderPick
         }
       }
 
-      if (relativePath && !paths.includes(relativePath)) {
-        onChange([...paths, relativePath])
+      if (relativePath && !safePaths.includes(relativePath)) {
+        onChange([...safePaths, relativePath])
       }
     }
   }
@@ -56,9 +58,9 @@ export function TaskSourceFolderPicker({ paths, onChange }: TaskSourceFolderPick
   return (
     <div className="space-y-2">
       {/* Current paths */}
-      {paths.length > 0 ? (
+      {safePaths.length > 0 ? (
         <div className="space-y-1.5">
-          {paths.map((path) => (
+          {safePaths.map((path) => (
             <div
               key={path}
               className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg"

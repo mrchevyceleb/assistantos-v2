@@ -252,7 +252,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div>
               <label className="block text-sm text-slate-400 mb-1.5">Scan mode</label>
               <select
-                value={taskSettings.scanEntireWorkspace ? 'all' : 'specific'}
+                value={taskSettings.scanEntireWorkspace !== false ? 'all' : 'specific'}
                 onChange={(e) => setTaskSettings({
                   scanEntireWorkspace: e.target.value === 'all'
                 })}
@@ -262,18 +262,18 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <option value="specific" className="bg-slate-900">Specific folders only</option>
               </select>
               <p className="text-xs text-slate-600 mt-1.5">
-                {taskSettings.scanEntireWorkspace
+                {taskSettings.scanEntireWorkspace !== false
                   ? 'Scanning all markdown files in your workspace for tasks.'
                   : 'Only scanning specified folders for tasks.'}
               </p>
             </div>
 
             {/* Folder Picker (shown when specific folders selected) */}
-            {!taskSettings.scanEntireWorkspace && (
+            {taskSettings.scanEntireWorkspace === false && (
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">Task folders</label>
                 <TaskSourceFolderPicker
-                  paths={taskSettings.taskSourcePaths}
+                  paths={taskSettings.taskSourcePaths || []}
                   onChange={(paths) => setTaskSettings({ taskSourcePaths: paths })}
                 />
                 <p className="text-xs text-slate-600 mt-1.5">

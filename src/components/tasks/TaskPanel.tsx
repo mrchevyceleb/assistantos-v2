@@ -17,8 +17,8 @@ export function TaskPanel() {
     try {
       const parsedTasks = await parseTasksFromWorkspace(
         workspacePath,
-        taskSettings.taskSourcePaths,
-        taskSettings.scanEntireWorkspace
+        taskSettings.taskSourcePaths || [],
+        taskSettings.scanEntireWorkspace !== false
       )
       setTasks(parsedTasks)
     } catch (err) {
