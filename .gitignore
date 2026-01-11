@@ -30,3 +30,4 @@ release/
 
 # TypeScript
 *.tsbuildinfo
+nul

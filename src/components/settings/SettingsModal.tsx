@@ -14,7 +14,11 @@ import {
   RotateCcw,
   Eye,
   EyeOff,
-  CheckSquare
+  CheckSquare,
+  Brain,
+  Copy,
+  Check,
+  RefreshCw
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS } from '../../stores/appStore'
 import { TaskSourceFolderPicker } from './TaskSourceFolderPicker'
@@ -75,20 +79,77 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     resetCustomInstructions,
     workspacePath,
     taskSettings,
-    setTaskSettings
+    setTaskSettings,
+    memoryEnabled,
+    setMemoryEnabled,
+    memorySupabaseUrl,
+    setMemorySupabaseUrl,
+    memorySupabaseAnonKey,
+    setMemorySupabaseAnonKey,
+    memoryUserId,
+    setMemoryUserId,
+    generateMemoryUserId
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
+  const [showSupabaseKey, setShowSupabaseKey] = useState(false)
   const [conversationCount, setConversationCount] = useState(0)
+  const [memoryStatus, setMemoryStatus] = useState<{ initialized: boolean; connected: boolean } | null>(null)
+  const [copiedId, setCopiedId] = useState(false)
+  const [importUserId, setImportUserId] = useState('')
 
-  // Fetch conversation count when modal opens
+  // Fetch conversation count and memory status when modal opens
   useEffect(() => {
     if (isOpen) {
       window.electronAPI?.conversation.list().then((conversations) => {
         setConversationCount(conversations.length)
       })
+
+      // Check memory status
+      if (memoryEnabled && memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
+        window.electronAPI?.memory.getStatus().then((status) => {
+          setMemoryStatus(status)
+        }).catch(() => {
+          setMemoryStatus(null)
+        })
+      }
     }
-  }, [isOpen])
+  }, [isOpen, memoryEnabled, memorySupabaseUrl, memorySupabaseAnonKey, memoryUserId])
+
+  // Copy memory ID to clipboard
+  const handleCopyMemoryId = async () => {
+    if (memoryUserId) {
+      await navigator.clipboard.writeText(memoryUserId)
+      setCopiedId(true)
+      setTimeout(() => setCopiedId(false), 2000)
+    }
+  }
+
+  // Import memory ID from another device
+  const handleImportMemoryId = () => {
+    if (importUserId.trim() && importUserId.trim().length === 36) {
+      setMemoryUserId(importUserId.trim())
+      setImportUserId('')
+    }
+  }
+
+  // Initialize memory connection
+  const handleInitializeMemory = async () => {
+    if (memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
+      try {
+        const result = await window.electronAPI?.memory.initialize({
+          supabaseUrl: memorySupabaseUrl,
+          supabaseAnonKey: memorySupabaseAnonKey,
+          userId: memoryUserId
+        })
+        if (result?.success) {
+          setMemoryStatus({ initialized: true, connected: true })
+        }
+      } catch (e) {
+        console.error('Failed to initialize memory:', e)
+      }
+    }
+  }
 
   if (!isOpen) return null
 
@@ -280,6 +341,155 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   Paths are relative to your workspace root.
                 </p>
               </div>
+            )}
+          </SettingsCard>
+
+          {/* Memory */}
+          <SettingsCard
+            icon={<Brain className="w-5 h-5 text-amber-400" />}
+            title="Persistent Memory"
+            description="Remember facts and preferences across sessions"
+          >
+            {/* Enable Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm text-slate-300">Enable memory</label>
+                <p className="text-xs text-slate-600">
+                  Store user facts, preferences, and conversation summaries
+                </p>
+              </div>
+              <button
+                onClick={() => setMemoryEnabled(!memoryEnabled)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  memoryEnabled ? 'bg-amber-500' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    memoryEnabled ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {memoryEnabled && (
+              <>
+                {/* Supabase URL */}
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1.5">Supabase URL</label>
+                  <input
+                    type="text"
+                    value={memorySupabaseUrl}
+                    onChange={(e) => setMemorySupabaseUrl(e.target.value)}
+                    placeholder="https://your-project.supabase.co"
+                    className="input-metallic w-full text-sm"
+                  />
+                </div>
+
+                {/* Supabase Anon Key */}
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1.5">Supabase Anon Key</label>
+                  <div className="relative">
+                    <input
+                      type={showSupabaseKey ? 'text' : 'password'}
+                      value={memorySupabaseAnonKey}
+                      onChange={(e) => setMemorySupabaseAnonKey(e.target.value)}
+                      placeholder="eyJ..."
+                      className="input-metallic w-full text-sm pr-10"
+                    />
+                    <button
+                      onClick={() => setShowSupabaseKey(!showSupabaseKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      {showSupabaseKey ? (
+                        <EyeOff className="w-4 h-4 text-slate-500" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-slate-500" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Memory ID */}
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1.5">Your Memory ID</label>
+                  <div className="flex gap-2">
+                    <div
+                      className="flex-1 px-3 py-2 rounded-lg text-sm text-slate-300 truncate font-mono"
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                      }}
+                    >
+                      {memoryUserId || 'Not generated'}
+                    </div>
+                    {memoryUserId ? (
+                      <button
+                        onClick={handleCopyMemoryId}
+                        className="px-3 py-2 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors"
+                      >
+                        {copiedId ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={generateMemoryUserId}
+                        className="px-3 py-2 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors"
+                      >
+                        Generate
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1.5">
+                    Copy this ID to sync memories across devices.
+                  </p>
+                </div>
+
+                {/* Import Memory ID */}
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1.5">Import Memory ID</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={importUserId}
+                      onChange={(e) => setImportUserId(e.target.value)}
+                      placeholder="Paste ID from another device..."
+                      className="input-metallic flex-1 text-sm font-mono"
+                    />
+                    <button
+                      onClick={handleImportMemoryId}
+                      disabled={!importUserId.trim() || importUserId.trim().length !== 36}
+                      className="px-3 py-2 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Import
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1.5">
+                    Warning: Importing will link this device to the imported memory profile.
+                  </p>
+                </div>
+
+                {/* Connection Status / Initialize */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        memoryStatus?.connected ? 'bg-emerald-400' : 'bg-slate-600'
+                      }`}
+                    />
+                    <span className="text-sm text-slate-400">
+                      {memoryStatus?.connected ? 'Connected' : 'Not connected'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleInitializeMemory}
+                    disabled={!memorySupabaseUrl || !memorySupabaseAnonKey || !memoryUserId}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Connect
+                  </button>
+                </div>
+              </>
             )}
           </SettingsCard>
 

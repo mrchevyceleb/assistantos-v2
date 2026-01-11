@@ -6,7 +6,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { MCPIntegration, MCP_INTEGRATIONS, getIntegration } from './registry.js';
+import { MCPIntegration, getAllIntegrations, getIntegration } from './registry.js';
 
 export interface MCPTool {
   name: string;
@@ -65,15 +65,26 @@ export class MCPManager {
       await this.stopServer(integrationId);
     }
 
-    // Validate required env vars (skip OAuth ones as those are handled separately)
-    const envVars = this.envVars.get(integrationId) || {};
+    // Get configured env vars and apply defaults
+    const configuredVars = this.envVars.get(integrationId) || {};
+    const envVars: Record<string, string> = {};
+
+    // Apply defaults first, then override with configured values
+    for (const envDef of integration.requiredEnvVars) {
+      if (envDef.defaultValue) {
+        envVars[envDef.key] = envDef.defaultValue;
+      }
+    }
+    Object.assign(envVars, configuredVars);
+
+    // Validate required env vars (skip OAuth ones and those with defaults)
     for (const required of integration.requiredEnvVars) {
       if (required.type !== 'oauth' && !envVars[required.key]) {
         throw new Error(`Missing required configuration: ${required.label}`);
       }
     }
 
-    // Build environment with configured vars
+    // Build environment with system vars + configured vars
     const envWithVars: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
       if (value !== undefined) {
@@ -286,7 +297,7 @@ export class MCPManager {
    * Get all available integrations from registry
    */
   getIntegrations(): MCPIntegration[] {
-    return MCP_INTEGRATIONS;
+    return getAllIntegrations();
   }
 
   /**
@@ -342,7 +353,7 @@ export class MCPManager {
    * Find which integration a prefixed tool belongs to
    */
   findIntegrationForTool(prefixedToolName: string): string | undefined {
-    for (const int of MCP_INTEGRATIONS) {
+    for (const int of getAllIntegrations()) {
       if (prefixedToolName.startsWith(int.toolPrefix)) {
         return int.id;
       }

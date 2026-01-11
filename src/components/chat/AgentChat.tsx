@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
@@ -8,7 +8,7 @@ import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appSto
 // Services
 import { ClaudeService, type ChatChunk } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
-import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
+import { assembleSystemPrompt, type EnabledIntegration, type MemoryContext } from '../../services/systemPrompt'
 import { getCachedMCPTools, invalidateToolCache } from '../../services/toolCache'
 import {
   parseMessage,
@@ -26,6 +26,8 @@ import {
   type Conversation,
   type ConversationMeta
 } from '../../services/conversationStorage'
+import { processConversationForMemory } from '../../services/memory/extractionService'
+import { isTrivialMessage } from '../../services/memory/retrievalService'
 
 // Components
 import { IntegrationsModal } from '../settings/IntegrationsModal'
@@ -104,8 +106,7 @@ async function prepareAllEnabledTools(
 }
 
 export function AgentChat() {
-  const {
-    apiKey,
+  const {apiKey,
     workspacePath,
     openFiles,
     currentFile,
@@ -116,7 +117,10 @@ export function AgentChat() {
     integrationConfigs,
     pendingChatPrompt,
     setPendingChatPrompt,
-  } = useAppStore()
+    memoryEnabled,
+    memorySupabaseUrl,
+    memorySupabaseAnonKey,
+    memoryUserId} = useAppStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -219,14 +223,16 @@ export function AgentChat() {
       const convId = currentConversationId || generateConversationId()
       const now = new Date().toISOString()
 
+      const conversationTitle = generateTitle(messages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp.toISOString()
+      })))
+
       const conversation: Conversation = {
         id: convId,
-        title: generateTitle(messages.map(m => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp.toISOString()
-        }))),
+        title: conversationTitle,
         createdAt: currentConversationId ? savedConversations.find(c => c.id === convId)?.createdAt || now : now,
         updatedAt: now,
         model: selectedModel,
@@ -249,13 +255,71 @@ export function AgentChat() {
         // Refresh the list
         const list = await window.electronAPI.conversation.list()
         setSavedConversations(list)
+
+        // Extract and save memories if enabled
+        if (memoryEnabled && memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
+          try {
+            // Filter to user and assistant messages only (exclude tool messages)
+            const chatMessages = messages
+              .filter(m => m.role === 'user' || m.role === 'assistant')
+              .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+            if (chatMessages.length > 0) {
+              const extracted = processConversationForMemory(
+                chatMessages,
+                conversationTitle,
+                workspacePath
+              )
+
+              // Save extracted facts
+              if (extracted.facts.length > 0) {
+                await window.electronAPI.memory.addFacts(
+                  extracted.facts.map(f => ({
+                    category: f.category,
+                    fact: f.fact,
+                    source: f.source,
+                    confidence: f.confidence,
+                    conversationId: convId
+                  }))
+                )
+              }
+
+              // Save extracted preferences
+              for (const pref of extracted.preferences) {
+                await window.electronAPI.memory.upsertPreference({
+                  domain: pref.domain,
+                  preference_key: pref.preference_key,
+                  preference_value: pref.preference_value
+                })
+              }
+
+              // Save conversation summary
+              await window.electronAPI.memory.addSummary({
+                local_conversation_id: convId,
+                workspace_path: workspacePath,
+                title: conversationTitle,
+                summary: extracted.summary.summary,
+                key_decisions: extracted.summary.key_decisions,
+                message_count: messages.length,
+                model_used: selectedModel,
+                started_at: messages[0]?.timestamp.toISOString(),
+                ended_at: messages[messages.length - 1]?.timestamp.toISOString()
+              })
+
+              console.log(`Memory: Extracted ${extracted.facts.length} facts, ${extracted.preferences.length} preferences`)
+            }
+          } catch (memoryError) {
+            console.error('Failed to save memories:', memoryError)
+            // Don't fail the conversation save if memory extraction fails
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to save conversation:', e)
     } finally {
       setIsSaving(false)
     }
-  }, [messages, currentConversationId, selectedModel, workspacePath, savedConversations, isSaving])
+  }, [messages, currentConversationId, selectedModel, workspacePath, savedConversations, isSaving, memoryEnabled, memorySupabaseUrl, memorySupabaseAnonKey, memoryUserId])
 
   // Load conversation handler
   const handleLoadConversation = useCallback(async (conversationId: string) => {
@@ -463,13 +527,28 @@ export function AgentChat() {
         }
       }
 
-      // Assemble full system prompt with capability awareness
+      // Fetch memory context if enabled (skip for trivial messages to save tokens)
+      let memoryContext: MemoryContext | null = null
+      const trimmedInput = input.trim()
+      if (memoryEnabled && memoryUserId && memorySupabaseUrl && memorySupabaseAnonKey && !isTrivialMessage(trimmedInput)) {
+        try {
+          const memoryData = await window.electronAPI.memory.getRelevantMemories(trimmedInput)
+          if (memoryData.profile || memoryData.facts.length > 0 || memoryData.summaries.length > 0) {
+            memoryContext = memoryData
+          }
+        } catch (e) {
+          console.warn('Failed to fetch memory context:', e)
+        }
+      }
+
+      // Assemble full system prompt with capability awareness and memory
       const fullSystemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
         customInstructions,
-        enabledIntegrations
+        enabledIntegrations,
+        memoryContext
       )
 
       // Prepare tools (native + all enabled MCP integrations)
@@ -706,6 +785,21 @@ export function AgentChat() {
               </option>
             ))}
           </select>
+
+          {/* Memory Indicator */}
+          {memoryEnabled && memoryUserId && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+              style={{
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.2)'
+              }}
+              title="Memory enabled - facts and preferences are being remembered"
+            >
+              <Brain className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs text-amber-400">Memory</span>
+            </div>
+          )}
 
           {/* New Chat Button */}
           <button

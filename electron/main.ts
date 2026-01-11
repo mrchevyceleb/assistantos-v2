@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { registerMCPHandlers, cleanupMCPHandlers } from './mcp/ipcHandlers.js'
+import { registerMemoryHandlers, cleanupMemoryHandlers } from './memory/ipcHandlers.js'
 
 const execAsync = promisify(exec)
 
@@ -48,6 +49,7 @@ function createWindow() {
 app.whenReady().then(() => {
   // Register MCP handlers
   registerMCPHandlers()
+  registerMemoryHandlers()
 
   createWindow()
 
@@ -67,6 +69,7 @@ app.on('window-all-closed', () => {
 // Cleanup MCP servers before quitting
 app.on('before-quit', async () => {
   await cleanupMCPHandlers()
+  cleanupMemoryHandlers()
 })
 
 // IPC Handlers for window controls

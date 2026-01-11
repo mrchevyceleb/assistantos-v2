@@ -2,6 +2,33 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { TaskSettings, DEFAULT_TASK_SETTINGS, CenterPanelView } from '@/types/task'
 
+// MCP Integration type (matching electron/mcp/registry.ts)
+export interface MCPIntegration {
+  id: string
+  name: string
+  description: string
+  mention: string
+  mentionAliases?: string[]
+  category: 'browser' | 'google' | 'search' | 'cloud' | 'media' | 'custom'
+  command: string
+  args: string[]
+  requiredEnvVars: Array<{
+    key: string
+    label: string
+    type: 'apiKey' | 'oauth' | 'text'
+    description?: string
+    defaultValue?: string
+  }>
+  oauth?: {
+    provider: 'google'
+    scopes: string[]
+  }
+  toolPrefix: string
+  apiKeyUrl?: string
+  isCustom?: boolean
+  source?: string
+}
+
 // Available Claude models
 export const AVAILABLE_MODELS = [
   { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', tier: 'opus' },
@@ -87,6 +114,12 @@ interface AppState {
   setIntegrationEnabled: (integrationId: string, enabled: boolean) => void
   setIntegrationOAuthTokens: (integrationId: string, tokens: IntegrationConfig['oauthTokens']) => void
 
+  // Custom MCP Integrations (user-defined)
+  customIntegrations: MCPIntegration[]
+  addCustomIntegration: (integration: MCPIntegration) => void
+  removeCustomIntegration: (id: string) => void
+  updateCustomIntegration: (id: string, updates: Partial<MCPIntegration>) => void
+
   // Center Panel View Mode
   centerPanelView: CenterPanelView
   setCenterPanelView: (view: CenterPanelView) => void
@@ -104,6 +137,18 @@ interface AppState {
   onboardedWorkspaces: string[]
   markWorkspaceOnboarded: (path: string) => void
   isWorkspaceOnboarded: (path: string) => boolean
+
+
+  // Memory Settings
+  memoryEnabled: boolean
+  memorySupabaseUrl: string
+  memorySupabaseAnonKey: string
+  memoryUserId: string | null
+  setMemoryEnabled: (enabled: boolean) => void
+  setMemorySupabaseUrl: (url: string) => void
+  setMemorySupabaseAnonKey: (key: string) => void
+  setMemoryUserId: (id: string | null) => void
+  generateMemoryUserId: () => string
 
   // Pending Chat Prompt (for programmatic injection)
   pendingChatPrompt: string | null
@@ -206,6 +251,24 @@ export const useAppStore = create<AppState>()(
         },
       })),
 
+      // Custom MCP Integrations
+      customIntegrations: [],
+      addCustomIntegration: (integration) => set((state) => ({
+        customIntegrations: [...state.customIntegrations, { ...integration, isCustom: true }],
+      })),
+      removeCustomIntegration: (id) => set((state) => ({
+        customIntegrations: state.customIntegrations.filter(int => int.id !== id),
+        // Also remove the config
+        integrationConfigs: Object.fromEntries(
+          Object.entries(state.integrationConfigs).filter(([key]) => key !== id)
+        ),
+      })),
+      updateCustomIntegration: (id, updates) => set((state) => ({
+        customIntegrations: state.customIntegrations.map(int =>
+          int.id === id ? { ...int, ...updates, id, isCustom: true } : int
+        ),
+      })),
+
       // Center Panel View Mode
       centerPanelView: 'editor' as CenterPanelView,
       setCenterPanelView: (view) => set({ centerPanelView: view }),
@@ -237,6 +300,22 @@ export const useAppStore = create<AppState>()(
       })),
       isWorkspaceOnboarded: (path) => get().onboardedWorkspaces.includes(path),
 
+
+      // Memory Settings
+      memoryEnabled: false,
+      memorySupabaseUrl: '',
+      memorySupabaseAnonKey: '',
+      memoryUserId: null,
+      setMemoryEnabled: (enabled) => set({ memoryEnabled: enabled }),
+      setMemorySupabaseUrl: (url) => set({ memorySupabaseUrl: url }),
+      setMemorySupabaseAnonKey: (key) => set({ memorySupabaseAnonKey: key }),
+      setMemoryUserId: (id) => set({ memoryUserId: id }),
+      generateMemoryUserId: () => {
+        const id = crypto.randomUUID()
+        set({ memoryUserId: id })
+        return id
+      },
+
       // Pending Chat Prompt
       pendingChatPrompt: null,
       setPendingChatPrompt: (prompt) => set({ pendingChatPrompt: prompt }),
@@ -252,10 +331,15 @@ export const useAppStore = create<AppState>()(
         chatCollapsed: state.chatCollapsed,
         customInstructions: state.customInstructions,
         integrationConfigs: state.integrationConfigs,
+        customIntegrations: state.customIntegrations,
         centerPanelView: state.centerPanelView,
         starredPaths: state.starredPaths,
         taskSettings: state.taskSettings,
         onboardedWorkspaces: state.onboardedWorkspaces,
+        memoryEnabled: state.memoryEnabled,
+        memorySupabaseUrl: state.memorySupabaseUrl,
+        memorySupabaseAnonKey: state.memorySupabaseAnonKey,
+        memoryUserId: state.memoryUserId,
       }),
     }
   )

@@ -17,7 +17,11 @@ import {
   Image,
   ChevronDown,
   ChevronUp,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Plus,
+  Wrench
 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 
@@ -31,7 +35,8 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   google: <Mail className="w-5 h-5" />,
   search: <Search className="w-5 h-5" />,
   cloud: <Cloud className="w-5 h-5" />,
-  media: <Image className="w-5 h-5" />
+  media: <Image className="w-5 h-5" />,
+  custom: <Wrench className="w-5 h-5" />
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -39,7 +44,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   google: 'Google',
   search: 'Search',
   cloud: 'Cloud',
-  media: 'Media'
+  media: 'Media',
+  custom: 'Custom'
 }
 
 export function IntegrationsModal({ isOpen, onClose }: IntegrationsModalProps) {
@@ -185,6 +191,7 @@ function IntegrationCard({
 }: IntegrationCardProps) {
   const [envVars, setEnvVars] = useState<Record<string, string>>(config?.envVars || {})
   const [hasChanges, setHasChanges] = useState(false)
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (config?.envVars) {
@@ -202,12 +209,23 @@ function IntegrationCard({
     setHasChanges(false)
   }
 
+  const toggleShowSecret = (key: string) => {
+    setShowSecrets(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const openApiKeyUrl = () => {
+    if (integration.apiKeyUrl) {
+      window.electronAPI.shell.openExternal(integration.apiKeyUrl)
+    }
+  }
+
   const isEnabled = config?.enabled || false
   const hasOAuth = !!integration.oauth
+  // Check if all required env vars are configured (considering defaults)
   const isConfigured = hasOAuth
     ? false // OAuth needs separate handling
     : integration.requiredEnvVars.length === 0 ||
-      integration.requiredEnvVars.every(v => envVars[v.key])
+      integration.requiredEnvVars.every(v => envVars[v.key] || v.defaultValue)
 
   const statusColor = status?.status === 'ready'
     ? 'text-green-400'
@@ -295,6 +313,17 @@ function IntegrationCard({
       {/* Config Panel */}
       {isExpanded && (
         <div className="border-t border-white/5 p-4 space-y-4 bg-slate-900/50">
+          {/* Get API Key link */}
+          {integration.apiKeyUrl && (
+            <button
+              onClick={openApiKeyUrl}
+              className="flex items-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Get API Key
+            </button>
+          )}
+
           {hasOAuth ? (
             <div>
               <p className="text-sm text-slate-400 mb-3">
@@ -318,13 +347,34 @@ function IntegrationCard({
                       <span className="text-slate-500 ml-1">- {envVar.description}</span>
                     )}
                   </label>
-                  <input
-                    type={envVar.type === 'apiKey' ? 'password' : 'text'}
-                    value={envVars[envVar.key] || ''}
-                    onChange={(e) => handleEnvVarChange(envVar.key, e.target.value)}
-                    placeholder={envVar.type === 'apiKey' ? '••••••••••••••••' : ''}
-                    className="w-full px-3 py-2 bg-slate-800 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
-                  />
+                  <div className="relative">
+                    <input
+                      type={envVar.type === 'apiKey' && !showSecrets[envVar.key] ? 'password' : 'text'}
+                      value={envVars[envVar.key] || ''}
+                      onChange={(e) => handleEnvVarChange(envVar.key, e.target.value)}
+                      placeholder={envVar.defaultValue || (envVar.type === 'apiKey' ? '••••••••••••••••' : '')}
+                      className="w-full px-3 py-2 pr-10 bg-slate-800 border border-white/10 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+                    />
+                    {envVar.type === 'apiKey' && (
+                      <button
+                        type="button"
+                        onClick={() => toggleShowSecret(envVar.key)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white transition-colors"
+                        title={showSecrets[envVar.key] ? 'Hide' : 'Show'}
+                      >
+                        {showSecrets[envVar.key] ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {envVar.defaultValue && !envVars[envVar.key] && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Default: {envVar.defaultValue}
+                    </p>
+                  )}
                 </div>
               ))}
               <div className="flex justify-end">
@@ -343,7 +393,7 @@ function IntegrationCard({
             </>
           ) : (
             <p className="text-sm text-slate-400">
-              This integration doesn't require any configuration.
+              This integration doesn't require any configuration. Just enable it!
             </p>
           )}
         </div>

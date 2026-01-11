@@ -92,6 +92,7 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 | `file_exists` | Check if path exists |
 | `create_directory` | Create new directory |
 | `bash` | Execute shell commands |
+| `create_mcp_integration` | Create a custom MCP integration from npm package |
 
 ### React Application Structure
 
@@ -350,34 +351,54 @@ The MCP API is exposed via `window.electronAPI.mcp`:
 
 ### Available MCP Integrations
 
-The registry defines 10+ integrations across 5 categories:
+The registry defines 10 built-in integrations across 5 categories:
 
 **Browser Automation**:
-- `@browser`/`@playwright` - Local browser testing via Playwright
-- `@cloud-browser`/`@browserbase` - Cloud browser automation with BrowserBase
+- `@browser`/`@playwright` - Local browser testing via Microsoft Playwright (`@playwright/mcp`)
+- `@cloud-browser`/`@browserbase`/`@stagehand` - Cloud browser with AI (`@browserbasehq/mcp-server-browserbase`)
 
 **Google Services**:
-- `@gmail`/`@email`/`@mail` - Multi-account email via Unified Gmail (OAuth)
-- `@calendar`/`@cal`/`@schedule` - Calendar management via Google Calendar (OAuth)
+- `@gmail`/`@email`/`@mail` - Email with auto-auth (`@gongrzhe/server-gmail-autoauth-mcp`)
+- `@calendar`/`@cal`/`@schedule` - Multi-account calendar (`@cocal/google-calendar-mcp`)
 
 **Search & Research**:
-- `@perplexity`/`@pplx`/`@research` - AI-powered web search
-- `@brave`/`@search`/`@web` - Privacy-focused search
+- `@perplexity`/`@pplx`/`@research` - AI-powered search, research, reasoning (`@perplexity-ai/mcp-server`)
+- `@brave`/`@search`/`@web` - Privacy-focused web search (`@brave/brave-search-mcp-server`)
+- `@docs`/`@context7`/`@documentation` - Up-to-date library documentation (`@upstash/context7-mcp`)
 
 **Cloud Platforms**:
-- `@vercel`/`@deploy`/`@hosting` - Deployment and project management
+- `@vercel`/`@deploy`/`@hosting` - Deployment and project management (`@open-mcp/vercel`)
 
 **Media & Generation**:
-- `@image`/`@img`/`@generate`/`@nanobanana` - AI image generation with Gemini
+- `@image`/`@img`/`@generate`/`@nanobanana` - AI image generation with Gemini 3 Pro (`gemini-nanobanana-mcp`)
+
+### Custom MCP Integrations
+
+Users can add their own MCP integrations in two ways:
+
+1. **Via Chat** - Ask the AI to add an integration from a GitHub URL or description:
+   - "Add the GitHub MCP server from https://github.com/modelcontextprotocol/servers/tree/main/src/github"
+   - "I want a Slack integration"
+
+2. **Via Settings UI** - Settings > Integrations > Custom > Add Integration
+
+**Custom Integration Features**:
+- Persist across sessions (stored in localStorage)
+- Full configuration (env vars, @mentions, categories)
+- Edit/delete custom integrations
+- Same capabilities as built-in integrations
+
+**Tool**: `create_mcp_integration` - Creates a custom integration from npm package
 
 ### MCP Server Lifecycle
 
-1. **Registration** - Integrations defined in `registry.ts` with command, args, required env vars
-2. **Configuration** - User provides API keys/credentials via settings panel
-3. **Startup** - MCP server spawned as child process on first use
-4. **Discovery** - Client establishes stdio connection and discovers available tools
-5. **Execution** - Tools called by Claude agent during agentic loop
-6. **Cleanup** - Servers stopped on app shutdown via `before-quit` handler
+1. **Registration** - Integrations defined in `registry.ts` or added via `registerCustomIntegration()`
+2. **Persistence** - Custom integrations stored in app store (localStorage)
+3. **Configuration** - User provides API keys/credentials via settings panel (with "Get API Key" links)
+4. **Startup** - MCP server spawned as child process on first use
+5. **Discovery** - Client establishes stdio connection and discovers available tools
+6. **Execution** - Tools called by Claude agent during agentic loop
+7. **Cleanup** - Servers stopped on app shutdown via `before-quit` handler
 
 ### @Mention System
 
@@ -425,10 +446,70 @@ The app store (`src/stores/appStore.ts`) manages:
 - Environment variables and OAuth tokens
 - UI state for integration settings panel
 
+## Persistent Memory System
+
+AssistantOS includes a persistent memory system that stores user facts, preferences, and conversation summaries across sessions using Supabase.
+
+### Memory Architecture
+
+**Files**:
+- `src/services/memory/types.ts` - TypeScript interfaces for memory types
+- `src/services/memory/supabaseClient.ts` - Supabase connection management
+- `src/services/memory/extractionService.ts` - Extract facts/preferences from conversations
+- `src/services/memory/retrievalService.ts` - Retrieve relevant memories with token budgeting
+- `src/services/memory/index.ts` - Export all memory functionality
+- `electron/memory/ipcHandlers.ts` - IPC handlers for memory operations
+- `supabase/migrations/20260111001800_memory_tables.sql` - Database schema
+
+**Database Tables** (Supabase):
+| Table | Purpose |
+|-------|---------|
+| `memory_users` | Anonymous user identification for cross-device sync |
+| `user_profiles` | Core profile (name, role, company, tech stack) |
+| `user_facts` | Explicit facts learned from conversations |
+| `user_preferences` | Learned behavioral preferences |
+| `conversation_summaries` | Summaries of past conversations |
+
+### Memory Flow
+
+1. **Extraction** - When conversations are saved, facts and preferences are extracted using pattern matching
+2. **Storage** - Extracted memories stored in Supabase with keywords for search
+3. **Retrieval** - Before sending messages, relevant memories fetched based on query keywords
+4. **Injection** - Memories injected into system prompt (~1000 tokens max budget)
+
+### Token Budget
+
+| Component | Budget |
+|-----------|--------|
+| Profile | ~400 tokens |
+| Facts | ~300 tokens |
+| Preferences | ~100 tokens |
+| Summaries | ~200 tokens |
+| **Total** | ~1000 tokens |
+
+### Cross-Device Sync
+
+- Anonymous UUID generated on first app launch
+- UUID can be copied and imported on other devices
+- All memories synced via Supabase using the same UUID
+
+### Settings UI
+
+Memory configuration in Settings modal (`src/components/settings/SettingsModal.tsx`):
+- Enable/disable toggle
+- Supabase URL and anon key inputs
+- Memory ID display with copy button
+- Import Memory ID from another device
+- Connection status indicator
+
+### Memory Indicator
+
+When memory is enabled, an amber "Memory" indicator appears in the chat header next to the model selector.
+
 ## Future Enhancements
 
 Planned expansions:
-- Conversation persistence (save/load chats)
+- ~~Conversation persistence (save/load chats)~~ (Implemented)
 - **Context management** - Token counting, usage monitoring, auto-save on overflow (see `docs/CONTEXT_MANAGEMENT_PLAN.md`)
 - Additional MCP integrations (GitHub, Slack, Discord, etc.)
 - Subagents (parallel task execution across multiple MCPs)

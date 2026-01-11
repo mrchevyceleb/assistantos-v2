@@ -1,5 +1,6 @@
 import { executeFileTool } from './fileTools';
 import { executeBashTool } from './bashTool';
+import { executeCreateIntegration } from './integrationTool';
 import { allTools } from './schemas';
 
 export { allTools } from './schemas';
@@ -7,7 +8,7 @@ export { allTools } from './schemas';
 const FILE_TOOLS = ['read_file', 'write_file', 'list_directory', 'file_exists', 'create_directory'];
 
 // Local tools that are always available
-const LOCAL_TOOLS = new Set([...FILE_TOOLS, 'bash']);
+const LOCAL_TOOLS = new Set([...FILE_TOOLS, 'bash', 'create_mcp_integration']);
 
 /**
  * Execute a tool - routes to local handler or MCP server
@@ -25,6 +26,11 @@ export async function executeTool(
   // Handle bash
   if (name === 'bash') {
     return executeBashTool(input, workspacePath);
+  }
+
+  // Handle create_mcp_integration
+  if (name === 'create_mcp_integration') {
+    return executeCreateIntegration(input);
   }
 
   // Try MCP tools - they use prefixed names (e.g., mcp__gmail__search)

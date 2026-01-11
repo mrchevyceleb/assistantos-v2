@@ -5,7 +5,17 @@
 
 import { ipcMain } from 'electron';
 import { getMCPManager } from './MCPManager.js';
-import { getMentionMap, getAllMentions, MCP_INTEGRATIONS } from './registry.js';
+import {
+  getMentionMap,
+  getAllMentions,
+  getAllIntegrations,
+  getCustomIntegrations,
+  registerCustomIntegration,
+  unregisterCustomIntegration,
+  updateCustomIntegration,
+  loadCustomIntegrations,
+  MCPIntegration
+} from './registry.js';
 
 /**
  * Register all MCP-related IPC handlers
@@ -13,9 +23,9 @@ import { getMentionMap, getAllMentions, MCP_INTEGRATIONS } from './registry.js';
 export function registerMCPHandlers(): void {
   const manager = getMCPManager();
 
-  // Get all integrations from registry
+  // Get all integrations from registry (built-in + custom)
   ipcMain.handle('mcp:getIntegrations', () => {
-    return MCP_INTEGRATIONS;
+    return getAllIntegrations();
   });
 
   // Get mention map (mention → integrationId)
@@ -111,6 +121,42 @@ export function registerMCPHandlers(): void {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  });
+
+  // ============================================
+  // Custom Integration Handlers
+  // ============================================
+
+  // Get custom integrations only
+  ipcMain.handle('mcp:getCustomIntegrations', () => {
+    return getCustomIntegrations();
+  });
+
+  // Register a new custom integration
+  ipcMain.handle('mcp:registerCustomIntegration', (_event, integration: MCPIntegration) => {
+    return registerCustomIntegration(integration);
+  });
+
+  // Unregister a custom integration
+  ipcMain.handle('mcp:unregisterCustomIntegration', async (_event, integrationId: string) => {
+    // Stop the server first if running
+    try {
+      await manager.stopServer(integrationId);
+    } catch {
+      // Ignore errors if not running
+    }
+    return unregisterCustomIntegration(integrationId);
+  });
+
+  // Update a custom integration
+  ipcMain.handle('mcp:updateCustomIntegration', (_event, id: string, updates: Partial<MCPIntegration>) => {
+    return updateCustomIntegration(id, updates);
+  });
+
+  // Load custom integrations from persistence (called on app startup)
+  ipcMain.handle('mcp:loadCustomIntegrations', (_event, integrations: MCPIntegration[]) => {
+    loadCustomIntegrations(integrations);
+    return { success: true };
   });
 
   console.log('[MCP] IPC handlers registered');
