@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Save, X, FileText, Bold, Italic, List, ListOrdered, Quote } from 'lucide-react'
+import { Save, X, FileText, Bold, Italic, List, ListOrdered, Quote, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx } from '@milkdown/kit/core'
 import { commonmark, toggleStrongCommand, toggleEmphasisCommand, wrapInBulletListCommand, wrapInOrderedListCommand, wrapInBlockquoteCommand } from '@milkdown/kit/preset/commonmark'
@@ -11,7 +11,7 @@ import { callCommand } from '@milkdown/kit/utils'
 import { nord } from '@milkdown/theme-nord'
 
 export function MarkdownEditor() {
-  const { currentFile, closeFile } = useAppStore()
+  const { currentFile, closeFile, editorFontSize, increaseEditorFontSize, decreaseEditorFontSize, setEditorFontSize } = useAppStore()
   const [content, setContent] = useState('')
   const [originalContent, setOriginalContent] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -122,10 +122,23 @@ export function MarkdownEditor() {
         e.preventDefault()
         editorRef.current?.action(callCommand(redoCommand.key))
       }
+      // Font size shortcuts
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault()
+        increaseEditorFontSize()
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+        e.preventDefault()
+        decreaseEditorFontSize()
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault()
+        setEditorFontSize(16)
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [content, currentFile, hasChanges])
+  }, [content, currentFile, hasChanges, increaseEditorFontSize, decreaseEditorFontSize, setEditorFontSize])
 
   // Handle link clicks to open in native browser
   useEffect(() => {
@@ -281,6 +294,41 @@ export function MarkdownEditor() {
           >
             <Quote className="w-4 h-4" />
           </button>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Font Size Controls */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={decreaseEditorFontSize}
+              disabled={editorFontSize <= 12}
+              className="p-1.5 rounded hover:bg-white/10 transition-colors text-slate-400 hover:text-slate-200 disabled:text-slate-600 disabled:hover:bg-transparent"
+              title="Decrease text size (min 12px)"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-slate-500 min-w-[40px] text-center">
+              {editorFontSize}px
+            </span>
+            <button
+              onClick={increaseEditorFontSize}
+              disabled={editorFontSize >= 32}
+              className="p-1.5 rounded hover:bg-white/10 transition-colors text-slate-400 hover:text-slate-200 disabled:text-slate-600 disabled:hover:bg-transparent"
+              title="Increase text size (max 32px)"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            {editorFontSize !== 16 && (
+              <button
+                onClick={() => setEditorFontSize(16)}
+                className="p-1.5 rounded hover:bg-white/10 transition-colors text-slate-400 hover:text-slate-200 ml-1"
+                title="Reset to default size (16px)"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -305,6 +353,7 @@ export function MarkdownEditor() {
           <div
             ref={containerRef}
             className="milkdown-container h-full p-6"
+            style={{ fontSize: `${editorFontSize}px` }}
           />
         )}
       </div>

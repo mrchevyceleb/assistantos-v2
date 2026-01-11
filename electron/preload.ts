@@ -78,6 +78,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('memory:initialize', url, anonKey, anonymousId),
     getStatus: () => ipcRenderer.invoke('memory:getStatus'),
     disconnect: () => ipcRenderer.invoke('memory:disconnect'),
+    // Embeddings
+    setOpenaiKey: (apiKey: string) => ipcRenderer.invoke('memory:setOpenaiKey', apiKey),
+    isEmbeddingsEnabled: () => ipcRenderer.invoke('memory:isEmbeddingsEnabled'),
+    // Profile
     getProfile: () => ipcRenderer.invoke('memory:getProfile'),
     updateProfile: (updates: MemoryProfileUpdate) =>
       ipcRenderer.invoke('memory:updateProfile', updates),
@@ -300,6 +304,7 @@ declare global {
     factCount: number
     preferenceCount: number
     summaryCount: number
+    embeddingsEnabled: boolean
   }
 
   interface MemoryContext {
@@ -362,6 +367,10 @@ declare global {
         initialize: (url: string, anonKey: string, anonymousId: string) => Promise<{ success: boolean; userId?: string; error?: string }>
         getStatus: () => Promise<MemoryStatus>
         disconnect: () => Promise<{ success: boolean }>
+        // Embeddings
+        setOpenaiKey: (apiKey: string) => Promise<{ success: boolean; embeddingsEnabled: boolean }>
+        isEmbeddingsEnabled: () => Promise<boolean>
+        // Profile & Facts
         getProfile: () => Promise<MemoryProfile | null>
         updateProfile: (updates: MemoryProfileUpdate) => Promise<MemoryProfile | null>
         getFacts: (category?: string) => Promise<MemoryFact[]>

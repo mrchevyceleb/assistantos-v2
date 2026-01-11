@@ -109,6 +109,7 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
   - Center panel view mode (editor/dashboard/tasks)
   - Starred document paths
   - Task display settings (show completed, sort order, group by file)
+  - Editor font size (12px-32px, default 16px)
 
 **Component Layout**:
 - `App.tsx` - Root component with TitleBar and PanelLayout
@@ -124,8 +125,15 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 **Key Components**:
 - `TitleBar.tsx` - Custom window controls for frameless window
 - `FileTree.tsx` - File system navigation (auto-hides dotfiles starting with ".")
+  - Draggable file/folder entries for drag-and-drop to chat
+  - Grip handle indicator shows on hover
 - `MarkdownEditor.tsx` - Milkdown-based WYSIWYG markdown editor with GFM support
+  - Adjustable font size (12px-32px) via toolbar controls
+  - Keyboard shortcuts: Ctrl+Plus (increase), Ctrl+Minus (decrease), Ctrl+0 (reset to 16px)
+  - Font size persists across sessions
 - `AgentChat.tsx` - Chat interface with Claude agent
+  - Drag-and-drop files/folders to add as @mentions
+  - Drop overlay shows when dragging over chat area
   - Imports organized by category: React, libraries, store, services, components
   - Helper functions:
     - `readDocumentContext()` - Reads file contents and formats as XML for Claude
@@ -459,6 +467,7 @@ AssistantOS includes a persistent memory system that stores user facts, preferen
 - `src/services/memory/retrievalService.ts` - Retrieve relevant memories with token budgeting
 - `src/services/memory/index.ts` - Export all memory functionality
 - `electron/memory/ipcHandlers.ts` - IPC handlers for memory operations
+- `electron/memory/embeddingService.ts` - OpenAI embedding generation for semantic search
 - `supabase/migrations/20260111001800_memory_tables.sql` - Database schema
 
 **Database Tables** (Supabase):
@@ -473,9 +482,30 @@ AssistantOS includes a persistent memory system that stores user facts, preferen
 ### Memory Flow
 
 1. **Extraction** - When conversations are saved, facts and preferences are extracted using pattern matching
-2. **Storage** - Extracted memories stored in Supabase with keywords for search
-3. **Retrieval** - Before sending messages, relevant memories fetched based on query keywords
+2. **Storage** - Extracted memories stored in Supabase with keywords and optional embeddings
+3. **Retrieval** - Before sending messages, relevant memories fetched using semantic search (if embeddings enabled) or keyword matching
 4. **Injection** - Memories injected into system prompt (~1000 tokens max budget)
+
+### AI Embeddings (Semantic Search)
+
+The memory system supports optional OpenAI embeddings for smarter memory retrieval:
+
+**Configuration**:
+- Add OpenAI API key in Settings → Memory → OpenAI API Key
+- Uses `text-embedding-3-small` model (1536 dimensions)
+- Status indicator shows when embeddings are enabled
+
+**How it works**:
+1. When facts/summaries are saved, embeddings are generated and stored in pgvector columns
+2. When retrieving memories, the query is embedded and compared semantically
+3. RPC functions `search_facts_by_embedding()` and `search_summaries_by_embedding()` perform vector similarity search
+4. Falls back to keyword search if OpenAI key not configured
+
+**Cost**: ~$0.02 per 1M tokens - essentially free for typical usage
+
+**Database Support**:
+- pgvector extension enabled in Supabase
+- `embedding vector(1536)` columns on `user_facts` and `conversation_summaries`
 
 ### Token Budget
 
@@ -498,9 +528,11 @@ AssistantOS includes a persistent memory system that stores user facts, preferen
 Memory configuration in Settings modal (`src/components/settings/SettingsModal.tsx`):
 - Enable/disable toggle
 - Supabase URL and anon key inputs
+- OpenAI API key (optional, for semantic search)
 - Memory ID display with copy button
 - Import Memory ID from another device
 - Connection status indicator
+- Embeddings status indicator (green when enabled)
 
 ### Memory Indicator
 

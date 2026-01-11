@@ -88,12 +88,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setMemorySupabaseAnonKey,
     memoryUserId,
     setMemoryUserId,
-    generateMemoryUserId
+    generateMemoryUserId,
+    memoryOpenaiKey,
+    setMemoryOpenaiKey
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
   const [showSupabaseKey, setShowSupabaseKey] = useState(false)
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false)
   const [conversationCount, setConversationCount] = useState(0)
+  const [embeddingsEnabled, setEmbeddingsEnabled] = useState(false)
   const [memoryStatus, setMemoryStatus] = useState<{ initialized: boolean; connected: boolean } | null>(null)
   const [copiedId, setCopiedId] = useState(false)
   const [importUserId, setImportUserId] = useState('')
@@ -109,12 +113,25 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       if (memoryEnabled && memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
         window.electronAPI?.memory.getStatus().then((status) => {
           setMemoryStatus(status)
+          setEmbeddingsEnabled(status.embeddingsEnabled)
         }).catch(() => {
           setMemoryStatus(null)
         })
       }
+
+      // Check embeddings status
+      window.electronAPI?.memory.isEmbeddingsEnabled().then(setEmbeddingsEnabled).catch(() => {})
     }
   }, [isOpen, memoryEnabled, memorySupabaseUrl, memorySupabaseAnonKey, memoryUserId])
+
+  // Set OpenAI key in backend when it changes
+  useEffect(() => {
+    if (memoryOpenaiKey) {
+      window.electronAPI?.memory.setOpenaiKey(memoryOpenaiKey).then((result) => {
+        setEmbeddingsEnabled(result.embeddingsEnabled)
+      }).catch(() => {})
+    }
+  }, [memoryOpenaiKey])
 
   // Copy memory ID to clipboard
   const handleCopyMemoryId = async () => {
@@ -155,6 +172,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleGetApiKey = () => {
     window.electronAPI?.shell.openExternal('https://console.anthropic.com/settings/keys')
+  }
+
+  const handleGetOpenaiKey = () => {
+    window.electronAPI?.shell.openExternal('https://platform.openai.com/api-keys')
   }
 
   return (
@@ -407,6 +428,54 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <Eye className="w-4 h-4 text-slate-500" />
                       )}
                     </button>
+                  </div>
+                </div>
+
+                {/* OpenAI API Key (for embeddings) */}
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1.5">
+                    OpenAI API Key
+                    <span className="text-xs text-slate-600 ml-2">(optional, for semantic search)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showOpenaiKey ? 'text' : 'password'}
+                        value={memoryOpenaiKey}
+                        onChange={(e) => setMemoryOpenaiKey(e.target.value)}
+                        placeholder="sk-..."
+                        className="input-metallic w-full text-sm pr-10"
+                      />
+                      <button
+                        onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                      >
+                        {showOpenaiKey ? (
+                          <EyeOff className="w-4 h-4 text-slate-500" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-slate-500" />
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleGetOpenaiKey}
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Get Key
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        embeddingsEnabled ? 'bg-emerald-400' : 'bg-slate-600'
+                      }`}
+                    />
+                    <p className="text-xs text-slate-600">
+                      {embeddingsEnabled
+                        ? 'Semantic search enabled - memories are searchable by meaning'
+                        : 'Add OpenAI key for smarter memory retrieval via embeddings'}
+                    </p>
                   </div>
                 </div>
 

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown, Folder, FileText, FolderOpen, Plus, RefreshCw, Star } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ChevronRight, ChevronDown, Folder, FileText, FolderOpen, Plus, RefreshCw, Star, GripVertical } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { StarredSection } from './StarredSection'
 
@@ -91,6 +91,12 @@ export function FileTree() {
     }
   }
 
+  // Handle drag start for file/folder entries
+  const handleDragStart = useCallback((e: React.DragEvent, entry: FileEntry) => {
+    e.dataTransfer.setData('text/plain', entry.path)
+    e.dataTransfer.effectAllowed = 'copy'
+  }, [])
+
   const renderEntry = (entry: FileEntry, depth: number = 0) => {
     const isExpanded = expandedPaths.has(entry.path)
     const isSelected = currentFile === entry.path
@@ -113,7 +119,11 @@ export function FileTree() {
             } : {})
           }}
           onClick={() => handleFileClick(entry)}
+          draggable
+          onDragStart={(e) => handleDragStart(e, entry)}
         >
+          {/* Drag handle indicator - shows on hover */}
+          <GripVertical className="w-3 h-3 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 cursor-grab" />
           {entry.isDirectory ? (
             <>
               {isExpanded ? (

@@ -49,6 +49,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "js-tiktoken": "^1.0.21",
     "lucide-react": "^0.562.0",
+    "openai": "^6.16.0",
     "path-browserify": "^1.0.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

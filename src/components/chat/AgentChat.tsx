@@ -137,6 +137,7 @@ export function AgentChat() {
   const [savedConversations, setSavedConversations] = useState<ConversationMeta[]>([])
   const [showLoadDropdown, setShowLoadDropdown] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -436,6 +437,87 @@ export function AgentChat() {
       setActiveMentions(parsed.mentions)
       setActiveDocuments(parsed.documentMentions)
     })
+  }, [input, workspacePath])
+
+  // Handle drag and drop of files/folders into chat
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set to false if we're leaving the container entirely
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    if (!workspacePath) return
+
+    // Handle dropped files from the file tree
+    const droppedPath = e.dataTransfer.getData('text/plain')
+    if (droppedPath && droppedPath.startsWith(workspacePath)) {
+      // Convert absolute path to relative @mention
+      const relativePath = droppedPath.replace(workspacePath, '').replace(/^[\\/]/, '')
+      const mention = `@${relativePath.replace(/\\/g, '/')}`
+
+      // Add the mention to the input
+      const newInput = input.trim() ? `${input.trim()} ${mention} ` : `${mention} `
+      setInput(newInput)
+
+      // Update active documents
+      const parsed = await parseMessage(newInput, workspacePath)
+      setActiveMentions(parsed.mentions)
+      setActiveDocuments(parsed.documentMentions)
+
+      inputRef.current?.focus()
+      return
+    }
+
+    // Handle native file drops from OS
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      const mentions: string[] = []
+
+      for (const file of files) {
+        // Get the file path - this is the native path from the OS
+        const filePath = (file as any).path
+        if (filePath && workspacePath && filePath.startsWith(workspacePath)) {
+          const relativePath = filePath.replace(workspacePath, '').replace(/^[\\/]/, '')
+          mentions.push(`@${relativePath.replace(/\\/g, '/')}`)
+        }
+      }
+
+      if (mentions.length > 0) {
+        const newInput = input.trim()
+          ? `${input.trim()} ${mentions.join(' ')} `
+          : `${mentions.join(' ')} `
+        setInput(newInput)
+
+        // Update active documents
+        const parsed = await parseMessage(newInput, workspacePath)
+        setActiveMentions(parsed.mentions)
+        setActiveDocuments(parsed.documentMentions)
+
+        inputRef.current?.focus()
+      }
+    }
   }, [input, workspacePath])
 
   // Clear caches when integrations modal closes (in case configs changed)
@@ -740,7 +822,36 @@ export function AgentChat() {
       style={{
         background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
       }}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
+      {/* Drag and Drop Overlay */}
+      {isDragOver && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+          style={{
+            background: 'rgba(0, 212, 255, 0.1)',
+            border: '2px dashed rgba(0, 212, 255, 0.5)',
+            borderRadius: '12px',
+            margin: '8px'
+          }}
+        >
+          <div
+            className="flex flex-col items-center gap-3 p-6 rounded-xl"
+            style={{
+              background: 'rgba(16, 20, 32, 0.95)',
+              border: '1px solid rgba(0, 212, 255, 0.3)',
+              boxShadow: '0 0 30px rgba(0, 212, 255, 0.2)'
+            }}
+          >
+            <FileText className="w-10 h-10 text-cyan-400" />
+            <span className="text-lg font-medium text-white">Drop files to add as @mentions</span>
+            <span className="text-sm text-slate-400">Files will be referenced in your message</span>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div
         className="h-14 flex items-center justify-between px-4 relative"

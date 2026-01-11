@@ -144,15 +144,23 @@ interface AppState {
   memorySupabaseUrl: string
   memorySupabaseAnonKey: string
   memoryUserId: string | null
+  memoryOpenaiKey: string
   setMemoryEnabled: (enabled: boolean) => void
   setMemorySupabaseUrl: (url: string) => void
   setMemorySupabaseAnonKey: (key: string) => void
   setMemoryUserId: (id: string | null) => void
+  setMemoryOpenaiKey: (key: string) => void
   generateMemoryUserId: () => string
 
   // Pending Chat Prompt (for programmatic injection)
   pendingChatPrompt: string | null
   setPendingChatPrompt: (prompt: string | null) => void
+
+  // Editor Settings
+  editorFontSize: number
+  setEditorFontSize: (size: number) => void
+  increaseEditorFontSize: () => void
+  decreaseEditorFontSize: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -306,10 +314,12 @@ export const useAppStore = create<AppState>()(
       memorySupabaseUrl: '',
       memorySupabaseAnonKey: '',
       memoryUserId: null,
+      memoryOpenaiKey: '',
       setMemoryEnabled: (enabled) => set({ memoryEnabled: enabled }),
       setMemorySupabaseUrl: (url) => set({ memorySupabaseUrl: url }),
       setMemorySupabaseAnonKey: (key) => set({ memorySupabaseAnonKey: key }),
       setMemoryUserId: (id) => set({ memoryUserId: id }),
+      setMemoryOpenaiKey: (key) => set({ memoryOpenaiKey: key }),
       generateMemoryUserId: () => {
         const id = crypto.randomUUID()
         set({ memoryUserId: id })
@@ -319,6 +329,16 @@ export const useAppStore = create<AppState>()(
       // Pending Chat Prompt
       pendingChatPrompt: null,
       setPendingChatPrompt: (prompt) => set({ pendingChatPrompt: prompt }),
+
+      // Editor Settings
+      editorFontSize: 16, // default 16px (1rem)
+      setEditorFontSize: (size) => set({ editorFontSize: Math.min(32, Math.max(12, size)) }),
+      increaseEditorFontSize: () => set((state) => ({
+        editorFontSize: Math.min(32, state.editorFontSize + 2)
+      })),
+      decreaseEditorFontSize: () => set((state) => ({
+        editorFontSize: Math.max(12, state.editorFontSize - 2)
+      })),
     }),
     {
       name: 'assistantos-storage',
@@ -340,6 +360,8 @@ export const useAppStore = create<AppState>()(
         memorySupabaseUrl: state.memorySupabaseUrl,
         memorySupabaseAnonKey: state.memorySupabaseAnonKey,
         memoryUserId: state.memoryUserId,
+        memoryOpenaiKey: state.memoryOpenaiKey,
+        editorFontSize: state.editorFontSize,
       }),
     }
   )

@@ -6,6 +6,13 @@
 
 import { ipcMain } from 'electron'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import {
+  initializeEmbeddings,
+  isEmbeddingsAvailable,
+  generateEmbedding,
+  generateEmbeddings,
+  formatEmbeddingForSupabase,
+} from './embeddingService'
 
 // In-memory state for the memory service
 let supabaseClient: SupabaseClient | null = null
@@ -114,7 +121,19 @@ export function registerMemoryHandlers(): void {
       factCount: factsResult.count || 0,
       preferenceCount: prefsResult.count || 0,
       summaryCount: summariesResult.count || 0,
+      embeddingsEnabled: isEmbeddingsAvailable(),
     }
+  })
+
+  // Set OpenAI API key for embeddings
+  ipcMain.handle('memory:setOpenaiKey', async (_event, apiKey: string) => {
+    initializeEmbeddings(apiKey)
+    return { success: true, embeddingsEnabled: isEmbeddingsAvailable() }
+  })
+
+  // Check if embeddings are available
+  ipcMain.handle('memory:isEmbeddingsEnabled', async () => {
+    return isEmbeddingsAvailable()
   })
 
   // ============================================================================
@@ -192,17 +211,27 @@ export function registerMemoryHandlers(): void {
     ) => {
       if (!supabaseClient || !internalUserId) return null
 
+      // Generate embedding if available
+      const embedding = await generateEmbedding(fact.fact)
+
+      const insertData: Record<string, unknown> = {
+        user_id: internalUserId,
+        category: fact.category,
+        fact: fact.fact,
+        source: fact.source || 'explicit',
+        confidence: fact.confidence ?? 1.0,
+        keywords: extractKeywords(fact.fact),
+        extracted_from_conversation: fact.conversationId,
+      }
+
+      // Add embedding if generated successfully
+      if (embedding) {
+        insertData.embedding = formatEmbeddingForSupabase(embedding)
+      }
+
       const { data } = await supabaseClient
         .from('user_facts')
-        .insert({
-          user_id: internalUserId,
-          category: fact.category,
-          fact: fact.fact,
-          source: fact.source || 'explicit',
-          confidence: fact.confidence ?? 1.0,
-          keywords: extractKeywords(fact.fact),
-          extracted_from_conversation: fact.conversationId,
-        })
+        .insert(insertData)
         .select()
         .single()
 
@@ -218,15 +247,27 @@ export function registerMemoryHandlers(): void {
     ) => {
       if (!supabaseClient || !internalUserId || facts.length === 0) return []
 
-      const inserts = facts.map((f) => ({
-        user_id: internalUserId!,
-        category: f.category,
-        fact: f.fact,
-        source: f.source || 'explicit',
-        confidence: f.confidence ?? 1.0,
-        keywords: extractKeywords(f.fact),
-        extracted_from_conversation: f.conversationId,
-      }))
+      // Generate embeddings for all facts in batch (more efficient)
+      const embeddings = await generateEmbeddings(facts.map((f) => f.fact))
+
+      const inserts = facts.map((f, i) => {
+        const insert: Record<string, unknown> = {
+          user_id: internalUserId!,
+          category: f.category,
+          fact: f.fact,
+          source: f.source || 'explicit',
+          confidence: f.confidence ?? 1.0,
+          keywords: extractKeywords(f.fact),
+          extracted_from_conversation: f.conversationId,
+        }
+
+        // Add embedding if generated successfully
+        if (embeddings[i]) {
+          insert.embedding = formatEmbeddingForSupabase(embeddings[i]!)
+        }
+
+        return insert
+      })
 
       const { data } = await supabaseClient.from('user_facts').insert(inserts).select()
       return data || []
@@ -380,23 +421,33 @@ export function registerMemoryHandlers(): void {
     ) => {
       if (!supabaseClient || !internalUserId) return null
 
+      // Generate embedding for the summary text
+      const embedding = await generateEmbedding(summary.summary)
+
+      const insertData: Record<string, unknown> = {
+        user_id: internalUserId,
+        local_conversation_id: summary.local_conversation_id,
+        workspace_path: summary.workspace_path,
+        title: summary.title,
+        summary: summary.summary,
+        key_decisions: summary.key_decisions || [],
+        outcomes: summary.outcomes || [],
+        problems_solved: summary.problems_solved || [],
+        keywords: extractKeywords(summary.summary),
+        message_count: summary.message_count,
+        model_used: summary.model_used,
+        started_at: summary.started_at,
+        ended_at: summary.ended_at,
+      }
+
+      // Add embedding if generated successfully
+      if (embedding) {
+        insertData.embedding = formatEmbeddingForSupabase(embedding)
+      }
+
       const { data } = await supabaseClient
         .from('conversation_summaries')
-        .insert({
-          user_id: internalUserId,
-          local_conversation_id: summary.local_conversation_id,
-          workspace_path: summary.workspace_path,
-          title: summary.title,
-          summary: summary.summary,
-          key_decisions: summary.key_decisions || [],
-          outcomes: summary.outcomes || [],
-          problems_solved: summary.problems_solved || [],
-          keywords: extractKeywords(summary.summary),
-          message_count: summary.message_count,
-          model_used: summary.model_used,
-          started_at: summary.started_at,
-          ended_at: summary.ended_at,
-        })
+        .insert(insertData)
         .select()
         .single()
 
@@ -426,48 +477,83 @@ export function registerMemoryHandlers(): void {
 
   ipcMain.handle('memory:getRelevantMemories', async (_event, query: string) => {
     if (!supabaseClient || !internalUserId) {
-      return { profile: null, facts: [], preferences: [], summaries: [] }
+      return { profile: null, facts: [], preferences: [], summaries: [], usedEmbeddings: false }
     }
 
     const keywords = extractKeywords(query)
 
-    // Fetch all in parallel
-    const [profileResult, factsResult, prefsResult, summariesResult] = await Promise.all([
+    // Try to generate embedding for semantic search
+    const queryEmbedding = await generateEmbedding(query)
+    const useSemanticSearch = queryEmbedding !== null
+
+    // Fetch profile and preferences (no embedding search needed)
+    const [profileResult, prefsResult] = await Promise.all([
       supabaseClient
         .from('user_profiles')
         .select('*')
         .eq('user_id', internalUserId)
         .single(),
-      keywords.length > 0
-        ? supabaseClient
-            .from('user_facts')
-            .select('*')
-            .eq('user_id', internalUserId)
-            .eq('is_active', true)
-            .overlaps('keywords', keywords)
-            .limit(5)
-        : Promise.resolve({ data: [] }),
       supabaseClient
         .from('user_preferences')
         .select('*')
         .eq('user_id', internalUserId)
         .gte('confidence', 0.5)
         .limit(10),
-      keywords.length > 0
-        ? supabaseClient
-            .from('conversation_summaries')
-            .select('*')
-            .eq('user_id', internalUserId)
-            .overlaps('keywords', keywords)
-            .limit(2)
-        : Promise.resolve({ data: [] }),
     ])
+
+    // Fetch facts and summaries with semantic or keyword search
+    let factsResult: { data: unknown[] | null }
+    let summariesResult: { data: unknown[] | null }
+
+    if (useSemanticSearch) {
+      // Use semantic search via RPC functions
+      const [factsRpc, summariesRpc] = await Promise.all([
+        supabaseClient.rpc('search_facts_by_embedding', {
+          p_user_id: internalUserId,
+          p_query_embedding: formatEmbeddingForSupabase(queryEmbedding),
+          p_limit: 5,
+          p_min_similarity: 0.3,
+        }),
+        supabaseClient.rpc('search_summaries_by_embedding', {
+          p_user_id: internalUserId,
+          p_query_embedding: formatEmbeddingForSupabase(queryEmbedding),
+          p_limit: 2,
+          p_min_similarity: 0.3,
+        }),
+      ])
+      factsResult = factsRpc
+      summariesResult = summariesRpc
+    } else {
+      // Fallback to keyword search
+      const [factsKw, summariesKw] = await Promise.all([
+        keywords.length > 0
+          ? supabaseClient
+              .from('user_facts')
+              .select('*')
+              .eq('user_id', internalUserId)
+              .eq('is_active', true)
+              .overlaps('keywords', keywords)
+              .limit(5)
+          : Promise.resolve({ data: [] }),
+        keywords.length > 0
+          ? supabaseClient
+              .from('conversation_summaries')
+              .select('*')
+              .eq('user_id', internalUserId)
+              .overlaps('keywords', keywords)
+              .limit(2)
+          : Promise.resolve({ data: [] }),
+      ])
+      factsResult = factsKw
+      summariesResult = summariesKw
+    }
 
     return {
       profile: profileResult.data,
       facts: factsResult.data || [],
       preferences: prefsResult.data || [],
       summaries: summariesResult.data || [],
+      usedEmbeddings: useSemanticSearch,
     }
   })
 
