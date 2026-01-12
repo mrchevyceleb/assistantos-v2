@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Settings, LayoutDashboard, ListTodo } from 'lucide-react'
 import { AgentSection } from './AgentSection'
 import { FilesSection } from './FilesSection'
+import { QuickNotesSection } from './QuickNotesSection'
 import { MCPIndicators } from './MCPIndicators'
 import { SettingsModal } from '../settings/SettingsModal'
 import { IntegrationsModal } from '../settings/IntegrationsModal'
@@ -76,6 +77,9 @@ export function Sidebar({ className = '' }: SidebarProps) {
           <ListTodo className="w-4 h-4" />
           <span>Tasks</span>
         </button>
+
+        {/* Quick Notes Section */}
+        <QuickNotesSection />
 
         {/* Files Section - Collapsible, takes remaining space */}
         <FilesSection />

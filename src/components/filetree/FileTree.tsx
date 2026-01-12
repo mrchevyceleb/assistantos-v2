@@ -126,11 +126,18 @@ export function FileTree() {
       } else if (e.key === 'Delete') {
         e.preventDefault()
         setDeleteTarget(selectedEntry)
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        handleFileClick(selectedEntry)
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault()
+        window.electronAPI?.fs.copyPath(selectedPath)
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPath, files, renameState])
 
   const handleSelectFolder = async () => {

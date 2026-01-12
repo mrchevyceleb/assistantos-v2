@@ -41,5 +41,12 @@ export const DEFAULT_SHORTCUTS: PromptShortcut[] = [
     description: 'Research a topic',
     prompt: 'Help me research a topic. I\'ll provide the subject and you\'ll search the web, gather information, and present a comprehensive summary.',
     isBuiltIn: true
+  },
+  {
+    id: 'builtin-compact',
+    name: 'compact',
+    description: 'Compress conversation history to save context',
+    prompt: 'Please compact my conversation history by summarizing older messages while preserving recent context and important decisions. Create a concise summary that captures key information, decisions made, and ongoing tasks so we can continue our work efficiently.',
+    isBuiltIn: true
   }
 ]

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog, Folder, ChevronDown } from 'lucide-react'
+import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog, Folder, ChevronDown, FolderOpen, LayoutGrid, List } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { parseTasksFromWorkspace, getProjectList, getTasksFolder } from '../../services/taskParser'
 import { ParsedTask, DEFAULT_KANBAN_SETTINGS, KanbanSettings } from '../../types/task'
 import { KanbanBoard } from './KanbanBoard'
+import { TaskListView } from './TaskListView'
 import { ProjectSelector } from './ProjectSelector'
 
 export function TaskPanel() {
@@ -131,17 +132,35 @@ Add any project notes here.
     setFolderInput('')
   }
 
-  // Scan workspace for folders
+  // Scan workspace for all folders recursively
   const scanWorkspaceFolders = useCallback(async () => {
     if (!workspacePath || !window.electronAPI) return
 
+    const excludedDirs = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.cache', '__pycache__', 'coverage'])
+    const allFolders: string[] = []
+
+    const scanDir = async (dirPath: string, relativePath: string = '') => {
+      try {
+        const entries = await window.electronAPI.fs.readDir(dirPath)
+        for (const entry of entries) {
+          if (entry.isDirectory && !entry.name.startsWith('.') && !excludedDirs.has(entry.name)) {
+            const folderRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+            allFolders.push(folderRelPath)
+            // Recursively scan subdirectories (limit depth to avoid performance issues)
+            if (folderRelPath.split('/').length < 4) {
+              await scanDir(`${dirPath}/${entry.name}`, folderRelPath)
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore permission errors for individual directories
+      }
+    }
+
     try {
-      const entries = await window.electronAPI.fs.readDir(workspacePath)
-      const folders = entries
-        .filter(entry => entry.isDirectory && !entry.name.startsWith('.'))
-        .map(entry => entry.name)
-        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-      setWorkspaceFolders(folders)
+      await scanDir(workspacePath.replace(/\\/g, '/'))
+      allFolders.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      setWorkspaceFolders(allFolders)
     } catch (err) {
       console.error('Failed to scan workspace folders:', err)
     }
@@ -159,6 +178,21 @@ Add any project notes here.
   const handleSelectFolder = (folder: string) => {
     setFolderInput(folder)
     setShowFolderDropdown(false)
+  }
+
+  // Browse for folder using native dialog
+  const handleBrowseFolder = async () => {
+    if (!window.electronAPI) return
+
+    try {
+      const selectedPath = await window.electronAPI.fs.selectFolder()
+      if (selectedPath) {
+        setFolderInput(selectedPath)
+        setShowFolderDropdown(false)
+      }
+    } catch (err) {
+      console.error('Failed to select folder:', err)
+    }
   }
 
   return (
@@ -180,9 +214,15 @@ Add any project notes here.
           {/* Left: Title and Project Selector */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <Kanban className="w-5 h-5 text-cyan-400" />
+              {settings.viewMode === 'kanban' ? (
+                <Kanban className="w-5 h-5 text-cyan-400" />
+              ) : (
+                <List className="w-5 h-5 text-cyan-400" />
+              )}
               <div>
-                <h1 className="text-base font-semibold text-white">Kanban</h1>
+                <h1 className="text-base font-semibold text-white">
+                  {settings.viewMode === 'kanban' ? 'Kanban' : 'Tasks'}
+                </h1>
                 <p className="text-xs text-slate-400">
                   {openCount} active / {totalCount} total
                 </p>
@@ -201,6 +241,36 @@ Add any project notes here.
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex items-center rounded-lg overflow-hidden border border-white/10">
+              <button
+                onClick={() => setKanbanSettings({ viewMode: 'kanban' })}
+                className={`
+                  p-2 transition-colors
+                  ${settings.viewMode === 'kanban'
+                    ? 'bg-cyan-500/20 text-cyan-400'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
+                  }
+                `}
+                title="Kanban view"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setKanbanSettings({ viewMode: 'list' })}
+                className={`
+                  p-2 transition-colors
+                  ${settings.viewMode === 'list'
+                    ? 'bg-cyan-500/20 text-cyan-400'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
+                  }
+                `}
+                title="List view"
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+
             {/* Folder config */}
             <button
               onClick={openFolderDialog}
@@ -302,6 +372,14 @@ Add any project notes here.
               <code className="text-emerald-400">- [x] Done</code>
             </p>
           </div>
+        ) : settings.viewMode === 'list' ? (
+          <TaskListView
+            tasks={tasks}
+            settings={settings}
+            onTaskUpdate={loadTasks}
+            onSortChange={(sortBy, sortOrder) => setKanbanSettings({ listSortBy: sortBy, listSortOrder: sortOrder })}
+            onGroupByChange={(groupBy) => setKanbanSettings({ listGroupByProject: groupBy })}
+          />
         ) : (
           <KanbanBoard
             tasks={tasks}
@@ -333,15 +411,28 @@ Add any project notes here.
             </div>
 
             <p className="text-sm text-slate-400 mb-4">
-              Set a custom folder path relative to your workspace root, or leave empty to use the default "TASKS" folder.
+              Browse to any folder on your computer, pick from workspace folders, or type a path.
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs text-slate-500 mb-1.5">
-                Select a folder or type a custom path
-              </label>
+              {/* Browse button - primary action */}
+              <button
+                type="button"
+                onClick={handleBrowseFolder}
+                className="w-full px-3 py-2.5 mb-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2
+                           bg-violet-500/20 border border-violet-500/30 text-violet-300
+                           hover:bg-violet-500/30 hover:border-violet-500/40
+                           focus:outline-none focus:ring-2 focus:ring-violet-500/30
+                           transition-colors"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Browse for Folder...
+              </button>
 
-              {/* Folder dropdown */}
+              {/* Workspace folders dropdown */}
+              <label className="block text-xs text-slate-500 mb-1.5">
+                Or select from workspace
+              </label>
               <div className="relative mb-2">
                 <button
                   type="button"
@@ -353,7 +444,7 @@ Add any project notes here.
                 >
                   <span className="flex items-center gap-2 text-slate-300">
                     <Folder className="w-4 h-4 text-violet-400" />
-                    {folderInput || <span className="text-slate-500">Choose from workspace folders...</span>}
+                    <span className="text-slate-500">Workspace folders...</span>
                   </span>
                   <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showFolderDropdown ? 'rotate-180' : ''}`} />
                 </button>
@@ -384,22 +475,28 @@ Add any project notes here.
                 )}
               </div>
 
-              {/* Custom path input */}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={folderInput}
-                  onChange={(e) => setFolderInput(e.target.value)}
-                  placeholder="Or type custom path: e.g., projects/tasks"
-                  className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500
-                             bg-black/20 border border-white/10 focus:border-violet-500/50
-                             focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSetCustomFolder()
-                    if (e.key === 'Escape') closeFolderDialog()
-                  }}
-                />
-              </div>
+              {/* Current selection display */}
+              {folderInput && (
+                <div className="px-3 py-2 mb-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                  <p className="text-xs text-slate-500 mb-0.5">Selected folder:</p>
+                  <p className="text-sm text-cyan-300 font-mono break-all">{folderInput}</p>
+                </div>
+              )}
+
+              {/* Manual input */}
+              <input
+                type="text"
+                value={folderInput}
+                onChange={(e) => setFolderInput(e.target.value)}
+                placeholder="Or type/paste a path..."
+                className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500
+                           bg-black/20 border border-white/10 focus:border-violet-500/50
+                           focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSetCustomFolder()
+                  if (e.key === 'Escape') closeFolderDialog()
+                }}
+              />
 
               <p className="text-xs text-slate-600 mt-2">
                 Current: <code className="text-cyan-400/80">{effectiveTasksFolder}</code>
@@ -408,7 +505,7 @@ Add any project notes here.
 
             <div className="flex gap-2 justify-end">
               <button
-                onClick={() => setShowFolderDialog(false)}
+                onClick={closeFolderDialog}
                 className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white
                            hover:bg-white/5 transition-colors"
               >

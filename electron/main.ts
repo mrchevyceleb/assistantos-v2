@@ -569,3 +569,153 @@ ipcMain.handle('conversation:export', async (_, markdown: string, suggestedName:
     return { success: false, error: String(error) }
   }
 })
+
+// =============================================================================
+// File Content Search Handler (for workspace-wide search)
+// =============================================================================
+
+// Constants for content search
+const CONTENT_SEARCH_MAX_RESULTS = 50
+const CONTENT_SEARCH_MAX_FILE_SIZE = 1024 * 1024 // 1MB max file size
+const CONTENT_SEARCH_EXCLUDED_EXTENSIONS = new Set([
+  '.exe', '.dll', '.so', '.dylib', '.bin', '.obj',
+  '.zip', '.tar', '.gz', '.rar', '.7z',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg',
+  '.mp3', '.mp4', '.wav', '.avi', '.mov', '.webm',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  '.lock', '.map'
+])
+
+/**
+ * Check if a file should be searched based on extension
+ */
+function isSearchableFile(fileName: string): boolean {
+  const ext = path.extname(fileName).toLowerCase()
+  return !CONTENT_SEARCH_EXCLUDED_EXTENSIONS.has(ext)
+}
+
+interface ContentSearchResult {
+  filePath: string
+  relativePath: string
+  fileName: string
+  lineNumber: number
+  lineContent: string
+  matchStart: number
+  matchEnd: number
+}
+
+/**
+ * Search file contents for a query string
+ */
+async function searchFileContents(
+  filePath: string,
+  query: string,
+  queryLower: string
+): Promise<ContentSearchResult[]> {
+  const results: ContentSearchResult[] = []
+
+  try {
+    const stat = await fs.promises.stat(filePath)
+    if (stat.size > CONTENT_SEARCH_MAX_FILE_SIZE) return results
+
+    const content = await fs.promises.readFile(filePath, 'utf-8')
+    const lines = content.split('\n')
+    const fileName = path.basename(filePath)
+
+    for (let i = 0; i < lines.length && results.length < 5; i++) {
+      const line = lines[i]
+      const lineLower = line.toLowerCase()
+      const matchIndex = lineLower.indexOf(queryLower)
+
+      if (matchIndex !== -1) {
+        results.push({
+          filePath,
+          relativePath: '', // Will be set by caller
+          fileName,
+          lineNumber: i + 1,
+          lineContent: line.slice(0, 200), // Truncate long lines
+          matchStart: matchIndex,
+          matchEnd: matchIndex + query.length
+        })
+      }
+    }
+  } catch {
+    // Ignore read errors (binary files, permission issues, etc.)
+  }
+
+  return results
+}
+
+/**
+ * Recursively search directory for content matches
+ */
+async function searchDirectoryContents(
+  dirPath: string,
+  basePath: string,
+  query: string,
+  queryLower: string,
+  results: ContentSearchResult[],
+  depth: number = 0
+): Promise<void> {
+  if (depth > FILE_SEARCH_MAX_DEPTH || results.length >= CONTENT_SEARCH_MAX_RESULTS) return
+
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+
+    for (const entry of entries) {
+      if (results.length >= CONTENT_SEARCH_MAX_RESULTS) break
+
+      // Skip hidden and excluded directories
+      if (entry.name.startsWith('.') || EXCLUDED_DIRECTORIES.has(entry.name)) continue
+
+      const fullPath = path.join(dirPath, entry.name)
+      const relativePath = path.relative(basePath, fullPath)
+
+      if (entry.isDirectory()) {
+        await searchDirectoryContents(fullPath, basePath, query, queryLower, results, depth + 1)
+      } else if (entry.isFile() && isSearchableFile(entry.name)) {
+        const fileResults = await searchFileContents(fullPath, query, queryLower)
+        for (const result of fileResults) {
+          if (results.length >= CONTENT_SEARCH_MAX_RESULTS) break
+          result.relativePath = relativePath
+          results.push(result)
+        }
+      }
+    }
+  } catch {
+    // Ignore permission errors
+  }
+}
+
+// IPC Handler for searching file contents
+ipcMain.handle('fs:searchContent', async (_, workspacePath: string, query: string) => {
+  if (!query || query.length < 2) {
+    return { filenameMatches: [], contentMatches: [] }
+  }
+
+  const queryLower = query.toLowerCase()
+
+  // First, get filename matches using existing search
+  const filenameMatches: Array<{
+    name: string
+    path: string
+    relativePath: string
+    isDirectory: boolean
+  }> = []
+
+  const keywords = queryLower.split(/\s+/).filter(k => k.length > 0)
+  if (keywords.length > 0) {
+    await searchDirectoryRecursively(workspacePath, keywords, filenameMatches)
+    sortSearchResults(filenameMatches, keywords)
+  }
+
+  // Then, search content
+  const contentMatches: ContentSearchResult[] = []
+  await searchDirectoryContents(workspacePath, workspacePath, query, queryLower, contentMatches)
+
+  return {
+    filenameMatches: filenameMatches.slice(0, 10),
+    contentMatches: contentMatches.slice(0, 20)
+  }
+})

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
     exists: (filePath: string) => ipcRenderer.invoke('fs:exists', filePath),
     searchFiles: (workspacePath: string, searchTerm: string) => ipcRenderer.invoke('fs:searchFiles', workspacePath, searchTerm),
+    searchContent: (workspacePath: string, query: string) => ipcRenderer.invoke('fs:searchContent', workspacePath, query),
     rename: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:rename', oldPath, newPath),
     delete: (targetPath: string) => ipcRenderer.invoke('fs:delete', targetPath),
     copyPath: (filePath: string) => ipcRenderer.invoke('fs:copyPath', filePath),
@@ -335,6 +336,18 @@ declare global {
         createDir: (dirPath: string) => Promise<boolean>
         exists: (filePath: string) => Promise<boolean>
         searchFiles: (workspacePath: string, searchTerm: string) => Promise<Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>>
+        searchContent: (workspacePath: string, query: string) => Promise<{
+          filenameMatches: Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>
+          contentMatches: Array<{
+            filePath: string
+            relativePath: string
+            fileName: string
+            lineNumber: number
+            lineContent: string
+            matchStart: number
+            matchEnd: number
+          }>
+        }>
         rename: (oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>
         delete: (targetPath: string) => Promise<{ success: boolean; error?: string }>
         copyPath: (filePath: string) => Promise<{ success: boolean; error?: string }>

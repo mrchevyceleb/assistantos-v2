@@ -66,12 +66,21 @@ export interface ParsedTask {
   raw: string                     // Original line from file
 }
 
+// List view sort options
+export type ListSortBy = 'dueDate' | 'project' | 'status' | 'priority'
+export type ListSortOrder = 'asc' | 'desc'
+export type TaskViewMode = 'kanban' | 'list'
+
 // Kanban display settings (replaces old TaskSettings)
 export interface KanbanSettings {
   selectedProject: string | null  // null = show all projects
   hideEmptyColumns: boolean
   showCompletedTasks: boolean
   customTasksFolder: string | null  // Custom folder path (relative to workspace), null = default "TASKS"
+  viewMode: TaskViewMode  // 'kanban' or 'list'
+  listSortBy: ListSortBy  // Sort field for list view
+  listSortOrder: ListSortOrder  // Sort direction for list view
+  listGroupByProject: boolean  // Group tasks by project in list view
 }
 
 export const DEFAULT_KANBAN_SETTINGS: KanbanSettings = {
@@ -79,6 +88,10 @@ export const DEFAULT_KANBAN_SETTINGS: KanbanSettings = {
   hideEmptyColumns: false,
   showCompletedTasks: true,
   customTasksFolder: null,
+  viewMode: 'kanban',
+  listSortBy: 'dueDate',
+  listSortOrder: 'asc',
+  listGroupByProject: true,
 }
 
 // Legacy TaskSettings - kept temporarily for migration

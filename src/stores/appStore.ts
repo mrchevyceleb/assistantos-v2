@@ -3,6 +3,25 @@ import { persist } from 'zustand/middleware'
 import { TaskSettings, DEFAULT_TASK_SETTINGS, KanbanSettings, DEFAULT_KANBAN_SETTINGS, CenterPanelView } from '@/types/task'
 import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
 import { DashboardSettings, DEFAULT_DASHBOARD_SETTINGS } from '@/types/weather'
+import { QuickNote } from '@/types/quickNote'
+
+// Avatar types
+export type AgentAvatarType = 'default' | 'custom' | 'preset'
+
+export const PRESET_AVATARS = [
+  { id: 'robot', icon: 'Bot', label: 'Robot' },
+  { id: 'brain', icon: 'Brain', label: 'Brain' },
+  { id: 'sparkles', icon: 'Sparkles', label: 'Sparkles' },
+  { id: 'cpu', icon: 'Cpu', label: 'CPU' },
+  { id: 'zap', icon: 'Zap', label: 'Zap' },
+  { id: 'terminal', icon: 'Terminal', label: 'Terminal' },
+  { id: 'wand', icon: 'Wand2', label: 'Wand' },
+  { id: 'atom', icon: 'Atom', label: 'Atom' },
+  { id: 'globe', icon: 'Globe', label: 'Globe' },
+  { id: 'star', icon: 'Star', label: 'Star' },
+] as const
+
+export type PresetAvatarId = typeof PRESET_AVATARS[number]['id']
 
 // MCP Integration type (matching electron/mcp/registry.ts)
 export interface MCPIntegration {
@@ -190,6 +209,26 @@ interface AppState {
   // Dashboard Settings
   dashboardSettings: DashboardSettings
   setDashboardSettings: (settings: Partial<DashboardSettings>) => void
+
+  // Quick Notes
+  quickNotes: QuickNote[]
+  addQuickNote: (text: string) => void
+  deleteQuickNote: (id: string) => void
+  updateQuickNote: (id: string, text: string) => void
+
+  // Profile & Avatar Settings
+  userProfilePicture: string | null  // base64 data URL
+  setUserProfilePicture: (picture: string | null) => void
+  agentAvatarType: AgentAvatarType
+  agentCustomAvatar: string | null  // base64 data URL
+  agentPresetAvatar: PresetAvatarId | null
+  setAgentAvatarType: (type: AgentAvatarType) => void
+  setAgentCustomAvatar: (avatar: string | null) => void
+  setAgentPresetAvatar: (preset: PresetAvatarId | null) => void
+
+  // Context Token Tracking
+  showContextUsage: boolean
+  setShowContextUsage: (show: boolean) => void
 
   // Hydration flag (for avoiding race conditions with persisted settings)
   _hasHydrated: boolean
@@ -420,6 +459,41 @@ export const useAppStore = create<AppState>()(
         dashboardSettings: { ...state.dashboardSettings, ...settings }
       })),
 
+      // Quick Notes
+      quickNotes: [],
+      addQuickNote: (text) => set((state) => ({
+        quickNotes: [
+          {
+            id: `note-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            text,
+            createdAt: new Date().toISOString(),
+          },
+          ...state.quickNotes, // Add to beginning (newest first)
+        ],
+      })),
+      deleteQuickNote: (id) => set((state) => ({
+        quickNotes: state.quickNotes.filter((note) => note.id !== id),
+      })),
+      updateQuickNote: (id, text) => set((state) => ({
+        quickNotes: state.quickNotes.map((note) =>
+          note.id === id ? { ...note, text } : note
+        ),
+      })),
+
+      // Profile & Avatar Settings
+      userProfilePicture: null,
+      setUserProfilePicture: (picture) => set({ userProfilePicture: picture }),
+      agentAvatarType: 'default' as AgentAvatarType,
+      agentCustomAvatar: null,
+      agentPresetAvatar: null,
+      setAgentAvatarType: (type) => set({ agentAvatarType: type }),
+      setAgentCustomAvatar: (avatar) => set({ agentCustomAvatar: avatar }),
+      setAgentPresetAvatar: (preset) => set({ agentPresetAvatar: preset }),
+
+      // Context Token Tracking
+      showContextUsage: false,
+      setShowContextUsage: (show) => set({ showContextUsage: show }),
+
       // Hydration flag
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
@@ -453,6 +527,12 @@ export const useAppStore = create<AppState>()(
         editorFontSize: state.editorFontSize,
         shortcuts: state.shortcuts,
         dashboardSettings: state.dashboardSettings,
+        quickNotes: state.quickNotes,
+        userProfilePicture: state.userProfilePicture,
+        agentAvatarType: state.agentAvatarType,
+        agentCustomAvatar: state.agentCustomAvatar,
+        agentPresetAvatar: state.agentPresetAvatar,
+        showContextUsage: state.showContextUsage,
       }),
     }
   )

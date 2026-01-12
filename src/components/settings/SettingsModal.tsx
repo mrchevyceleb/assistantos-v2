@@ -23,9 +23,18 @@ import {
   Plus,
   Pencil,
   Trash2,
-  Lock
+  Lock,
+  User,
+  Upload,
+  Sparkles,
+  Cpu,
+  Terminal,
+  Wand2,
+  Atom,
+  Globe,
+  Star
 } from 'lucide-react'
-import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS } from '../../stores/appStore'
+import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS, PRESET_AVATARS, type AgentAvatarType } from '../../stores/appStore'
 import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
 import { isValidCommandName } from '@/services/shortcuts/parser'
 
@@ -102,7 +111,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     removeShortcut,
     updateShortcut,
     resetShortcut,
-    resetAllShortcuts
+    resetAllShortcuts,
+    userProfilePicture,
+    setUserProfilePicture,
+    agentAvatarType,
+    agentCustomAvatar,
+    agentPresetAvatar,
+    setAgentAvatarType,
+    setAgentCustomAvatar,
+    setAgentPresetAvatar,
+    showContextUsage,
+    setShowContextUsage
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
@@ -117,6 +136,109 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [editingShortcut, setEditingShortcut] = useState<PromptShortcut | null>(null)
   const [isAddingShortcut, setIsAddingShortcut] = useState(false)
   const [shortcutForm, setShortcutForm] = useState({ name: '', description: '', prompt: '' })
+  // Avatar state
+  const [avatarTab, setAvatarTab] = useState<AgentAvatarType>(agentAvatarType)
+
+  // Handle user profile picture upload
+  const handleUserProfileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      return
+    }
+
+    // Read and resize the image
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        // Resize to max 200x200 for storage efficiency
+        const canvas = document.createElement('canvas')
+        const maxSize = 200
+        let { width, height } = img
+        if (width > maxSize || height > maxSize) {
+          if (width > height) {
+            height = (height / width) * maxSize
+            width = maxSize
+          } else {
+            width = (width / height) * maxSize
+            height = maxSize
+          }
+        }
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+          setUserProfilePicture(dataUrl)
+        }
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // Handle agent custom avatar upload
+  const handleAgentAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const maxSize = 200
+        let { width, height } = img
+        if (width > maxSize || height > maxSize) {
+          if (width > height) {
+            height = (height / width) * maxSize
+            width = maxSize
+          } else {
+            width = (width / height) * maxSize
+            height = maxSize
+          }
+        }
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+          setAgentCustomAvatar(dataUrl)
+          setAgentAvatarType('custom')
+          setAvatarTab('custom')
+        }
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // Preset avatar icon component
+  const PresetAvatarIcon = ({ iconName, size = 20 }: { iconName: string; size?: number }) => {
+    const iconProps = { className: 'text-white', size }
+    switch (iconName) {
+      case 'Bot': return <Bot {...iconProps} />
+      case 'Brain': return <Brain {...iconProps} />
+      case 'Sparkles': return <Sparkles {...iconProps} />
+      case 'Cpu': return <Cpu {...iconProps} />
+      case 'Zap': return <Zap {...iconProps} />
+      case 'Terminal': return <Terminal {...iconProps} />
+      case 'Wand2': return <Wand2 {...iconProps} />
+      case 'Atom': return <Atom {...iconProps} />
+      case 'Globe': return <Globe {...iconProps} />
+      case 'Star': return <Star {...iconProps} />
+      default: return <Bot {...iconProps} />
+    }
+  }
 
   // Fetch conversation count and memory status when modal opens
   useEffect(() => {
@@ -306,6 +428,219 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <p className="text-xs text-slate-600 mt-1.5">
                 Maximum response length. Recommended: 8192-16384 for most tasks.
               </p>
+            </div>
+
+            {/* Show Context Usage */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/5">
+              <div>
+                <label className="text-sm text-slate-300">Show context usage</label>
+                <p className="text-xs text-slate-600">
+                  Display token usage indicator in chat header
+                </p>
+              </div>
+              <button
+                onClick={() => setShowContextUsage(!showContextUsage)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  showContextUsage ? 'bg-cyan-500' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    showContextUsage ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </SettingsCard>
+
+          {/* Profile & Avatars */}
+          <SettingsCard
+            icon={<User className="w-5 h-5 text-pink-400" />}
+            title="Profile & Avatars"
+            description="Customize your appearance and agent avatar"
+          >
+            {/* User Profile Picture */}
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">Your Profile Picture</label>
+              <div className="flex items-center gap-4">
+                {/* Preview */}
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0"
+                  style={{
+                    background: userProfilePicture
+                      ? 'transparent'
+                      : 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
+                    border: '2px solid rgba(255, 255, 255, 0.1)',
+                    boxShadow: '0 0 15px rgba(236, 72, 153, 0.2)'
+                  }}
+                >
+                  {userProfilePicture ? (
+                    <img
+                      src={userProfilePicture}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-7 h-7 text-slate-400" />
+                  )}
+                </div>
+
+                {/* Upload and Clear buttons */}
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 px-3 py-2 text-sm text-pink-400 hover:text-pink-300 hover:bg-pink-500/10 rounded-lg transition-colors cursor-pointer">
+                    <Upload className="w-4 h-4" />
+                    Upload Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUserProfileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {userProfilePicture && (
+                    <button
+                      onClick={() => setUserProfilePicture(null)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 mt-2">
+                Appears next to your messages in chat. Recommended: square image.
+              </p>
+            </div>
+
+            {/* Agent Avatar */}
+            <div className="border-t border-white/5 pt-4">
+              <label className="block text-sm text-slate-400 mb-2">Agent Avatar</label>
+
+              {/* Avatar Type Tabs */}
+              <div className="flex gap-1 mb-3 p-1 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
+                {(['default', 'preset', 'custom'] as AgentAvatarType[]).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => {
+                      setAvatarTab(type)
+                      setAgentAvatarType(type)
+                    }}
+                    className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-all ${
+                      avatarTab === type
+                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Default Tab Content */}
+              {avatarTab === 'default' && (
+                <div className="flex items-center gap-4 p-3 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{
+                      background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+                      boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
+                    }}
+                  >
+                    <Bot className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-white">Default Claude Avatar</p>
+                    <p className="text-xs text-slate-500">The classic cyan-purple gradient bot icon</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Preset Tab Content */}
+              {avatarTab === 'preset' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-5 gap-2">
+                    {PRESET_AVATARS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        onClick={() => {
+                          setAgentPresetAvatar(preset.id)
+                          setAgentAvatarType('preset')
+                        }}
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${
+                          agentPresetAvatar === preset.id && agentAvatarType === 'preset'
+                            ? 'bg-cyan-500/20 border border-cyan-500/40'
+                            : 'hover:bg-white/5 border border-transparent'
+                        }`}
+                        title={preset.label}
+                      >
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center"
+                          style={{
+                            background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+                            boxShadow: agentPresetAvatar === preset.id && agentAvatarType === 'preset'
+                              ? '0 0 15px rgba(0, 212, 255, 0.4)'
+                              : 'none'
+                          }}
+                        >
+                          <PresetAvatarIcon iconName={preset.icon} size={20} />
+                        </div>
+                        <span className="text-[10px] text-slate-400">{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Tab Content */}
+              {avatarTab === 'custom' && (
+                <div className="flex items-center gap-4 p-3 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
+                  {/* Preview */}
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0"
+                    style={{
+                      background: agentCustomAvatar
+                        ? 'transparent'
+                        : 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+                      border: '2px solid rgba(0, 212, 255, 0.3)',
+                      boxShadow: '0 0 15px rgba(0, 212, 255, 0.2)'
+                    }}
+                  >
+                    {agentCustomAvatar ? (
+                      <img
+                        src={agentCustomAvatar}
+                        alt="Agent Avatar"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Bot className="w-6 h-6 text-white" />
+                    )}
+                  </div>
+
+                  {/* Upload and Clear buttons */}
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2 px-3 py-2 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors cursor-pointer">
+                      <Upload className="w-4 h-4" />
+                      Upload Image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAgentAvatarUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {agentCustomAvatar && (
+                      <button
+                        onClick={() => setAgentCustomAvatar(null)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </SettingsCard>
 

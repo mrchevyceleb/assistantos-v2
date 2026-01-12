@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { useTabStore } from '../../stores/tabStore'
 import { isMediaFile } from '../../utils/fileTypes'
+import { FileSearch, FileSearchHandle } from './FileSearch'
 
 interface FileEntry {
   name: string
@@ -125,11 +126,17 @@ function FileItem({
   )
 }
 
+export interface FilesSectionHandle {
+  focusSearch: () => void
+}
+
 export function FilesSection() {
   const [isCollapsed, setIsCollapsed] = useState(true)  // Collapsed by default
   const [files, setFiles] = useState<FileEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(false)
+
+  const searchRef = useRef<FileSearchHandle>(null)
 
   const workspacePath = useAppStore(state => state.workspacePath)
   const starredPaths = useAppStore(state => state.starredPaths)
@@ -137,6 +144,27 @@ export function FilesSection() {
   const isStarred = useAppStore(state => state.isStarred)
 
   const openOrFocusFile = useTabStore(state => state.openOrFocusFile)
+
+  // Global keyboard shortcut for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+P or Ctrl+Shift+F to focus search
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || (e.shiftKey && e.key === 'F'))) {
+        e.preventDefault()
+        // Expand the section if collapsed
+        if (isCollapsed) {
+          setIsCollapsed(false)
+        }
+        // Focus search after a brief delay to allow expansion animation
+        setTimeout(() => {
+          searchRef.current?.focus()
+        }, 50)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isCollapsed])
 
   // Load files when workspace changes or section expands
   useEffect(() => {
@@ -274,32 +302,42 @@ export function FilesSection() {
         )}
       </div>
 
-      {/* File Tree */}
+      {/* Search and File Tree */}
       {!isCollapsed && (
-        <div className="pb-2 flex-1 overflow-y-auto">
-          {!workspacePath ? (
-            <div className="px-4 py-2 text-xs text-slate-500">
-              No workspace selected
+        <>
+          {/* Search Input */}
+          {workspacePath && (
+            <div className="px-3 py-2 border-b border-white/5">
+              <FileSearch ref={searchRef} />
             </div>
-          ) : files.length === 0 ? (
-            <div className="px-4 py-2 text-xs text-slate-500">
-              {isLoading ? 'Loading...' : 'Empty workspace'}
-            </div>
-          ) : (
-            files.map((entry) => (
-              <FileItem
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                expandedPaths={expandedPaths}
-                onToggleExpand={handleToggleExpand}
-                onFileClick={handleFileClick}
-                isStarred={isStarred}
-                onToggleStar={toggleStarred}
-              />
-            ))
           )}
-        </div>
+
+          {/* File Tree */}
+          <div className="pb-2 flex-1 overflow-y-auto">
+            {!workspacePath ? (
+              <div className="px-4 py-2 text-xs text-slate-500">
+                No workspace selected
+              </div>
+            ) : files.length === 0 ? (
+              <div className="px-4 py-2 text-xs text-slate-500">
+                {isLoading ? 'Loading...' : 'Empty workspace'}
+              </div>
+            ) : (
+              files.map((entry) => (
+                <FileItem
+                  key={entry.path}
+                  entry={entry}
+                  depth={0}
+                  expandedPaths={expandedPaths}
+                  onToggleExpand={handleToggleExpand}
+                  onFileClick={handleFileClick}
+                  isStarred={isStarred}
+                  onToggleStar={toggleStarred}
+                />
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   )

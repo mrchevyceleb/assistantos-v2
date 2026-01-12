@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap } from 'lucide-react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
-import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appStore'
+import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS } from '../../stores/appStore'
 
 // Types
 import { PromptShortcut } from '@/types/shortcut'
@@ -34,13 +34,23 @@ import {
 } from '../../services/conversationStorage'
 import { processConversationForMemory } from '../../services/memory/extractionService'
 import { isTrivialMessage } from '../../services/memory/retrievalService'
+import {
+  getContextUsage,
+  formatTokenCount,
+  getContextUsageColor,
+  shouldCompact,
+  type ContextUsage
+} from '../../services/tokenService'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 
 // Components
 import { IntegrationsModal } from '../settings/IntegrationsModal'
 import { SettingsModal } from '../settings/SettingsModal'
 import { MCPSlideout } from './MCPSlideout'
 import { ChatToolbar } from './ChatToolbar'
+import { ChatMessageContextMenu, extractCodeBlocks } from './ChatMessageContextMenu'
+import { CreateShortcutDialog } from './CreateShortcutDialog'
 
 interface Message {
   id: string
@@ -50,6 +60,90 @@ interface Message {
   toolName?: string
   toolResult?: string
   bookmarked?: boolean
+}
+
+/**
+ * Preset avatar icon component for rendering agent preset icons
+ */
+function PresetAvatarIcon({ iconName, size = 16 }: { iconName: string; size?: number }) {
+  const iconProps = { className: 'text-white', size }
+  switch (iconName) {
+    case 'Bot': return <Bot {...iconProps} />
+    case 'Brain': return <Brain {...iconProps} />
+    case 'Sparkles': return <Sparkles {...iconProps} />
+    case 'Cpu': return <Cpu {...iconProps} />
+    case 'Zap': return <Zap {...iconProps} />
+    case 'Terminal': return <Terminal {...iconProps} />
+    case 'Wand2': return <Wand2 {...iconProps} />
+    case 'Atom': return <Atom {...iconProps} />
+    case 'Globe': return <Globe {...iconProps} />
+    case 'Star': return <Star {...iconProps} />
+    default: return <Bot {...iconProps} />
+  }
+}
+
+/**
+ * Agent avatar component that renders based on avatar settings
+ */
+interface AgentAvatarProps {
+  avatarType: 'default' | 'custom' | 'preset'
+  customAvatar: string | null
+  presetAvatar: string | null
+  size?: 'sm' | 'md'
+}
+
+function AgentAvatar({ avatarType, customAvatar, presetAvatar, size = 'sm' }: AgentAvatarProps) {
+  const sizeClass = size === 'sm' ? 'w-9 h-9' : 'w-10 h-10'
+  const iconSize = size === 'sm' ? 16 : 20
+
+  // Custom avatar (uploaded image)
+  if (avatarType === 'custom' && customAvatar) {
+    return (
+      <div
+        className={`${sizeClass} rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden`}
+        style={{
+          border: '2px solid rgba(0, 212, 255, 0.4)',
+          boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
+        }}
+      >
+        <img
+          src={customAvatar}
+          alt="Agent"
+          className="w-full h-full object-cover"
+        />
+      </div>
+    )
+  }
+
+  // Preset avatar (icon from predefined list)
+  if (avatarType === 'preset' && presetAvatar) {
+    const preset = PRESET_AVATARS.find(p => p.id === presetAvatar)
+    const iconName = preset?.icon || 'Bot'
+    return (
+      <div
+        className={`${sizeClass} rounded-xl flex items-center justify-center flex-shrink-0`}
+        style={{
+          background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+          boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
+        }}
+      >
+        <PresetAvatarIcon iconName={iconName} size={iconSize} />
+      </div>
+    )
+  }
+
+  // Default avatar
+  return (
+    <div
+      className={`${sizeClass} rounded-xl flex items-center justify-center flex-shrink-0`}
+      style={{
+        background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+        boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
+      }}
+    >
+      <Bot className="text-white" size={iconSize} />
+    </div>
+  )
 }
 
 /**
@@ -130,8 +224,25 @@ export function AgentChat() {
     memorySupabaseUrl,
     memorySupabaseAnonKey,
     memoryUserId,
-    shortcuts} = useAppStore()
+    shortcuts,
+    userProfilePicture,
+    agentAvatarType,
+    agentCustomAvatar,
+    agentPresetAvatar,
+    showContextUsage} = useAppStore()
   const { handleLinkClick } = useLinkHandler()
+
+  // Speech recognition for voice dictation
+  const {
+    isSupported: isSpeechSupported,
+    isRecording,
+    transcript,
+    interimTranscript,
+    error: speechError,
+    toggleRecording,
+    reset: resetSpeech
+  } = useSpeechRecognition()
+
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -150,6 +261,15 @@ export function AgentChat() {
   const [showLoadDropdown, setShowLoadDropdown] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [messageContextMenu, setMessageContextMenu] = useState<{ x: number; y: number; message: Message } | null>(null)
+  const [showCreateShortcut, setShowCreateShortcut] = useState(false)
+  // Context usage tracking
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
+  const [showContextTooltip, setShowContextTooltip] = useState(false)
+  const [lastSystemPrompt, setLastSystemPrompt] = useState('')
+  const [lastTools, setLastTools] = useState<any[]>([])
+  const [hasShownCompactionWarning, setHasShownCompactionWarning] = useState(false)
+  const [showCompactionBanner, setShowCompactionBanner] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -173,6 +293,47 @@ export function AgentChat() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Calculate context usage when messages change (only if showContextUsage is enabled)
+  useEffect(() => {
+    if (!showContextUsage) {
+      setContextUsage(null)
+      return
+    }
+
+    // Calculate context usage with cached system prompt and tools
+    const usage = getContextUsage(
+      messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        toolName: m.toolName,
+        toolResult: m.toolResult
+      })),
+      lastSystemPrompt,
+      lastTools,
+      selectedModel
+    )
+    setContextUsage(usage)
+
+    // Show compaction banner when context exceeds 80% (only once per session)
+    if (usage.percentage >= 80 && !hasShownCompactionWarning && messages.length > 10) {
+      setShowCompactionBanner(true)
+      setHasShownCompactionWarning(true)
+    }
+  }, [messages, lastSystemPrompt, lastTools, selectedModel, showContextUsage, hasShownCompactionWarning])
+
+  // Sync speech recognition transcript to input field
+  useEffect(() => {
+    if (transcript) {
+      // Append transcript to existing input with a space if needed
+      setInput(prev => {
+        const separator = prev.trim() ? ' ' : ''
+        return prev.trim() + separator + transcript
+      })
+      // Reset the speech recognition transcript after syncing
+      resetSpeech()
+    }
+  }, [transcript, resetSpeech])
 
   // Initialize or update Claude service when API key changes
   useEffect(() => {
@@ -435,6 +596,40 @@ export function AgentChat() {
     ))
   }, [])
 
+  // Message context menu handlers
+  const handleMessageContextMenu = useCallback((e: React.MouseEvent, message: Message) => {
+    e.preventDefault()
+    setMessageContextMenu({ x: e.clientX, y: e.clientY, message })
+  }, [])
+
+  const handleCopyMessageText = useCallback(() => {
+    if (messageContextMenu) {
+      navigator.clipboard.writeText(messageContextMenu.message.content)
+    }
+  }, [messageContextMenu])
+
+  const handleCopyMessageCode = useCallback(() => {
+    if (messageContextMenu) {
+      const codeBlocks = extractCodeBlocks(messageContextMenu.message.content)
+      if (codeBlocks.length > 0) {
+        navigator.clipboard.writeText(codeBlocks[0])
+      }
+    }
+  }, [messageContextMenu])
+
+  const handleResendMessage = useCallback(() => {
+    if (messageContextMenu && messageContextMenu.message.role === 'user') {
+      setInput(messageContextMenu.message.content)
+      inputRef.current?.focus()
+    }
+  }, [messageContextMenu])
+
+  const handleDeleteMessage = useCallback(() => {
+    if (messageContextMenu) {
+      setMessages(prev => prev.filter(m => m.id !== messageContextMenu.message.id))
+    }
+  }, [messageContextMenu])
+
   // Handle input change for @mention and /command autocomplete
   const handleInputChange = useCallback(async (value: string) => {
     setInput(value)
@@ -688,6 +883,12 @@ export function AgentChat() {
       // Claude Code-like behavior: all enabled tools available, no @mention required
       const tools = await prepareAllEnabledTools(integrationConfigs)
 
+      // Cache system prompt and tools for context usage calculation
+      if (showContextUsage) {
+        setLastSystemPrompt(fullSystemPrompt)
+        setLastTools(tools)
+      }
+
       // Append document context to user message if documents were referenced
       const messageWithContext = documentContext
         ? `${input.trim()}${documentContext}`
@@ -890,6 +1091,11 @@ export function AgentChat() {
     setMessages([])
     setExpandedTools(new Set())
     setCurrentConversationId(null)
+    setHasShownCompactionWarning(false)
+    setShowCompactionBanner(false)
+    setContextUsage(null)
+    setLastSystemPrompt('')
+    setLastTools([])
     if (claudeServiceRef.current) {
       claudeServiceRef.current.clearHistory()
     }
@@ -975,6 +1181,88 @@ export function AgentChat() {
               </option>
             ))}
           </select>
+
+          {/* Context Usage Indicator */}
+          {showContextUsage && contextUsage && (
+            <div
+              className="relative"
+              onMouseEnter={() => setShowContextTooltip(true)}
+              onMouseLeave={() => setShowContextTooltip(false)}
+            >
+              <button
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                style={{
+                  background: getContextUsageColor(contextUsage.percentage) === 'red'
+                    ? 'rgba(239, 68, 68, 0.1)'
+                    : getContextUsageColor(contextUsage.percentage) === 'amber'
+                      ? 'rgba(251, 191, 36, 0.1)'
+                      : 'rgba(34, 197, 94, 0.1)',
+                  border: `1px solid ${
+                    getContextUsageColor(contextUsage.percentage) === 'red'
+                      ? 'rgba(239, 68, 68, 0.3)'
+                      : getContextUsageColor(contextUsage.percentage) === 'amber'
+                        ? 'rgba(251, 191, 36, 0.3)'
+                        : 'rgba(34, 197, 94, 0.3)'
+                  }`
+                }}
+              >
+                <span className={`text-xs font-mono ${
+                  getContextUsageColor(contextUsage.percentage) === 'red'
+                    ? 'text-red-400'
+                    : getContextUsageColor(contextUsage.percentage) === 'amber'
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                }`}>
+                  {formatTokenCount(contextUsage.total)} / {formatTokenCount(contextUsage.max)}
+                </span>
+              </button>
+
+              {/* Tooltip */}
+              {showContextTooltip && (
+                <div
+                  className="absolute top-full right-0 mt-2 z-50 p-3 rounded-lg w-56"
+                  style={{
+                    background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+                  }}
+                >
+                  <div className="text-xs font-medium text-white mb-2">Context Usage</div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Messages</span>
+                      <span className="text-slate-300 font-mono">{formatTokenCount(contextUsage.messages)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">System Prompt</span>
+                      <span className="text-slate-300 font-mono">{formatTokenCount(contextUsage.systemPrompt)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Tools</span>
+                      <span className="text-slate-300 font-mono">{formatTokenCount(contextUsage.tools)}</span>
+                    </div>
+                    <div className="border-t border-white/10 pt-1.5 mt-1.5 flex justify-between">
+                      <span className="text-white font-medium">Total</span>
+                      <span className={`font-mono font-medium ${
+                        getContextUsageColor(contextUsage.percentage) === 'red'
+                          ? 'text-red-400'
+                          : getContextUsageColor(contextUsage.percentage) === 'amber'
+                            ? 'text-amber-400'
+                            : 'text-emerald-400'
+                      }`}>
+                        {contextUsage.percentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  {shouldCompact(contextUsage.percentage) && (
+                    <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-amber-400">
+                      Context is high. Consider using /compact to summarize older messages.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Memory Indicator */}
           {memoryEnabled && memoryUserId && (
@@ -1093,6 +1381,45 @@ export function AgentChat() {
         )}
       </div>
 
+      {/* Compaction Warning Banner */}
+      {showCompactionBanner && (
+        <div
+          className="mx-4 mt-2 px-4 py-3 rounded-lg flex items-center justify-between"
+          style={{
+            background: 'rgba(251, 191, 36, 0.1)',
+            border: '1px solid rgba(251, 191, 36, 0.3)'
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <div>
+              <span className="text-sm text-amber-400 font-medium">Context is getting full</span>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Use <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">/compact</code> to summarize older messages and free up space.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setShowCompactionBanner(false)
+                setInput('/compact')
+                inputRef.current?.focus()
+              }}
+              className="px-3 py-1.5 text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded-lg transition-colors"
+            >
+              Compact Now
+            </button>
+            <button
+              onClick={() => setShowCompactionBanner(false)}
+              className="p-1.5 text-slate-500 hover:text-white transition-colors"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {messages.length === 0 ? (
@@ -1122,20 +1449,21 @@ export function AgentChat() {
           (() => {
             // Build grouped messages: each assistant message includes preceding tool messages
             type MessageGroup = {
-              type: 'user' | 'assistant-with-tools'
+              type: 'user' | 'assistant-with-tools' | 'tools-pending'
               message: Message
               toolMessages?: Message[]
             }
             const groups: MessageGroup[] = []
-            const filteredMessages = messages.filter(m => m.role !== 'assistant' || m.content.trim() !== '')
+            // Don't filter out empty assistant messages - we need them to associate tools properly
             let pendingTools: Message[] = []
 
-            for (let i = 0; i < filteredMessages.length; i++) {
-              const msg = filteredMessages[i]
+            for (let i = 0; i < messages.length; i++) {
+              const msg = messages[i]
               if (msg.role === 'tool') {
                 pendingTools.push(msg)
               } else if (msg.role === 'assistant') {
                 // Associate pending tools with this assistant message
+                // Even if the assistant message is empty (streaming), keep tools with it
                 groups.push({
                   type: 'assistant-with-tools',
                   message: msg,
@@ -1143,33 +1471,122 @@ export function AgentChat() {
                 })
                 pendingTools = []
               } else {
-                // User message - flush any pending tools first (shouldn't happen normally)
-                for (const tool of pendingTools) {
-                  groups.push({ type: 'user', message: tool })
+                // User message - flush any pending tools as tools-pending (left side)
+                if (pendingTools.length > 0) {
+                  groups.push({
+                    type: 'tools-pending',
+                    message: pendingTools[0], // Use first tool as the group key
+                    toolMessages: [...pendingTools]
+                  })
+                  pendingTools = []
                 }
-                pendingTools = []
                 groups.push({ type: 'user', message: msg })
               }
             }
-            // Handle any trailing tool messages (during streaming)
-            for (const tool of pendingTools) {
-              groups.push({ type: 'user', message: tool })
+            // Handle any trailing tool messages (during streaming) - show as pending tools
+            if (pendingTools.length > 0) {
+              groups.push({
+                type: 'tools-pending',
+                message: pendingTools[0],
+                toolMessages: [...pendingTools]
+              })
             }
 
             return groups.map((group) => {
-              if (group.type === 'user' || group.message.role === 'user') {
+              // Render pending tools (left-aligned, tool style) - during streaming
+              if (group.type === 'tools-pending' && group.toolMessages) {
+                return (
+                  <div key={`pending-${group.message.id}`} className="flex gap-3">
+                    <AgentAvatar
+                      avatarType={agentAvatarType}
+                      customAvatar={agentCustomAvatar}
+                      presetAvatar={agentPresetAvatar}
+                      size="sm"
+                    />
+                    <div className="flex-1">
+                      <div className="mb-1">
+                        <button
+                          onClick={() => {
+                            const groupId = `tools-pending-${group.message.id}`
+                            if (expandedTools.has(groupId)) {
+                              setExpandedTools(prev => {
+                                const next = new Set(prev)
+                                next.delete(groupId)
+                                return next
+                              })
+                            } else {
+                              setExpandedTools(prev => new Set([...prev, groupId]))
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] text-slate-500 hover:text-slate-400 transition-colors"
+                          style={{ background: 'rgba(0, 0, 0, 0.15)' }}
+                        >
+                          {expandedTools.has(`tools-pending-${group.message.id}`) ? (
+                            <ChevronDown className="w-3 h-3" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3" />
+                          )}
+                          <Terminal className="w-3 h-3" />
+                          <span>
+                            {group.toolMessages.length} tool{group.toolMessages.length > 1 ? 's' : ''}: {group.toolMessages.map(t => t.toolName).join(', ')}
+                          </span>
+                        </button>
+                        {expandedTools.has(`tools-pending-${group.message.id}`) && (
+                          <div className="mt-1 space-y-1">
+                            {group.toolMessages.map((toolMsg) => (
+                              <div
+                                key={toolMsg.id}
+                                className="rounded text-xs font-mono"
+                                style={{
+                                  background: 'rgba(0, 0, 0, 0.2)',
+                                  border: '1px solid rgba(255, 255, 255, 0.03)'
+                                }}
+                              >
+                                <div
+                                  className="flex items-center gap-2 text-slate-500 px-2 py-1 cursor-pointer hover:text-slate-400"
+                                  onClick={() => toggleToolExpanded(toolMsg.id)}
+                                >
+                                  {expandedTools.has(toolMsg.id) ? (
+                                    <ChevronDown className="w-3 h-3" />
+                                  ) : (
+                                    <ChevronRight className="w-3 h-3" />
+                                  )}
+                                  <span className="text-slate-400">{toolMsg.toolName}</span>
+                                  {toolMsg.toolResult && (
+                                    <span className="text-slate-600">
+                                      ({toolMsg.toolResult.split('\n').length} lines)
+                                    </span>
+                                  )}
+                                </div>
+                                {expandedTools.has(toolMsg.id) && toolMsg.toolResult && (
+                                  <pre className="px-2 pb-1.5 text-slate-500 whitespace-pre-wrap overflow-hidden text-[10px] border-t border-white/5 max-h-40 overflow-y-auto">
+                                    {toolMsg.toolResult}
+                                  </pre>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (group.type === 'user' && group.message.role === 'user') {
                 // User message
                 const message = group.message
                 return (
                   <div key={message.id}>
                     <div className="flex gap-3 justify-end">
                       <div
-                        className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden"
+                        className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden cursor-context-menu"
                         style={{
                           background: 'linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%)',
                           color: '#0c0f1a',
                           boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
                         }}
+                        onContextMenu={(e) => handleMessageContextMenu(e, message)}
                       >
                         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                         <div className="flex items-center gap-2 mt-1.5 text-[10px] text-cyan-800/60">
@@ -1189,13 +1606,28 @@ export function AgentChat() {
                         </div>
                       </div>
                       <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden"
                         style={{
-                          background: 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)'
+                          background: userProfilePicture
+                            ? 'transparent'
+                            : 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
+                          border: userProfilePicture
+                            ? '2px solid rgba(236, 72, 153, 0.4)'
+                            : '1px solid rgba(255, 255, 255, 0.08)',
+                          boxShadow: userProfilePicture
+                            ? '0 0 10px rgba(236, 72, 153, 0.2)'
+                            : 'none'
                         }}
                       >
-                        <User className="w-4 h-4 text-slate-300" />
+                        {userProfilePicture ? (
+                          <img
+                            src={userProfilePicture}
+                            alt="You"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-4 h-4 text-slate-300" />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1283,22 +1715,20 @@ export function AgentChat() {
 
                   {/* Assistant text response */}
                   <div className="flex gap-3">
+                    <AgentAvatar
+                      avatarType={agentAvatarType}
+                      customAvatar={agentCustomAvatar}
+                      presetAvatar={agentPresetAvatar}
+                      size="sm"
+                    />
                     <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{
-                        background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
-                        boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
-                      }}
-                    >
-                      <Bot className="w-4 h-4 text-white" />
-                    </div>
-                    <div
-                      className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden"
+                      className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden cursor-context-menu"
                       style={{
                         background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 28, 45, 0.9) 100%)',
                         border: '1px solid rgba(255, 255, 255, 0.08)',
                         color: '#e2e8f0'
                       }}
+                      onContextMenu={(e) => handleMessageContextMenu(e, message)}
                     >
                       <div
                         className="absolute top-0 left-[10%] right-[10%] h-px"
@@ -1351,17 +1781,14 @@ export function AgentChat() {
             })
           })()
         )}
-        {isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content.trim() === '' && (
+        {isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content.trim() === '' && !messages.some(m => m.role === 'tool') && (
           <div className="flex gap-3">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
-                boxShadow: '0 0 12px rgba(0, 212, 255, 0.3)'
-              }}
-            >
-              <Bot className="w-4 h-4 text-white" />
-            </div>
+            <AgentAvatar
+              avatarType={agentAvatarType}
+              customAvatar={agentCustomAvatar}
+              presetAvatar={agentPresetAvatar}
+              size="sm"
+            />
             <div
               className="px-4 py-3 rounded-2xl"
               style={{
@@ -1444,6 +1871,18 @@ export function AgentChat() {
                   </span>
                 </button>
               ))}
+              {/* Create new shortcut button */}
+              <button
+                onClick={() => {
+                  setCommandSuggestions([])
+                  setInput('')
+                  setShowCreateShortcut(true)
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5 border-t border-white/5"
+              >
+                <span className="w-4 h-4 text-emerald-400 flex-shrink-0 flex items-center justify-center text-lg font-bold">+</span>
+                <span className="text-sm font-medium text-emerald-400">Create new shortcut...</span>
+              </button>
               <div className="px-4 py-1.5 text-xs text-slate-500 border-t border-white/5">
                 <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-400">Tab</kbd> or
                 <kbd className="px-1 py-0.5 rounded bg-white/10 text-slate-400 ml-1">Enter</kbd> to expand
@@ -1497,14 +1936,61 @@ export function AgentChat() {
             </div>
           )}
 
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Message your assistant (use @ for mentions, / for shortcuts)"
-            className="input-metallic flex-1 text-sm"
-          />
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={isRecording ? "Listening..." : "Message your assistant (use @ for mentions, / for shortcuts)"}
+              className="input-metallic w-full text-sm pr-4"
+            />
+            {/* Interim transcript indicator while recording */}
+            {isRecording && interimTranscript && (
+              <div className="absolute left-3 right-3 bottom-full mb-1 px-2 py-1 text-xs text-slate-400 bg-slate-800/90 rounded border border-white/10">
+                {interimTranscript}
+              </div>
+            )}
+          </div>
+
+          {/* Microphone Button */}
+          <button
+            onClick={toggleRecording}
+            disabled={!isSpeechSupported}
+            className={`relative p-3 rounded-xl transition-all ${
+              isRecording
+                ? 'bg-red-500/20 text-red-400 border border-red-500/50'
+                : isSpeechSupported
+                  ? 'hover:bg-white/5 text-slate-400 hover:text-white border border-transparent'
+                  : 'text-slate-600 cursor-not-allowed border border-transparent'
+            }`}
+            title={
+              !isSpeechSupported
+                ? 'Speech recognition not supported in this browser'
+                : isRecording
+                  ? 'Stop recording'
+                  : 'Start voice dictation'
+            }
+            style={{
+              boxShadow: isRecording ? '0 0 15px rgba(239, 68, 68, 0.3)' : 'none'
+            }}
+          >
+            {isRecording ? (
+              <>
+                <MicOff className="w-5 h-5" />
+                {/* Pulsing recording indicator */}
+                <span
+                  className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"
+                  style={{
+                    boxShadow: '0 0 8px rgba(239, 68, 68, 0.8)'
+                  }}
+                />
+              </>
+            ) : (
+              <Mic className="w-5 h-5" />
+            )}
+          </button>
+
           <button
             onClick={sendMessage}
             disabled={!input.trim() || isLoading}
@@ -1518,6 +2004,13 @@ export function AgentChat() {
             <Send className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Speech Recognition Error */}
+        {speechError && (
+          <div className="mt-2 px-3 py-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg">
+            {speechError}
+          </div>
+        )}
       </div>
 
       {/* MCP Slideout */}
@@ -1532,6 +2025,30 @@ export function AgentChat() {
 
       {/* Integrations Modal */}
       <IntegrationsModal isOpen={showIntegrations} onClose={handleIntegrationsClose} />
+
+      {/* Message Context Menu */}
+      {messageContextMenu && (
+        <ChatMessageContextMenu
+          x={messageContextMenu.x}
+          y={messageContextMenu.y}
+          message={messageContextMenu.message}
+          onClose={() => setMessageContextMenu(null)}
+          onCopyText={handleCopyMessageText}
+          onCopyCode={handleCopyMessageCode}
+          onResend={handleResendMessage}
+          onDelete={handleDeleteMessage}
+        />
+      )}
+
+      {/* Create Shortcut Dialog */}
+      <CreateShortcutDialog
+        isOpen={showCreateShortcut}
+        onClose={() => setShowCreateShortcut(false)}
+        onCreated={(name) => {
+          // Optionally focus input with the new command
+          inputRef.current?.focus()
+        }}
+      />
     </div>
   )
 }

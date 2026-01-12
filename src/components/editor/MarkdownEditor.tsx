@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Save, X, FileText, Bold, Italic, List, ListOrdered, Quote, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { EditorContextMenu } from './EditorContextMenu'
+import { InsertLinkDialog } from './InsertLinkDialog'
 import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx } from '@milkdown/kit/core'
-import { commonmark, toggleStrongCommand, toggleEmphasisCommand, wrapInBulletListCommand, wrapInOrderedListCommand, wrapInBlockquoteCommand } from '@milkdown/kit/preset/commonmark'
-import { gfm } from '@milkdown/kit/preset/gfm'
+import { commonmark, toggleStrongCommand, toggleEmphasisCommand, toggleInlineCodeCommand, wrapInBulletListCommand, wrapInOrderedListCommand, wrapInBlockquoteCommand } from '@milkdown/kit/preset/commonmark'
+import { gfm, toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import { history, undoCommand, redoCommand } from '@milkdown/kit/plugin/history'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
@@ -17,6 +19,9 @@ export function MarkdownEditor() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const [selectedText, setSelectedText] = useState('')
   const editorRef = useRef<Editor | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -107,20 +112,50 @@ export function MarkdownEditor() {
     setIsSaving(false)
   }
 
-  // Keyboard shortcut for save
+  // Keyboard shortcuts for editor
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
       }
+      // Undo
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault()
         editorRef.current?.action(callCommand(undoCommand.key))
       }
+      // Redo
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
         e.preventDefault()
         editorRef.current?.action(callCommand(redoCommand.key))
+      }
+      // Bold
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault()
+        editorRef.current?.action(callCommand(toggleStrongCommand.key))
+      }
+      // Italic
+      if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+        e.preventDefault()
+        editorRef.current?.action(callCommand(toggleEmphasisCommand.key))
+      }
+      // Inline code
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault()
+        editorRef.current?.action(callCommand(toggleInlineCodeCommand.key))
+      }
+      // Strikethrough
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+        e.preventDefault()
+        editorRef.current?.action(callCommand(toggleStrikethroughCommand.key))
+      }
+      // Insert link
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        const selection = window.getSelection()
+        setSelectedText(selection?.toString() || '')
+        setShowLinkDialog(true)
       }
       // Font size shortcuts
       if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
@@ -169,6 +204,54 @@ export function MarkdownEditor() {
   const toggleBulletList = () => editorRef.current?.action(callCommand(wrapInBulletListCommand.key))
   const toggleOrderedList = () => editorRef.current?.action(callCommand(wrapInOrderedListCommand.key))
   const toggleBlockquote = () => editorRef.current?.action(callCommand(wrapInBlockquoteCommand.key))
+  const toggleCode = () => editorRef.current?.action(callCommand(toggleInlineCodeCommand.key))
+  const toggleStrikethrough = () => editorRef.current?.action(callCommand(toggleStrikethroughCommand.key))
+
+  // Context menu handler
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const selection = window.getSelection()
+    const hasSelection = selection && selection.toString().length > 0
+    setSelectedText(hasSelection ? selection.toString() : '')
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  // Clipboard handlers for context menu
+  const handleCut = useCallback(() => {
+    document.execCommand('cut')
+  }, [])
+
+  const handleCopy = useCallback(() => {
+    document.execCommand('copy')
+  }, [])
+
+  const handlePaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      document.execCommand('insertText', false, text)
+    } catch {
+      document.execCommand('paste')
+    }
+  }, [])
+
+  const handleSelectAll = useCallback(() => {
+    if (containerRef.current) {
+      const range = document.createRange()
+      range.selectNodeContents(containerRef.current)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+    }
+  }, [])
+
+  // Link insertion handler
+  const handleInsertLink = useCallback((url: string, text?: string) => {
+    // Insert markdown link format
+    const linkText = text || url
+    const markdown = `[${linkText}](${url})`
+    document.execCommand('insertText', false, markdown)
+    setShowLinkDialog(false)
+  }, [])
 
   const fileName = currentFile?.split(/[\\/]/).pop() || ''
 
@@ -373,10 +456,42 @@ export function MarkdownEditor() {
             <div
               ref={containerRef}
               className="milkdown-container h-full p-6"
+              onContextMenu={handleContextMenu}
             />
           </>
         )}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <EditorContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onCut={handleCut}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+          onSelectAll={handleSelectAll}
+          onBold={toggleBold}
+          onItalic={toggleItalic}
+          onStrikethrough={toggleStrikethrough}
+          onCode={toggleCode}
+          onInsertLink={() => {
+            setContextMenu(null)
+            setShowLinkDialog(true)
+          }}
+          hasSelection={selectedText.length > 0}
+        />
+      )}
+
+      {/* Insert Link Dialog */}
+      {showLinkDialog && (
+        <InsertLinkDialog
+          initialText={selectedText}
+          onConfirm={handleInsertLink}
+          onCancel={() => setShowLinkDialog(false)}
+        />
+      )}
     </div>
   )
 }
