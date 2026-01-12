@@ -942,7 +942,8 @@ export function AgentChat() {
   const handleToolUseChunk = (chunk: ChatChunk) => {
     if (!chunk.toolName || !chunk.toolInput) return
 
-    // Insert tool message BEFORE the assistant message so assistant text stays at bottom
+    // Insert tool message BEFORE the last assistant message
+    // This ensures tools render ABOVE the assistant's text response
     setMessages(prev => {
       const newToolMessage: Message = {
         id: `tool-${chunk.toolId}`,
@@ -952,7 +953,7 @@ export function AgentChat() {
         timestamp: new Date(),
       }
 
-      // Find the last assistant message index
+      // Find the LAST assistant message (should be the streaming one for this turn)
       let lastAssistantIndex = -1
       for (let i = prev.length - 1; i >= 0; i--) {
         if (prev[i].role === 'assistant') {
@@ -961,12 +962,14 @@ export function AgentChat() {
         }
       }
 
+      // Insert tool message before the last assistant message
       if (lastAssistantIndex !== -1) {
         const updated = [...prev]
         updated.splice(lastAssistantIndex, 0, newToolMessage)
         return updated
       }
 
+      // Fallback: append to end (shouldn't happen in normal flow)
       return [...prev, newToolMessage]
     })
   }
@@ -1447,6 +1450,11 @@ export function AgentChat() {
         ) : (
           // Group messages: tool messages should appear above their associated assistant response
           (() => {
+            // Debug: Log messages array if it contains tool messages
+            if (messages.some(m => m.role === 'tool')) {
+              console.log('[AgentChat] Messages array with tools:', messages.map(m => ({ id: m.id, role: m.role, toolName: m.toolName })))
+            }
+
             // Build grouped messages: each assistant message includes preceding tool messages
             type MessageGroup = {
               type: 'user' | 'assistant-with-tools' | 'tools-pending'
@@ -1454,28 +1462,30 @@ export function AgentChat() {
               toolMessages?: Message[]
             }
             const groups: MessageGroup[] = []
-            // Don't filter out empty assistant messages - we need them to associate tools properly
             let pendingTools: Message[] = []
 
             for (let i = 0; i < messages.length; i++) {
               const msg = messages[i]
+
               if (msg.role === 'tool') {
+                // Collect tool messages - they'll be associated with the next assistant message
                 pendingTools.push(msg)
               } else if (msg.role === 'assistant') {
-                // Associate pending tools with this assistant message
-                // Even if the assistant message is empty (streaming), keep tools with it
+                // Associate any pending tools with this assistant message
+                // Tools appear ABOVE the assistant text in the UI
                 groups.push({
                   type: 'assistant-with-tools',
                   message: msg,
                   toolMessages: pendingTools.length > 0 ? [...pendingTools] : undefined
                 })
                 pendingTools = []
-              } else {
-                // User message - flush any pending tools as tools-pending (left side)
+              } else if (msg.role === 'user') {
+                // User message encountered - flush any orphaned tools first
                 if (pendingTools.length > 0) {
+                  // These are tool messages that came before a user message (shouldn't happen normally)
                   groups.push({
                     type: 'tools-pending',
-                    message: pendingTools[0], // Use first tool as the group key
+                    message: pendingTools[0],
                     toolMessages: [...pendingTools]
                   })
                   pendingTools = []
@@ -1483,13 +1493,28 @@ export function AgentChat() {
                 groups.push({ type: 'user', message: msg })
               }
             }
-            // Handle any trailing tool messages (during streaming) - show as pending tools
+
+            // Handle any trailing tool messages (during streaming before assistant responds)
             if (pendingTools.length > 0) {
               groups.push({
                 type: 'tools-pending',
                 message: pendingTools[0],
                 toolMessages: [...pendingTools]
               })
+            }
+
+            // Debug: Log groups if any tools are present
+            if (groups.some(g => g.toolMessages && g.toolMessages.length > 0)) {
+              console.log('[AgentChat] Message groups:', groups.map(g => ({
+                type: g.type,
+                messageRole: g.message.role,
+                toolCount: g.toolMessages?.length || 0
+              })))
+            }
+
+            // Debug logging to trace grouping issues
+            if (groups.some(g => g.message.role === 'tool' && g.type !== 'tools-pending' && g.type !== 'assistant-with-tools')) {
+              console.error('[AgentChat] Found tool message with wrong group type!', groups)
             }
 
             return groups.map((group) => {
@@ -1573,8 +1598,14 @@ export function AgentChat() {
                 )
               }
 
-              if (group.type === 'user' && group.message.role === 'user') {
-                // User message
+              // User message - RIGHT side with user avatar
+              if (group.type === 'user') {
+                // Safety check: ensure this is actually a user message
+                if (group.message.role !== 'user') {
+                  console.error('[AgentChat] Group type is "user" but message role is:', group.message.role)
+                  return null
+                }
+
                 const message = group.message
                 return (
                   <div key={message.id}>
@@ -1634,12 +1665,19 @@ export function AgentChat() {
                 )
               }
 
-              // Assistant message with optional tool blocks above
-              const message = group.message
-              const toolMessages = group.toolMessages || []
+              // Assistant message with optional tool blocks above - LEFT side with bot avatar
+              if (group.type === 'assistant-with-tools') {
+                // Safety check: ensure this is actually an assistant message
+                if (group.message.role !== 'assistant') {
+                  console.error('[AgentChat] Group type is "assistant-with-tools" but message role is:', group.message.role)
+                  return null
+                }
 
-              return (
-                <div key={message.id}>
+                const message = group.message
+                const toolMessages = group.toolMessages || []
+
+                return (
+                  <div key={message.id}>
                   {/* Tool indicator - compact single line above assistant text */}
                   {toolMessages.length > 0 && (
                     <div className="mb-1 ml-12">
@@ -1778,6 +1816,11 @@ export function AgentChat() {
                   </div>
                 </div>
               )
+              }
+
+              // Fallback: this should never happen - log and skip
+              console.error('[AgentChat] Unhandled group type:', group.type, 'message:', group.message)
+              return null
             })
           })()
         )}
@@ -2044,7 +2087,7 @@ export function AgentChat() {
       <CreateShortcutDialog
         isOpen={showCreateShortcut}
         onClose={() => setShowCreateShortcut(false)}
-        onCreated={(name) => {
+        onCreated={(_name) => {
           // Optionally focus input with the new command
           inputRef.current?.focus()
         }}
