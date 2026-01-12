@@ -1,8 +1,18 @@
 /**
  * Context Service
- * Gathers dynamic context about the environment, git status, and workspace
- * for injection into the system prompt.
+ * Gathers dynamic context about the environment, git status, workspace,
+ * and tasks for injection into the system prompt.
  */
+
+import { parseTasksFromWorkspace, TASKS_FOLDER } from './taskParser'
+import type { ParsedTask } from '../types/task'
+
+export interface TaskSummary {
+  total: number
+  byStatus: { [key: string]: number }
+  upcoming: ParsedTask[]  // Tasks due in the next 7 days
+  overdue: ParsedTask[]   // Tasks past due date
+}
 
 export interface DynamicContext {
   platform: string
@@ -16,6 +26,7 @@ export interface DynamicContext {
   openFiles: string[]
   currentFile: string | null
   workspaceStructure?: string[]
+  taskSummary?: TaskSummary
 }
 
 /**
@@ -118,6 +129,56 @@ export async function gatherDynamicContext(
     // Ignore errors reading directory
   }
 
+  // Gather task information if TASKS folder exists
+  try {
+    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+    const tasksExist = await window.electronAPI.fs.exists(tasksPath)
+
+    if (tasksExist) {
+      const tasks = await parseTasksFromWorkspace(workspacePath)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const nextWeek = new Date(today)
+      nextWeek.setDate(nextWeek.getDate() + 7)
+
+      // Count by status
+      const byStatus: { [key: string]: number } = {}
+      const upcoming: ParsedTask[] = []
+      const overdue: ParsedTask[] = []
+
+      for (const task of tasks) {
+        byStatus[task.status] = (byStatus[task.status] || 0) + 1
+
+        if (task.dueDate && task.status !== 'done') {
+          const dueDate = new Date(task.dueDate)
+          dueDate.setHours(0, 0, 0, 0)
+
+          if (dueDate < today) {
+            overdue.push(task)
+          } else if (dueDate <= nextWeek) {
+            upcoming.push(task)
+          }
+        }
+      }
+
+      // Sort by due date
+      const sortByDue = (a: ParsedTask, b: ParsedTask) => {
+        if (!a.dueDate) return 1
+        if (!b.dueDate) return -1
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      }
+
+      context.taskSummary = {
+        total: tasks.length,
+        byStatus,
+        upcoming: upcoming.sort(sortByDue).slice(0, 5),
+        overdue: overdue.sort(sortByDue).slice(0, 5),
+      }
+    }
+  } catch {
+    // Ignore errors reading tasks
+  }
+
   return context
 }
 
@@ -168,6 +229,38 @@ Currently editing: ${context.currentFile}`
   if (context.workspaceStructure && context.workspaceStructure.length > 0) {
     sections.push(`## Workspace Contents (top-level)
 ${context.workspaceStructure.join(', ')}`)
+  }
+
+  // Tasks section
+  if (context.taskSummary) {
+    const { total, byStatus, upcoming, overdue } = context.taskSummary
+    let taskSection = `## Tasks (from TASKS folder)
+- Total tasks: ${total}`
+
+    // Status breakdown
+    const statusEntries = Object.entries(byStatus)
+    if (statusEntries.length > 0) {
+      taskSection += `
+- By status: ${statusEntries.map(([s, c]) => `${s}: ${c}`).join(', ')}`
+    }
+
+    // Overdue tasks (important!)
+    if (overdue.length > 0) {
+      taskSection += `
+
+**⚠️ OVERDUE:**
+${overdue.map(t => `- [${t.projectName}] ${t.text} (due ${t.dueDate})`).join('\n')}`
+    }
+
+    // Upcoming tasks
+    if (upcoming.length > 0) {
+      taskSection += `
+
+**Upcoming (next 7 days):**
+${upcoming.map(t => `- [${t.projectName}] ${t.text} (due ${t.dueDate})`).join('\n')}`
+    }
+
+    sections.push(taskSection)
   }
 
   return sections.join('\n\n')
