@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { AppLayout } from './components/layout/AppLayout'
 import { TitleBar } from './components/layout/TitleBar'
 import { WebBrowser } from './components/browser/WebBrowser'
+import { WelcomeModal } from './components/welcome/WelcomeModal'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { useAppStore } from './stores/appStore'
 import { useNotificationStore } from './stores/notificationStore'
@@ -75,6 +76,8 @@ function App() {
         </main>
         {/* Legacy WebBrowser modal - kept for backward compatibility */}
         <WebBrowser />
+        {/* First-launch welcome modal */}
+        <WelcomeModal />
       </div>
     </ErrorBoundary>
   )

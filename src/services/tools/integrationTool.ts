@@ -30,7 +30,7 @@ interface CreateIntegrationInput {
 export async function executeCreateIntegration(
   input: Record<string, unknown>
 ): Promise<string> {
-  const params = input as CreateIntegrationInput
+  const params = input as unknown as CreateIntegrationInput
 
   // Validate required fields
   if (!params.name) {

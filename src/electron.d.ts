@@ -313,6 +313,8 @@ interface ElectronAPI {
   }
   shell: {
     openExternal: (url: string) => Promise<boolean>
+    showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>
+    openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>
   }
   workspace: {
     setPath: (workspacePath: string | null) => Promise<{ success: boolean }>
@@ -365,7 +367,25 @@ interface ElectronAPI {
     searchSummaries: (query: string, limit?: number) => Promise<MemorySummary[]>
     getRelevantMemories: (query: string) => Promise<MemoryContext>
   }
+  updater?: {
+    getStatus: () => Promise<UpdateStatus>
+    checkForUpdates: () => Promise<void>
+    installUpdate: () => Promise<void>
+    onUpdateEvent: (callback: (event: UpdateEventType, data: unknown) => void) => (() => void)
+  }
 }
+
+// Update types
+interface UpdateStatus {
+  checking: boolean
+  available: boolean
+  downloaded: boolean
+  version: string | null
+  progress: number | null
+  error: string | null
+}
+
+type UpdateEventType = 'update-checking' | 'update-available' | 'update-not-available' | 'update-progress' | 'update-downloaded' | 'update-error'
 
 // Window interface extension
 declare global {

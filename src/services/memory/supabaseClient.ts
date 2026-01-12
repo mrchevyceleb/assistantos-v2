@@ -48,7 +48,6 @@ export async function testConnection(): Promise<boolean> {
  */
 export function clearSupabaseClient(): void {
   supabaseClient = null
-  currentConfig = null
 }
 
 /**

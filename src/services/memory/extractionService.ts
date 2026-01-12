@@ -5,7 +5,7 @@
  * Uses both rule-based patterns and optional AI extraction.
  */
 
-import type { UserFact, UserPreference, ConversationSummary, FactCategory, FactSource, PreferenceDomain } from './types'
+import type { UserFact, ConversationSummary, FactCategory, FactSource, PreferenceDomain } from './types'
 
 /**
  * Patterns for extracting different types of facts from user messages
@@ -156,7 +156,7 @@ export function generateConversationSummary(
   messages: ConversationMessage[],
   title: string,
   workspacePath?: string | null
-): Omit<ConversationSummary, 'id' | 'user_id' | 'created_at' | 'embedding'> {
+): Omit<ConversationSummary, 'id' | 'userId' | 'createdAt'> & { workspacePath: string | null | undefined } {
   // Extract key points from the conversation
   const userMessages = messages.filter(m => m.role === 'user').map(m => m.content)
   const assistantMessages = messages.filter(m => m.role === 'assistant').map(m => m.content)
@@ -206,10 +206,13 @@ export function generateConversationSummary(
   const keywords = extractKeywords(allText)
 
   return {
+    localConversationId: '', // Will be set by caller
     title,
     summary,
-    workspacePath,
+    workspacePath: workspacePath ?? undefined,
     keyDecisions: [], // Could be enhanced to extract actual decisions
+    outcomes: outcomes.slice(0, 3),
+    problemsSolved: [],
     keywords,
   }
 }
@@ -259,12 +262,12 @@ export function processConversationForMemory(
   conversationTitle: string,
   workspacePath?: string | null
 ): {
-  facts: Omit<UserFact, 'id' | 'user_id' | 'created_at'>[]
-  preferences: Omit<UserPreference, 'id' | 'user_id' | 'updated_at'>[]
-  summary: Omit<ConversationSummary, 'id' | 'user_id' | 'created_at' | 'embedding'>
+  facts: ReturnType<typeof extractFactsFromMessage>
+  preferences: ReturnType<typeof extractPreferencesFromMessage>
+  summary: ReturnType<typeof generateConversationSummary>
 } {
-  const facts: Omit<UserFact, 'id' | 'user_id' | 'created_at'>[] = []
-  const preferences: Omit<UserPreference, 'id' | 'user_id' | 'updated_at'>[] = []
+  const facts: ReturnType<typeof extractFactsFromMessage> = []
+  const preferences: ReturnType<typeof extractPreferencesFromMessage> = []
   const seenFacts = new Set<string>()
   const seenPrefs = new Set<string>()
 

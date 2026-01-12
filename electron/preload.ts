@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Shell operations
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+    openPath: (filePath: string) => ipcRenderer.invoke('shell:openPath', filePath),
+    showItemInFolder: (filePath: string) => ipcRenderer.invoke('fs:showInExplorer', filePath),
   },
 
   // Auto-updater
@@ -387,6 +389,8 @@ declare global {
       }
       shell: {
         openExternal: (url: string) => Promise<boolean>
+        openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>
+        showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>
       }
       workspace: {
         setPath: (workspacePath: string | null) => Promise<{ success: boolean }>

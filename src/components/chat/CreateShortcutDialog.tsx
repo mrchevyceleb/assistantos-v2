@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Zap, Check } from 'lucide-react'
+import { X, Zap, Check, HelpCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { isValidCommandName } from '@/services/shortcuts/parser'
 
@@ -14,7 +14,9 @@ export function CreateShortcutDialog({ isOpen, onClose, onCreated }: CreateShort
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [argumentHint, setArgumentHint] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [showArgumentHelp, setShowArgumentHelp] = useState(false)
 
   if (!isOpen) return null
 
@@ -46,6 +48,7 @@ export function CreateShortcutDialog({ isOpen, onClose, onCreated }: CreateShort
       name: cleanName,
       description: description.trim() || `Custom shortcut: ${cleanName}`,
       prompt: prompt.trim(),
+      argumentHint: argumentHint.trim() || undefined,
       isBuiltIn: false
     })
 
@@ -53,6 +56,7 @@ export function CreateShortcutDialog({ isOpen, onClose, onCreated }: CreateShort
     setName('')
     setDescription('')
     setPrompt('')
+    setArgumentHint('')
     onCreated?.(cleanName)
     onClose()
   }
@@ -138,6 +142,45 @@ export function CreateShortcutDialog({ isOpen, onClose, onCreated }: CreateShort
             />
           </div>
 
+          {/* Argument Hint */}
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <label className="text-sm font-medium text-slate-300">
+                Argument Hint <span className="text-slate-500">(optional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowArgumentHelp(!showArgumentHelp)}
+                className="text-slate-400 hover:text-slate-300"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            </div>
+            <input
+              type="text"
+              value={argumentHint}
+              onChange={(e) => setArgumentHint(e.target.value)}
+              placeholder="e.g., TOPIC, [URL], MESSAGE"
+              className="input-metallic w-full text-sm font-mono"
+            />
+            {showArgumentHelp && (
+              <div className="mt-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 text-sm">
+                <p className="text-purple-300 font-medium mb-2">Using Arguments</p>
+                <p className="text-slate-400 mb-2">
+                  Arguments allow users to pass data to your shortcut:
+                </p>
+                <ul className="text-slate-400 space-y-1 text-xs">
+                  <li><code className="text-purple-400">/research AI trends</code> - "AI trends" is the argument</li>
+                  <li><code className="text-purple-400">TOPIC</code> - Required argument (uppercase)</li>
+                  <li><code className="text-purple-400">[URL]</code> - Optional argument (in brackets)</li>
+                </ul>
+                <p className="text-slate-400 mt-2 text-xs">
+                  Use <code className="text-cyan-400">$ARGUMENTS</code> in your prompt where arguments should be inserted.
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Prompt */}
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">
@@ -146,11 +189,19 @@ export function CreateShortcutDialog({ isOpen, onClose, onCreated }: CreateShort
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="The message to send when this shortcut is used..."
+              placeholder={argumentHint
+                ? "Use $ARGUMENTS where you want the user's input inserted..."
+                : "The message to send when this shortcut is used..."
+              }
               className="input-metallic w-full text-sm min-h-[100px] resize-y"
               rows={4}
             />
-            <p className="text-xs text-slate-500 mt-1">You can use @mentions like @gmail or @calendar</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {argumentHint
+                ? 'Use $ARGUMENTS for required args, or $ARGUMENTS_SECTION for optional context'
+                : 'You can use @mentions like @gmail or @calendar'
+              }
+            </p>
           </div>
 
           {/* Error */}

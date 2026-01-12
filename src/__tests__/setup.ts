@@ -31,7 +31,9 @@ beforeAll(() => {
       execute: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
     },
     shell: {
-      openExternal: vi.fn().mockResolvedValue(true)
+      openExternal: vi.fn().mockResolvedValue(true),
+      openPath: vi.fn().mockResolvedValue({ success: true }),
+      showItemInFolder: vi.fn().mockResolvedValue({ success: true })
     },
     workspace: {
       setPath: vi.fn().mockResolvedValue({ success: true })
@@ -97,13 +99,13 @@ beforeAll(() => {
     }
   }
 
-  // @ts-expect-error - Mocking global window
+  // @ts-ignore - Mocking global window with partial implementation
   globalThis.window = {
     electronAPI: mockElectronAPI,
     location: {
       reload: vi.fn(),
       href: 'http://localhost:5173'
-    }
+    } as unknown as Location
   }
 })
 

@@ -76,6 +76,7 @@ async function calculateStatusFromContent(filePath: string): Promise<TaskStatus>
 
   try {
     const content = await window.electronAPI.fs.readFile(filePath)
+    if (!content) return 'in_progress'
     const lines = content.split('\n')
 
     let totalCheckboxes = 0
@@ -349,6 +350,7 @@ export async function parseTasksFromWorkspace(
         try {
           const projectName = extractProjectName(filePath, workspacePath, customTasksFolder)
           const content = await window.electronAPI.fs.readFile(filePath)
+          if (!content) continue
           const lines = content.split('\n')
 
           for (let i = 0; i < lines.length; i++) {
@@ -389,6 +391,7 @@ export async function updateTaskStatus(
 
     // Line-level task: update checkbox in file
     const content = await window.electronAPI.fs.readFile(filePath)
+    if (!content) return false
     const lines = content.split('\n')
 
     const lineIndex = lineNumber - 1 // Convert to 0-indexed

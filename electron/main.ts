@@ -449,6 +449,25 @@ ipcMain.handle('shell:openExternal', async (_, url: string) => {
   }
 })
 
+// IPC Handler for opening a file/folder in the default app or file explorer
+ipcMain.handle('shell:openPath', async (_, filePath: string) => {
+  try {
+    // Check if the path exists
+    await fs.promises.access(filePath)
+    // Open the file in the default application
+    const result = await shell.openPath(filePath)
+    // shell.openPath returns empty string on success, error message on failure
+    if (result) {
+      console.error('Error opening path:', result)
+      return { success: false, error: result }
+    }
+    return { success: true }
+  } catch (error) {
+    console.error('Error opening path:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
 // Constants for file search
 const FILE_SEARCH_MAX_RESULTS = 20
 const FILE_SEARCH_MAX_DEPTH = 4

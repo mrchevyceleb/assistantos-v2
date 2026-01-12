@@ -48,7 +48,6 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
   const updateMessage = useAgentStore(state => state.updateMessage)
   const clearMessages = useAgentStore(state => state.clearMessages)
   const updateAgentStatus = useAgentStore(state => state.updateAgentStatus)
-  const _removeAgent = useAgentStore(state => state.removeAgent)
 
   // Get last 5 messages
   const recentMessages = agent.messages.slice(-5)

@@ -6,7 +6,7 @@ import { Notification, NotificationLevel } from '@/types/notification'
 interface NotificationPanelProps {
   isOpen: boolean
   onClose: () => void
-  anchorRef?: React.RefObject<HTMLElement>
+  anchorRef?: React.RefObject<HTMLElement | null>
 }
 
 export function NotificationPanel({ isOpen, onClose, anchorRef }: NotificationPanelProps) {
@@ -64,19 +64,6 @@ export function NotificationPanel({ isOpen, onClose, anchorRef }: NotificationPa
         return <AlertCircle className="w-4 h-4 text-red-400" />
       default:
         return <Info className="w-4 h-4 text-cyan-400" />
-    }
-  }
-
-  const getLevelColor = (level: NotificationLevel) => {
-    switch (level) {
-      case 'success':
-        return 'border-emerald-500/30 bg-emerald-500/5'
-      case 'warning':
-        return 'border-amber-500/30 bg-amber-500/5'
-      case 'error':
-        return 'border-red-500/30 bg-red-500/5'
-      default:
-        return 'border-cyan-500/30 bg-cyan-500/5'
     }
   }
 

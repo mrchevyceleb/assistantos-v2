@@ -15,6 +15,13 @@ export interface Message {
 // Agent status indicators
 export type AgentStatus = 'idle' | 'working' | 'queued' | 'error'
 
+// Queued message (sent during streaming)
+export interface QueuedMessage {
+  id: string
+  content: string
+  timestamp: Date
+}
+
 // Individual agent state
 export interface Agent {
   id: string
@@ -22,6 +29,7 @@ export interface Agent {
   status: AgentStatus
   model: ModelId                  // Per-agent model selection
   messages: Message[]
+  queuedMessages: QueuedMessage[] // Messages sent while AI is responding
   conversationId: string | null   // For save/load functionality
   createdAt: Date
   error?: string                  // Error message if status is 'error'
@@ -68,6 +76,11 @@ interface AgentStore {
   clearMessages: (agentId: string) => void
   toggleMessageBookmark: (agentId: string, messageId: string) => void
 
+  // Queued message management (messages sent while AI is responding)
+  addQueuedMessage: (agentId: string, content: string) => string  // Returns message ID
+  getQueuedMessages: (agentId: string) => QueuedMessage[]
+  clearQueuedMessages: (agentId: string) => QueuedMessage[]  // Returns cleared messages for processing
+
   // Utility
   canCreateAgent: () => boolean
   getAgentCount: () => number
@@ -90,6 +103,7 @@ function createDefaultAgent(): Agent {
     status: 'idle',
     model: DEFAULT_MODEL,
     messages: [],
+    queuedMessages: [],
     conversationId: null,
     createdAt: new Date(),
   }
@@ -132,6 +146,7 @@ export const useAgentStore = create<AgentStore>((set, get) => {
         status: 'idle',
         model: conversation.model,
         messages: conversation.messages,
+        queuedMessages: [],
         conversationId: conversation.conversationId,
         createdAt: new Date(),
       }
@@ -305,6 +320,45 @@ export const useAgentStore = create<AgentStore>((set, get) => {
             : a
         ),
       }))
+    },
+
+    // Add a queued message (sent while AI is responding)
+    addQueuedMessage: (agentId, content) => {
+      const messageId = `queued-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      set(state => ({
+        agents: state.agents.map(a =>
+          a.id === agentId
+            ? {
+                ...a,
+                queuedMessages: [
+                  ...a.queuedMessages,
+                  { id: messageId, content, timestamp: new Date() }
+                ]
+              }
+            : a
+        ),
+      }))
+      return messageId
+    },
+
+    // Get queued messages for an agent
+    getQueuedMessages: (agentId) => {
+      const agent = get().agents.find(a => a.id === agentId)
+      return agent?.queuedMessages || []
+    },
+
+    // Clear and return queued messages for processing
+    clearQueuedMessages: (agentId) => {
+      const agent = get().agents.find(a => a.id === agentId)
+      const queuedMessages = agent?.queuedMessages || []
+      set(state => ({
+        agents: state.agents.map(a =>
+          a.id === agentId
+            ? { ...a, queuedMessages: [] }
+            : a
+        ),
+      }))
+      return queuedMessages
     },
 
     // Check if can create more agents

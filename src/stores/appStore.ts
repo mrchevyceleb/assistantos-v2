@@ -163,6 +163,10 @@ interface AppState {
   markWorkspaceOnboarded: (path: string) => void
   isWorkspaceOnboarded: (path: string) => boolean
 
+  // First-launch setup
+  hasCompletedSetup: boolean
+  setHasCompletedSetup: (completed: boolean) => void
+
 
   // Memory Settings
   memoryEnabled: boolean
@@ -390,6 +394,10 @@ export const useAppStore = create<AppState>()(
       })),
       isWorkspaceOnboarded: (path) => get().onboardedWorkspaces.includes(path),
 
+      // First-launch setup
+      hasCompletedSetup: false,
+      setHasCompletedSetup: (completed) => set({ hasCompletedSetup: completed }),
+
 
       // Memory Settings
       memoryEnabled: false,
@@ -529,6 +537,7 @@ export const useAppStore = create<AppState>()(
         taskSettings: state.taskSettings,
         kanbanSettings: state.kanbanSettings,
         onboardedWorkspaces: state.onboardedWorkspaces,
+        hasCompletedSetup: state.hasCompletedSetup,
         memoryEnabled: state.memoryEnabled,
         memoryUserId: state.memoryUserId,
         memoryOpenaiKey: state.memoryOpenaiKey,

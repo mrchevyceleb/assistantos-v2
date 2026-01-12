@@ -113,7 +113,7 @@ export async function getRelevantMemories(
 
     // Check if memory is initialized
     const status = await window.electronAPI.memory.getStatus()
-    if (!status.initialized || !status.connected) {
+    if (!status.connected) {
       return null
     }
 

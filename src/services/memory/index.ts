@@ -11,7 +11,7 @@ export type {
   UserFact,
   UserPreference,
   ConversationSummary,
-  MemoryServiceConfig,
+  MemoryConfig,
   MemoryStatus,
 } from './types'
 

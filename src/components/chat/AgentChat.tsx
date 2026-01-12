@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe } from 'lucide-react'
+import { Send, Bot, User, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe, Square, MessageCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
@@ -10,7 +10,13 @@ import { useNotificationStore } from '../../stores/notificationStore'
 import { PromptShortcut } from '@/types/shortcut'
 
 // Shortcut Parser
-import { getPartialCommand, getCommandSuggestions, completeCommand, expandSlashCommand } from '@/services/shortcuts/parser'
+import {
+  getPartialCommand,
+  getCommandSuggestions,
+  completeCommand,
+  expandSlashCommand,
+  shortcutExpectsArguments
+} from '@/services/shortcuts/parser'
 
 // Services
 import { ClaudeService, type ChatChunk } from '../../services/claude'
@@ -67,6 +73,7 @@ import { MCPSlideout } from './MCPSlideout'
 import { ChatToolbar } from './ChatToolbar'
 import { ChatMessageContextMenu, extractCodeBlocks } from './ChatMessageContextMenu'
 import { CreateShortcutDialog } from './CreateShortcutDialog'
+import { LinkifiedText } from './LinkifiedText'
 
 interface Message {
   id: string
@@ -308,6 +315,10 @@ export function AgentChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // Queued messages state (messages sent while AI is responding)
+  const [queuedMessages, setQueuedMessages] = useState<Array<{ id: string; content: string; timestamp: Date }>>([])
+  // ESC-ESC double-tap tracking for stop
+  const lastEscPressRef = useRef<number>(0)
 
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
@@ -328,6 +339,30 @@ export function AgentChat() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Process queued messages when loading completes
+  useEffect(() => {
+    if (!isLoading && queuedMessages.length > 0) {
+      // Combine all queued messages into a single message that shows the user's redirections
+      const combinedContent = queuedMessages.map(m => m.content).join('\n\n---\n\n')
+
+      // Clear the queue
+      setQueuedMessages([])
+
+      // Add the queued content as a new user message and process it
+      // Small delay to ensure UI updates first
+      setTimeout(() => {
+        setInput(combinedContent)
+        // Auto-send after a brief pause
+        setTimeout(() => {
+          const sendButton = document.querySelector('[data-send-button]') as HTMLButtonElement
+          if (sendButton && !sendButton.disabled) {
+            sendButton.click()
+          }
+        }, 100)
+      }, 200)
+    }
+  }, [isLoading, queuedMessages])
 
   // Check if Claude Code CLI is installed for Agent SDK mode
   useEffect(() => {
@@ -541,6 +576,26 @@ export function AgentChat() {
       inputRef.current.style.height = 'auto'
     }
   }, [input])
+
+  // Sync speech recognition transcript to input
+  useEffect(() => {
+    if (transcript) {
+      setInput(prev => {
+        // If there was existing text, append with a space
+        if (prev && !prev.endsWith(' ')) {
+          return prev + ' ' + transcript
+        }
+        return prev + transcript
+      })
+      // Reset the speech transcript after syncing to input
+      resetSpeech()
+      // Auto-resize textarea after updating content
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto'
+        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px'
+      }
+    }
+  }, [transcript, resetSpeech])
 
   // Save conversation handler
   const handleSaveConversation = useCallback(async () => {
@@ -1083,8 +1138,7 @@ export function AgentChat() {
             addNotification(
               'Task Complete',
               `Agent finished in ${message.num_turns} turn${message.num_turns !== 1 ? 's' : ''}`,
-              'success',
-              { agentId: agentId }
+              'success'
             )
           } else {
             console.error('Agent error:', message)
@@ -1094,8 +1148,7 @@ export function AgentChat() {
             addNotification(
               'Agent Error',
               errorMsg,
-              'error',
-              { agentId: agentId }
+              'error'
             )
 
             setMessages(prev => {
@@ -1120,8 +1173,7 @@ export function AgentChat() {
       addNotification(
         'Agent Error',
         errorMessage,
-        'error',
-        { agentId: agentId }
+        'error'
       )
 
       setMessages(prev => {
@@ -1196,6 +1248,9 @@ export function AgentChat() {
       timestamp: new Date(),
     }])
 
+    // Create abort controller for cancellation
+    abortControllerRef.current = new AbortController()
+
     try {
       // Read content of referenced documents
       const documentContext = await readDocumentContext(activeDocuments)
@@ -1268,10 +1323,21 @@ export function AgentChat() {
         messageWithContext,
         tools,
         fullSystemPrompt,
-        toolExecutor
+        toolExecutor,
+        abortControllerRef.current?.signal
       )
 
       for await (const chunk of stream) {
+        // Check for abort
+        if (chunk.type === 'aborted') {
+          setMessages(prev => prev.map(m => {
+            if (m.id === assistantMessageId && m.content === 'Thinking...') {
+              return { ...m, content: '[Response stopped by user]' }
+            }
+            return m
+          }))
+          break
+        }
         handleChunk(chunk, assistantMessageId)
       }
     } catch (error) {
@@ -1298,6 +1364,7 @@ export function AgentChat() {
       })
     } finally {
       setIsLoading(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -1432,7 +1499,38 @@ export function AgentChat() {
     }
   }
 
+  // Stop the current streaming response
+  const stopStreaming = useCallback(() => {
+    if (abortControllerRef.current && isLoading) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setIsLoading(false)
+
+      // Clean up any "Thinking..." messages that didn't get content
+      setMessages(prev => prev.map(m => {
+        if (m.role === 'assistant' && m.content === 'Thinking...') {
+          return { ...m, content: '[Response stopped by user]' }
+        }
+        return m
+      }))
+
+      addNotification('Response Stopped', 'The AI response was interrupted', 'info')
+    }
+  }, [isLoading, addNotification])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle ESC-ESC double-tap to stop streaming (within 500ms)
+    if (e.key === 'Escape' && isLoading) {
+      const now = Date.now()
+      if (now - lastEscPressRef.current < 500) {
+        e.preventDefault()
+        stopStreaming()
+        lastEscPressRef.current = 0
+        return
+      }
+      lastEscPressRef.current = now
+    }
+
     // Handle command autocomplete navigation
     if (commandSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -1491,12 +1589,26 @@ export function AgentChat() {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage()
+      // If currently loading, queue the message instead of sending
+      if (isLoading && input.trim()) {
+        queueMessage(input.trim())
+        setInput('')
+      } else {
+        sendMessage()
+      }
     }
   }
 
+  // Queue a message to be processed after current response completes
+  const queueMessage = useCallback((content: string) => {
+    const id = `queued-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    setQueuedMessages(prev => [...prev, { id, content, timestamp: new Date() }])
+    addNotification('Message Queued', 'Your message will be sent after the current response', 'info')
+  }, [addNotification])
+
   const clearConversation = () => {
     setMessages([])
+    setQueuedMessages([])
     setExpandedTools(new Set())
     setCurrentConversationId(null)
     setHasShownCompactionWarning(false)
@@ -2033,7 +2145,9 @@ export function AgentChat() {
                         }}
                         onContextMenu={(e) => handleMessageContextMenu(e, message)}
                       >
-                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                        <p className="text-sm whitespace-pre-wrap">
+                          <LinkifiedText text={message.content} linkClassName="text-cyan-900 hover:text-cyan-700 underline cursor-pointer" />
+                        </p>
                         <div className="flex items-center gap-2 mt-1.5 text-[10px] text-cyan-800/60">
                           <span>{formatTimestamp(message.timestamp)}</span>
                           <button
@@ -2218,7 +2332,13 @@ export function AgentChat() {
                                   >
                                     {children}
                                   </a>
-                                )
+                                ),
+                                // Custom text renderer to linkify raw URLs and file paths in text
+                                text: ({ children }) => {
+                                  if (typeof children !== 'string') return <>{children}</>
+                                  // parseTextForUrls now handles both URLs and file paths
+                                  return <LinkifiedText text={children} />
+                                }
                               }}
                             >{message.content}</ReactMarkdown>
                           </div>
@@ -2302,25 +2422,42 @@ export function AgentChat() {
                 <Zap className="w-4 h-4 text-purple-400" />
                 <span className="text-sm text-purple-400 font-medium">Shortcuts</span>
               </div>
-              {commandSuggestions.map((shortcut, index) => (
-                <button
-                  key={shortcut.id}
-                  onClick={() => handleCommandSelect(shortcut)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                    index === selectedSuggestionIndex
-                      ? 'bg-purple-500/20'
-                      : 'hover:bg-white/5'
-                  }`}
-                >
-                  <Zap className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <code className="text-sm font-medium text-purple-400">
-                    /{shortcut.name}
-                  </code>
-                  <span className="text-slate-400 text-sm truncate flex-1">
-                    {shortcut.description}
-                  </span>
-                </button>
-              ))}
+              {commandSuggestions.map((shortcut, index) => {
+                const expectsArgs = shortcutExpectsArguments(shortcut)
+                return (
+                  <button
+                    key={shortcut.id}
+                    onClick={() => handleCommandSelect(shortcut)}
+                    className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${
+                      index === selectedSuggestionIndex
+                        ? 'bg-purple-500/20'
+                        : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <Zap className="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <code className="text-sm font-medium text-purple-400">
+                          /{shortcut.name}
+                        </code>
+                        {shortcut.argumentHint && (
+                          <span className="text-xs text-purple-300/60 font-mono">
+                            {shortcut.argumentHint}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-slate-400 text-sm truncate block">
+                        {shortcut.description}
+                      </span>
+                      {expectsArgs && (
+                        <span className="text-xs text-cyan-400/60 mt-0.5 block">
+                          Accepts arguments after command
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
               {/* Create new shortcut button */}
               <button
                 onClick={() => {
@@ -2448,19 +2585,67 @@ export function AgentChat() {
             )}
           </button>
 
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || isLoading}
-            className="btn-primary px-4"
-            data-send-button
+          {/* Stop Button - shown during loading */}
+          {isLoading ? (
+            <button
+              onClick={stopStreaming}
+              className="p-3 rounded-xl transition-all bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30"
+              title="Stop response (or press ESC twice quickly)"
+              style={{
+                boxShadow: '0 0 15px rgba(239, 68, 68, 0.3)'
+              }}
+            >
+              <Square className="w-5 h-5" fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim()}
+              className="btn-primary px-4"
+              data-send-button
+              style={{
+                opacity: input.trim() ? 1 : 0.5,
+                cursor: input.trim() ? 'pointer' : 'not-allowed'
+              }}
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Queued Messages Indicator */}
+        {queuedMessages.length > 0 && (
+          <div
+            className="mt-2 px-3 py-2 rounded-lg flex items-center gap-3"
             style={{
-              opacity: input.trim() && !isLoading ? 1 : 0.5,
-              cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed'
+              background: 'rgba(139, 92, 246, 0.1)',
+              border: '1px solid rgba(139, 92, 246, 0.3)'
             }}
           >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
+            <MessageCircle className="w-4 h-4 text-violet-400" />
+            <div className="flex-1">
+              <span className="text-sm text-violet-400 font-medium">
+                {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
+              </span>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Will be sent after current response completes
+              </p>
+            </div>
+            <button
+              onClick={() => setQueuedMessages([])}
+              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* ESC hint during loading */}
+        {isLoading && (
+          <div className="mt-2 text-center text-xs text-slate-500">
+            Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-400 mx-0.5">ESC</kbd> twice to stop
+          </div>
+        )}
 
         {/* Speech Recognition Error */}
         {speechError && (

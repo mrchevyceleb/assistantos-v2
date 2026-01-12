@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Tool, MessageParam, ContentBlock, ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages';
 
 export interface ChatChunk {
-  type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'iteration_boundary';
+  type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'iteration_boundary' | 'aborted';
   text?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
@@ -55,9 +55,16 @@ export class ClaudeService {
    */
   async *streamMessage(
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    systemPrompt: string
+    systemPrompt: string,
+    abortSignal?: AbortSignal
   ): AsyncGenerator<ChatChunk> {
     try {
+      // Check if already aborted
+      if (abortSignal?.aborted) {
+        yield { type: 'aborted' };
+        return;
+      }
+
       const stream = this.client.messages.stream({
         model: this.model,
         max_tokens: this.maxTokens,
@@ -65,7 +72,20 @@ export class ClaudeService {
         messages: messages as MessageParam[],
       });
 
+      // Set up abort handler
+      if (abortSignal) {
+        abortSignal.addEventListener('abort', () => {
+          stream.abort();
+        }, { once: true });
+      }
+
       for await (const event of stream) {
+        // Check for abort during streaming
+        if (abortSignal?.aborted) {
+          yield { type: 'aborted' };
+          return;
+        }
+
         if (event.type === 'content_block_delta') {
           const delta = event.delta;
           if ('text' in delta) {
@@ -76,6 +96,11 @@ export class ClaudeService {
 
       yield { type: 'done' };
     } catch (error) {
+      // Handle abort errors gracefully
+      if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+        yield { type: 'aborted' };
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', error: errorMessage };
     }
@@ -85,8 +110,15 @@ export class ClaudeService {
     userMessage: string,
     tools: Tool[],
     systemPrompt: string,
-    executeToolFn: ToolExecutor
+    executeToolFn: ToolExecutor,
+    abortSignal?: AbortSignal
   ): AsyncGenerator<ChatChunk> {
+    // Check if already aborted
+    if (abortSignal?.aborted) {
+      yield { type: 'aborted' };
+      return;
+    }
+
     // Add user message to history
     this.conversationHistory.push({
       role: 'user',
@@ -98,6 +130,12 @@ export class ClaudeService {
     let iterations = 0;
 
     while (continueLoop && iterations < maxIterations) {
+      // Check for abort at start of each iteration
+      if (abortSignal?.aborted) {
+        yield { type: 'aborted' };
+        return;
+      }
+
       iterations++;
 
       try {
@@ -110,11 +148,24 @@ export class ClaudeService {
           tools: tools.length > 0 ? tools : undefined,
         });
 
+        // Set up abort handler for this stream
+        if (abortSignal) {
+          abortSignal.addEventListener('abort', () => {
+            stream.abort();
+          }, { once: true });
+        }
+
         let currentText = '';
         const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
         // Process stream events
         for await (const event of stream) {
+          // Check for abort during streaming
+          if (abortSignal?.aborted) {
+            yield { type: 'aborted' };
+            return;
+          }
+
           if (event.type === 'content_block_delta') {
             const delta = event.delta;
             if ('text' in delta) {
@@ -165,6 +216,12 @@ export class ClaudeService {
           const toolResults: ToolResultBlockParam[] = [];
 
           for (const toolUse of toolUseBlocks) {
+            // Check for abort before executing each tool
+            if (abortSignal?.aborted) {
+              yield { type: 'aborted' };
+              return;
+            }
+
             yield {
               type: 'tool_use',
               toolName: toolUse.name,
@@ -233,6 +290,11 @@ export class ClaudeService {
         }
 
       } catch (error) {
+        // Handle abort errors gracefully
+        if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          yield { type: 'aborted' };
+          return;
+        }
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error('[Claude Service] Error in chat loop:', error);
         yield { type: 'error', error: errorMessage };
