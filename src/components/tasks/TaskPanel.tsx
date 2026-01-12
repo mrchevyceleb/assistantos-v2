@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog } from 'lucide-react'
+import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog, Folder, ChevronDown } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { parseTasksFromWorkspace, getProjectList, getTasksFolder } from '../../services/taskParser'
 import { ParsedTask, DEFAULT_KANBAN_SETTINGS, KanbanSettings } from '../../types/task'
@@ -14,6 +14,8 @@ export function TaskPanel() {
   const [tasksFolderExists, setTasksFolderExists] = useState(true)
   const [showFolderDialog, setShowFolderDialog] = useState(false)
   const [folderInput, setFolderInput] = useState('')
+  const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([])
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false)
 
   // Use store settings or defaults
   const settings: KanbanSettings = kanbanSettings || DEFAULT_KANBAN_SETTINGS
@@ -117,14 +119,46 @@ Add any project notes here.
       setKanbanSettings({ customTasksFolder: null })
     }
     setShowFolderDialog(false)
+    setShowFolderDropdown(false)
     setFolderInput('')
     // Settings change will trigger loadTasks via useEffect
   }
 
+  // Close dialog (and reset state)
+  const closeFolderDialog = () => {
+    setShowFolderDialog(false)
+    setShowFolderDropdown(false)
+    setFolderInput('')
+  }
+
+  // Scan workspace for folders
+  const scanWorkspaceFolders = useCallback(async () => {
+    if (!workspacePath || !window.electronAPI) return
+
+    try {
+      const entries = await window.electronAPI.fs.readDir(workspacePath)
+      const folders = entries
+        .filter(entry => entry.isDirectory && !entry.name.startsWith('.'))
+        .map(entry => entry.name)
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      setWorkspaceFolders(folders)
+    } catch (err) {
+      console.error('Failed to scan workspace folders:', err)
+    }
+  }, [workspacePath])
+
   // Open folder dialog
-  const openFolderDialog = () => {
+  const openFolderDialog = async () => {
     setFolderInput(settings.customTasksFolder || '')
     setShowFolderDialog(true)
+    setShowFolderDropdown(false)
+    await scanWorkspaceFolders()
+  }
+
+  // Select folder from dropdown
+  const handleSelectFolder = (folder: string) => {
+    setFolderInput(folder)
+    setShowFolderDropdown(false)
   }
 
   return (
@@ -279,7 +313,12 @@ Add any project notes here.
 
       {/* Folder Configuration Dialog */}
       {showFolderDialog && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="absolute inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeFolderDialog()
+          }}
+        >
           <div
             className="w-96 rounded-xl p-5"
             style={{
@@ -299,23 +338,70 @@ Add any project notes here.
 
             <div className="mb-4">
               <label className="block text-xs text-slate-500 mb-1.5">
-                Folder path (relative to workspace)
+                Select a folder or type a custom path
               </label>
-              <input
-                type="text"
-                value={folderInput}
-                onChange={(e) => setFolderInput(e.target.value)}
-                placeholder="e.g., Tasks, .tasks, projects/tasks"
-                className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500
-                           bg-black/20 border border-white/10 focus:border-violet-500/50
-                           focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSetCustomFolder()
-                  if (e.key === 'Escape') setShowFolderDialog(false)
-                }}
-              />
-              <p className="text-xs text-slate-600 mt-1.5">
+
+              {/* Folder dropdown */}
+              <div className="relative mb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFolderDropdown(!showFolderDropdown)}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-left flex items-center justify-between
+                             bg-black/20 border border-white/10 hover:border-violet-500/30
+                             focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/30
+                             transition-colors"
+                >
+                  <span className="flex items-center gap-2 text-slate-300">
+                    <Folder className="w-4 h-4 text-violet-400" />
+                    {folderInput || <span className="text-slate-500">Choose from workspace folders...</span>}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showFolderDropdown ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showFolderDropdown && workspaceFolders.length > 0 && (
+                  <div
+                    className="absolute top-full left-0 right-0 mt-1 rounded-lg overflow-hidden z-10 max-h-48 overflow-y-auto"
+                    style={{
+                      background: 'rgba(20, 28, 45, 0.98)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)'
+                    }}
+                  >
+                    {workspaceFolders.map((folder) => (
+                      <button
+                        key={folder}
+                        type="button"
+                        onClick={() => handleSelectFolder(folder)}
+                        className={`w-full px-3 py-2 text-sm text-left flex items-center gap-2
+                                   hover:bg-violet-500/20 transition-colors
+                                   ${folderInput === folder ? 'bg-violet-500/10 text-violet-300' : 'text-slate-300'}`}
+                      >
+                        <Folder className="w-4 h-4 text-violet-400/70" />
+                        {folder}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Custom path input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={folderInput}
+                  onChange={(e) => setFolderInput(e.target.value)}
+                  placeholder="Or type custom path: e.g., projects/tasks"
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500
+                             bg-black/20 border border-white/10 focus:border-violet-500/50
+                             focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSetCustomFolder()
+                    if (e.key === 'Escape') closeFolderDialog()
+                  }}
+                />
+              </div>
+
+              <p className="text-xs text-slate-600 mt-2">
                 Current: <code className="text-cyan-400/80">{effectiveTasksFolder}</code>
               </p>
             </div>

@@ -45,6 +45,11 @@ export function WebBrowser() {
     const handleDidFailLoad = (e: Electron.DidFailLoadEvent) => {
       // Ignore -3 (ERR_ABORTED) which happens during redirects
       if (e.errorCode === -3) return
+      // Only show errors for main frame failures, not subresources
+      if (!e.isMainFrame) {
+        console.warn('[WebBrowser] Subresource failed:', e.errorDescription, e.validatedURL)
+        return
+      }
       setIsLoading(false)
       setErrorMessage(`Failed to load: ${e.errorDescription} (${e.errorCode})`)
     }

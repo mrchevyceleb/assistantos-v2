@@ -70,6 +70,25 @@ app.whenReady().then(() => {
     callback({ requestHeaders: details.requestHeaders })
   })
 
+  // Handle certificate errors - log details for debugging
+  browserSession.setCertificateVerifyProc((request, callback) => {
+    // Log certificate errors for debugging
+    if (request.errorCode !== 0) {
+      console.warn('[Browser] Certificate error:', {
+        hostname: request.hostname,
+        errorCode: request.errorCode,
+        certificate: {
+          subject: request.certificate?.subjectName,
+          issuer: request.certificate?.issuerName,
+          validStart: request.certificate?.validStart,
+          validExpiry: request.certificate?.validExpiry,
+        }
+      })
+    }
+    // Use default verification (don't bypass)
+    callback(-3) // -3 means use default behavior
+  })
+
   createWindow()
 
   app.on('activate', () => {
