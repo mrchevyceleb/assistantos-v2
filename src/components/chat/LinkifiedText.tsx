@@ -21,10 +21,13 @@
  * - Windows: C:\path\to\file, D:\folder\file.txt
  * - Unix: /path/to/file, /home/user/file.txt
  * - Home: ~/Documents/file.txt, ~/.config/file
+ * - Relative: folder/file.txt, 01-Active/notes.md, path/to/document.md
  */
 
 import React, { useState, useCallback } from 'react'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
+import { useAppStore } from '../../stores/appStore'
+import path from 'path-browserify'
 
 // URL regex pattern that matches:
 // - Full URLs starting with http:// or https://
@@ -42,6 +45,10 @@ const UNIX_PATH_REGEX = /(?<![/:])\/(?!\/)[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)+(
 // Home: ~/Documents/file.txt, ~/.bashrc
 const HOME_PATH_REGEX = /~\/[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*(?:\.[a-zA-Z0-9]+)?/g
 
+// Relative: folder/file.txt, path/to/document.md, 01-Active/notes.md
+// Requires: at least one slash, ends with file extension, not a URL
+const RELATIVE_PATH_REGEX = /(?<!https?:\/\/)(?<!www\.)(?<![/:])(?<!\.)([a-zA-Z0-9_.-]+\/)+[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+/g
+
 interface LinkifiedTextProps {
   text: string
   className?: string
@@ -53,7 +60,7 @@ interface TextPart {
   type: 'text' | 'url' | 'filepath'
   content: string
   href?: string
-  pathType?: 'windows' | 'unix' | 'home'
+  pathType?: 'windows' | 'unix' | 'home' | 'relative'
 }
 
 interface MatchInfo {
@@ -61,7 +68,7 @@ interface MatchInfo {
   length: number
   content: string
   type: 'url' | 'filepath'
-  pathType?: 'windows' | 'unix' | 'home'
+  pathType?: 'windows' | 'unix' | 'home' | 'relative'
 }
 
 /**
@@ -136,6 +143,25 @@ function findAllMatches(text: string): MatchInfo[] {
         content: match[0],
         type: 'filepath',
         pathType: 'home'
+      })
+    }
+  }
+
+  // Find relative paths
+  const relativeRegex = new RegExp(RELATIVE_PATH_REGEX.source, 'g')
+  while ((match = relativeRegex.exec(text)) !== null) {
+    // Skip if overlaps with existing matches
+    const overlaps = matches.some(
+      m => (match!.index >= m.index && match!.index < m.index + m.length) ||
+           (m.index >= match!.index && m.index < match!.index + match![0].length)
+    )
+    if (!overlaps) {
+      matches.push({
+        index: match.index,
+        length: match[0].length,
+        content: match[0],
+        type: 'filepath',
+        pathType: 'relative'
       })
     }
   }
@@ -228,8 +254,19 @@ function parseTextForUrls(text: string): TextPart[] {
 /**
  * Clickable file path component
  */
-function ClickableFilePath({ path, className }: { path: string; className?: string }) {
+function ClickableFilePath({ path: filePath, pathType, className }: { path: string; pathType?: 'windows' | 'unix' | 'home' | 'relative'; className?: string }) {
   const [error, setError] = useState<string | null>(null)
+  const workspacePath = useAppStore((state) => state.workspacePath)
+
+  // Resolve relative paths to absolute paths
+  const resolvedPath = useCallback((pathStr: string) => {
+    if (pathType === 'relative' && workspacePath) {
+      // Convert forward slashes to backslashes on Windows
+      const normalizedPath = pathStr.replace(/\//g, path.sep)
+      return path.join(workspacePath, normalizedPath)
+    }
+    return pathStr
+  }, [pathType, workspacePath])
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -240,15 +277,17 @@ function ClickableFilePath({ path, className }: { path: string; className?: stri
 
     setError(null)
 
+    const absolutePath = resolvedPath(filePath)
+
     try {
       if (showInFolder) {
-        const result = await window.electronAPI?.shell?.showItemInFolder(path)
+        const result = await window.electronAPI?.shell?.showItemInFolder(absolutePath)
         if (result && !result.success) {
           setError(result.error || 'Failed to show in folder')
           setTimeout(() => setError(null), 3000)
         }
       } else {
-        const result = await window.electronAPI?.shell?.openPath(path)
+        const result = await window.electronAPI?.shell?.openPath(absolutePath)
         if (result && !result.success) {
           setError(result.error || 'Failed to open path')
           setTimeout(() => setError(null), 3000)
@@ -258,14 +297,16 @@ function ClickableFilePath({ path, className }: { path: string; className?: stri
       setError(String(err))
       setTimeout(() => setError(null), 3000)
     }
-  }, [path])
+  }, [filePath, resolvedPath])
 
   const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
 
+    const absolutePath = resolvedPath(filePath)
+
     try {
-      const result = await window.electronAPI?.shell?.showItemInFolder(path)
+      const result = await window.electronAPI?.shell?.showItemInFolder(absolutePath)
       if (result && !result.success) {
         setError(result.error || 'Failed to show in folder')
         setTimeout(() => setError(null), 3000)
@@ -274,14 +315,18 @@ function ClickableFilePath({ path, className }: { path: string; className?: stri
       setError(String(err))
       setTimeout(() => setError(null), 3000)
     }
-  }, [path])
+  }, [filePath, resolvedPath])
+
+  const tooltipText = pathType === 'relative' && workspacePath
+    ? `Click to open, Ctrl+Click to show in folder\n${filePath}\n→ ${resolvedPath(filePath)}`
+    : `Click to open, Ctrl+Click to show in folder\n${filePath}`
 
   return (
     <span
       className={`cursor-pointer relative inline ${className || ''}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
-      title={`Click to open, Ctrl+Click to show in folder\n${path}`}
+      title={tooltipText}
     >
       <span
         className="text-emerald-400 hover:text-emerald-300 transition-colors"
@@ -292,7 +337,7 @@ function ClickableFilePath({ path, className }: { path: string; className?: stri
           textUnderlineOffset: '2px'
         }}
       >
-        {path}
+        {filePath}
       </span>
       {error && (
         <span
@@ -331,6 +376,7 @@ export function LinkifiedText({ text, className, linkClassName, filePathClassNam
             <ClickableFilePath
               key={index}
               path={part.content}
+              pathType={part.pathType}
               className={filePathClassName}
             />
           )

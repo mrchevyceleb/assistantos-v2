@@ -148,14 +148,62 @@ TASKS/ProjectName/tasks.md  (with - [x], - [o], - [>], - [?], - [ ] checkboxes)
 
 **Built-in Integrations**:
 - **Browser**: `@browser`/`@playwright` (Playwright), `@cloud-browser`/`@browserbase` (Browserbase)
-- **Google**: `@gmail`/`@email` (Gmail), `@calendar`/`@cal` (Calendar)
+- **Google**: Gmail (multi-account), `@calendar`/`@cal` (Calendar)
 - **Search**: `@perplexity`/`@research`, `@brave`/`@web`, `@docs`/`@documentation`
 - **Cloud**: `@vercel`/`@deploy` (Vercel)
 - **Media**: `@image`/`@generate` (Gemini image generation)
 
 **Custom Integrations**: Via chat or Settings UI. Tool: `create_mcp_integration`
 
-**Preload API** (`window.electronAPI.mcp`): `getIntegrations()`, `configure()`, `start()`, `stop()`, `isReady()`, `getTools()`, `executeTool()`, `getStatus()`, etc.
+**Preload API** (`window.electronAPI.mcp`): `getIntegrations()`, `configure()`, `start()`, `stop()`, `isReady()`, `getTools()`, `executeTool()`, `getStatus()`, `addGmailAccount()`, `removeGmailAccount()`, etc.
+
+### Multi-Account Gmail Support
+
+AssistantOS supports **6+ simultaneous Gmail accounts** with independent MCP server instances per account. Each account can be enabled/disabled independently and has unique @mention syntax.
+
+**Architecture**:
+- **Multi-Instance Pattern**: Each Gmail account runs as a separate MCP server instance (`gmail-{accountId}`)
+- **Virtual Integrations**: Dynamically generated MCPIntegration objects per account in `registry.ts`
+- **Token Management**: Independent OAuth tokens with automatic refresh 5 minutes before expiry
+- **Connection Recovery**: Automatic reconnection with exponential backoff (3 retries: 100ms, 500ms, 2s)
+- **Crash Notification**: IPC events notify UI when MCP server crashes, with "Reconnect" button
+
+**User Features** (Settings > Integrations):
+- **Add Account**: Custom labels ("Work", "Personal", etc.) with OAuth flow
+- **Account Cards**: Show label, email, status (Ready/Error), tool count
+- **Toggle On/Off**: Enable/disable without removing account
+- **Remove Account**: Confirmation dialog before deletion
+- **Unique Mentions**: `@gmail-work`, `@gmail-personal`, `@gmail-project`
+
+**State Management** (`appStore.ts`):
+```typescript
+interface GmailAccount {
+  id: string                     // UUID
+  label: string                  // User-defined label
+  email: string                  // Auto-detected from Gmail API
+  enabled: boolean               // Active status
+  tokens: {
+    accessToken: string
+    refreshToken: string
+    expiresAt: number
+  }
+  createdAt: string              // ISO timestamp
+  integrationId: string          // Virtual integration ID (gmail-{id})
+}
+```
+
+**Backend Implementation**:
+- `electron/mcp/MCPManager.ts` - Reconnection logic, token refresh check, crash notification
+- `electron/mcp/ipcHandlers.ts` - `mcp:addGmailAccount`, `mcp:removeGmailAccount`, token refresh helper
+- `electron/mcp/registry.ts` - `createGmailAccountIntegration()` function
+- `src/App.tsx` - Initialization on startup (configure tokens, auto-start enabled)
+
+**UI Components** (`src/components/settings/IntegrationsModal.tsx`):
+- `GmailAccountsSection` - Main container with add button and account list
+- `GmailAccountCard` - Individual account display with toggle/remove
+- `AddGmailAccountModal` - Label input, suggestions, OAuth trigger
+
+**Migration**: Existing single Gmail accounts auto-migrate to multi-account structure on first launch (labeled "Primary").
 
 ### Intelligent Tool Loading System ("Plumber's Wrench")
 

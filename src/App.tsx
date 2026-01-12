@@ -10,7 +10,9 @@ import { useNotificationStore } from './stores/notificationStore'
 function App() {
   const integrationConfigs = useAppStore((state) => state.integrationConfigs)
   const customIntegrations = useAppStore((state) => state.customIntegrations)
+  const gmailAccounts = useAppStore((state) => state.gmailAccounts)
   const customIntegrationsLoaded = useRef(false)
+  const gmailAccountsInitialized = useRef(false)
   const addNotification = useNotificationStore((state) => state.addNotification)
   const welcomeShown = useRef(false)
 
@@ -48,6 +50,39 @@ function App() {
     }
     loadCustomIntegrations()
   }, [customIntegrations])
+
+  // Initialize Gmail accounts on app startup (run once)
+  useEffect(() => {
+    const initializeGmailAccounts = async () => {
+      if (gmailAccountsInitialized.current) return
+      gmailAccountsInitialized.current = true
+
+      if (gmailAccounts.length === 0) return
+
+      console.log(`[App] Initializing ${gmailAccounts.length} Gmail accounts`)
+
+      for (const account of gmailAccounts) {
+        try {
+          // Set env vars from tokens
+          if (account.tokens.accessToken && window.electronAPI?.mcp?.configure) {
+            await window.electronAPI.mcp.configure(account.integrationId, {
+              GOOGLE_ACCESS_TOKEN: account.tokens.accessToken,
+              GOOGLE_REFRESH_TOKEN: account.tokens.refreshToken,
+              GOOGLE_TOKEN_EXPIRES_AT: account.tokens.expiresAt.toString()
+            })
+          }
+
+          // Note: Virtual integrations are auto-registered in the backend when accounts are added
+          // The preStartEnabled effect below will handle auto-starting enabled accounts
+
+          console.log(`[App] Initialized Gmail account: ${account.label} (${account.integrationId})`)
+        } catch (error) {
+          console.warn(`[App] Failed to initialize Gmail account ${account.label}:`, error)
+        }
+      }
+    }
+    initializeGmailAccounts()
+  }, [gmailAccounts])
 
   // Pre-start enabled MCP integrations on app load (Claude Code-like behavior)
   useEffect(() => {

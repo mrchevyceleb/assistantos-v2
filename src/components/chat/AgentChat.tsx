@@ -51,7 +51,8 @@ import {
   truncateDocumentSmart,
   type ContextUsage
 } from '../../services/tokenService'
-import { getToolsForMessage, markToolUsed, extractIntegrationId } from '../../services/intent/toolLoadingManager'
+import { getToolsForMessage, markToolUsed } from '../../services/intent/toolLoadingManager'
+import { extractIntegrationId } from '../../services/intent/heuristicMatcher'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 
@@ -104,34 +105,79 @@ interface AttachedImage {
  * Convert a File to AttachedImage format
  */
 async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
-  // Validate file type
-  const validTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
-  if (!validTypes.includes(file.type)) {
-    console.warn('Unsupported image type:', file.type)
+  console.log('[fileToAttachedImage] Processing:', file.name, file.type, file.size)
+
+  // Validate file type (be lenient for Windows clipboard)
+  const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
+  const isValidMime = validTypes.includes(file.type)
+  const hasImageExtension = /\.(png|jpe?g|gif|webp)$/i.test(file.name)
+
+  if (!isValidMime && !hasImageExtension) {
+    console.warn('[fileToAttachedImage] Unsupported image type:', file.type, file.name)
+    return null
+  }
+
+  // Infer media type if mime type is missing (Windows clipboard edge case)
+  let mediaType = file.type as AttachedImage['mediaType']
+  if (!mediaType || mediaType === 'application/octet-stream') {
+    const ext = file.name.match(/\.(png|jpe?g|gif|webp)$/i)?.[1]?.toLowerCase()
+    if (ext === 'png') mediaType = 'image/png'
+    else if (ext === 'jpg' || ext === 'jpeg') mediaType = 'image/jpeg'
+    else if (ext === 'gif') mediaType = 'image/gif'
+    else if (ext === 'webp') mediaType = 'image/webp'
+    else mediaType = 'image/png' // default fallback
+    console.log('[fileToAttachedImage] Inferred media type:', mediaType)
+  }
+
+  // Size validation (max 10MB to prevent memory issues)
+  const maxSize = 10 * 1024 * 1024
+  if (file.size > maxSize) {
+    console.warn('[fileToAttachedImage] File too large:', file.size, 'bytes')
     return null
   }
 
   return new Promise((resolve) => {
     const reader = new FileReader()
+
     reader.onload = (e) => {
-      const dataUrl = e.target?.result as string
-      if (!dataUrl) {
+      try {
+        const dataUrl = e.target?.result as string
+        if (!dataUrl) {
+          console.error('[fileToAttachedImage] No data URL generated')
+          resolve(null)
+          return
+        }
+
+        // Extract base64 data (remove "data:image/png;base64," prefix)
+        const base64Data = dataUrl.split(',')[1]
+
+        if (!base64Data) {
+          console.error('[fileToAttachedImage] Failed to extract base64 data')
+          resolve(null)
+          return
+        }
+
+        const image: AttachedImage = {
+          id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          data: base64Data,
+          mediaType,
+          preview: dataUrl,
+          name: file.name || 'pasted-image.png'
+        }
+
+        console.log('[fileToAttachedImage] Success:', image.name, 'size:', base64Data.length)
+        resolve(image)
+      } catch (err) {
+        console.error('[fileToAttachedImage] Error in onload:', err)
         resolve(null)
-        return
       }
-
-      // Extract base64 data (remove "data:image/png;base64," prefix)
-      const base64Data = dataUrl.split(',')[1]
-
-      resolve({
-        id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        data: base64Data,
-        mediaType: file.type as AttachedImage['mediaType'],
-        preview: dataUrl,
-        name: file.name || 'image'
-      })
     }
-    reader.onerror = () => resolve(null)
+
+    reader.onerror = (err) => {
+      console.error('[fileToAttachedImage] FileReader error:', err)
+      resolve(null)
+    }
+
     reader.readAsDataURL(file)
   })
 }
@@ -400,6 +446,9 @@ export function AgentChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isInterrupting, setIsInterrupting] = useState(false)
+  const [isToolExecuting, setIsToolExecuting] = useState(false)
+  const partialResponseRef = useRef<string>('') // Track partial AI response for interrupts
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [isImageDragOver, setIsImageDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -438,8 +487,6 @@ export function AgentChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  // Queued messages state (messages sent while AI is responding)
-  const [queuedMessages, setQueuedMessages] = useState<Array<{ id: string; content: string; timestamp: Date }>>([])
   // ESC-ESC double-tap tracking for stop
   const lastEscPressRef = useRef<number>(0)
 
@@ -462,30 +509,6 @@ export function AgentChat() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  // Process queued messages when loading completes
-  useEffect(() => {
-    if (!isLoading && queuedMessages.length > 0) {
-      // Combine all queued messages into a single message that shows the user's redirections
-      const combinedContent = queuedMessages.map(m => m.content).join('\n\n---\n\n')
-
-      // Clear the queue
-      setQueuedMessages([])
-
-      // Add the queued content as a new user message and process it
-      // Small delay to ensure UI updates first
-      setTimeout(() => {
-        setInput(combinedContent)
-        // Auto-send after a brief pause
-        setTimeout(() => {
-          const sendButton = document.querySelector('[data-send-button]') as HTMLButtonElement
-          if (sendButton && !sendButton.disabled) {
-            sendButton.click()
-          }
-        }, 100)
-      }, 200)
-    }
-  }, [isLoading, queuedMessages])
 
   // Check if Claude Code CLI is installed for Agent SDK mode
   useEffect(() => {
@@ -1255,25 +1278,114 @@ export function AgentChat() {
 
   // Handle clipboard paste for images
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    console.log('[Paste] Clipboard event triggered')
+    console.log('[Paste] Items:', Array.from(e.clipboardData.items).map(i => ({ type: i.type, kind: i.kind })))
+    console.log('[Paste] Files:', Array.from(e.clipboardData.files).map(f => ({ name: f.name, type: f.type, size: f.size })))
+
+    // Strategy 1: Check clipboard items (works for most browsers)
     const items = Array.from(e.clipboardData.items)
     const imageItems = items.filter(item => item.type.startsWith('image/'))
 
-    if (imageItems.length > 0) {
-      e.preventDefault() // Prevent pasting image as text
+    // Strategy 2: Check clipboard files (works for Windows Snipping Tool, Print Screen)
+    const files = Array.from(e.clipboardData.files)
+    const imageFiles = files.filter(file => file.type.startsWith('image/') || file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i))
 
-      const newImages: AttachedImage[] = []
+    const hasImages = imageItems.length > 0 || imageFiles.length > 0
+
+    if (!hasImages) {
+      console.log('[Paste] No images detected in clipboard')
+      return // Let default paste behavior handle text
+    }
+
+    e.preventDefault() // Prevent pasting image as text/filename
+    console.log('[Paste] Processing images:', { itemCount: imageItems.length, fileCount: imageFiles.length })
+
+    const newImages: AttachedImage[] = []
+    let failedCount = 0
+
+    try {
+      // Process clipboard items first (inline image data)
       for (const item of imageItems) {
-        const image = await clipboardToAttachedImage(item)
-        if (image) {
-          newImages.push(image)
+        try {
+          console.log('[Paste] Processing item:', item.type)
+          const image = await clipboardToAttachedImage(item)
+          if (image) {
+            newImages.push(image)
+            console.log('[Paste] Item processed successfully:', image.name)
+          } else {
+            console.warn('[Paste] Item returned null:', item.type)
+            failedCount++
+          }
+        } catch (err) {
+          console.error('[Paste] Error processing clipboard item:', err)
+          failedCount++
         }
       }
 
+      // Process files if items didn't work (Windows fallback)
+      if (newImages.length === 0 && imageFiles.length > 0) {
+        console.log('[Paste] Falling back to file-based paste')
+        for (const file of imageFiles) {
+          try {
+            console.log('[Paste] Processing file:', file.name, file.type)
+            const image = await fileToAttachedImage(file)
+            if (image) {
+              newImages.push(image)
+              console.log('[Paste] File processed successfully:', image.name)
+            } else {
+              console.warn('[Paste] File returned null:', file.name)
+              failedCount++
+            }
+          } catch (err) {
+            console.error('[Paste] Error processing file:', err)
+            failedCount++
+          }
+        }
+      }
+
+      // Update state and notify user
       if (newImages.length > 0) {
         setAttachedImages(prev => [...prev, ...newImages])
+        console.log('[Paste] Successfully attached images:', newImages.length)
+
+        // Success notification
+        addNotification(
+          'Images Attached',
+          `${newImages.length} image${newImages.length > 1 ? 's' : ''} ready to send`,
+          'success'
+        )
+
+        // Focus input after paste
+        inputRef.current?.focus()
       }
+
+      // Warning notification if some failed
+      if (failedCount > 0) {
+        addNotification(
+          'Partial Paste Failure',
+          `${failedCount} image${failedCount > 1 ? 's' : ''} could not be processed. Check console for details.`,
+          'warning'
+        )
+      }
+
+      // Error notification if all failed
+      if (newImages.length === 0 && (imageItems.length > 0 || imageFiles.length > 0)) {
+        console.error('[Paste] All images failed to process')
+        addNotification(
+          'Paste Failed',
+          'Could not process clipboard images. Try drag & drop or the file picker instead.',
+          'error'
+        )
+      }
+    } catch (err) {
+      console.error('[Paste] Critical error in paste handler:', err)
+      addNotification(
+        'Paste Error',
+        'An unexpected error occurred while pasting images.',
+        'error'
+      )
     }
-  }, [])
+  }, [addNotification])
 
   /**
    * Send message using Agent SDK (Claude Code-like behavior)
@@ -1505,6 +1617,7 @@ export function AgentChat() {
     } finally {
       setIsLoading(false)
       abortControllerRef.current = null
+      partialResponseRef.current = '' // Clear partial response tracker
     }
   }
 
@@ -1727,6 +1840,7 @@ export function AgentChat() {
     } finally {
       setIsLoading(false)
       abortControllerRef.current = null
+      partialResponseRef.current = '' // Clear partial response tracker
     }
   }
 
@@ -1748,6 +1862,13 @@ export function AgentChat() {
 
     // Capture images to send before clearing
     const imagesToSend = [...attachedImages]
+
+    // INTERRUPT LOGIC: If AI is currently responding, interrupt it and restart with new context
+    if (isLoading && !isInterrupting) {
+      console.log('[Interrupt] User sent message during AI response - triggering interrupt')
+      await interruptAndRestart(inputToSend, imagesToSend)
+      return
+    }
 
     if (useAgentSDK && claudeCodeInstalled !== false) {
       // Agent SDK doesn't support images yet, fall back to classic if images attached
@@ -1776,6 +1897,9 @@ export function AgentChat() {
           ...updated[lastIndex],
           content: newContent
         }
+
+        // TRACK PARTIAL RESPONSE for interrupt feature
+        partialResponseRef.current = newContent
       }
       return updated
     })
@@ -1783,6 +1907,9 @@ export function AgentChat() {
 
   const handleToolUseChunk = (chunk: ChatChunk) => {
     if (!chunk.toolName || !chunk.toolInput) return
+
+    // Track tool execution state for interrupt handling
+    setIsToolExecuting(true)
 
     // Insert tool message BEFORE the last assistant message
     // This ensures tools render ABOVE the assistant's text response
@@ -1817,6 +1944,9 @@ export function AgentChat() {
   }
 
   const handleToolResultChunk = (chunk: ChatChunk) => {
+    // Clear tool execution state when result received
+    setIsToolExecuting(false)
+
     setMessages(prev => {
       const updated = [...prev]
       const toolIndex = updated.findIndex(m => m.id === `tool-${chunk.toolId}`)
@@ -1923,6 +2053,112 @@ export function AgentChat() {
       addNotification('Response Stopped', 'The AI response was interrupted', 'info')
     }
   }, [isLoading, addNotification])
+
+  /**
+   * Interrupt current AI response and restart with new user message (Claude Code style)
+   */
+  const interruptAndRestart = useCallback(async (newMessage: string, imagesToSend: AttachedImage[]) => {
+    if (!isLoading || isInterrupting) return
+
+    console.log('[Interrupt] Starting interrupt sequence')
+    setIsInterrupting(true)
+
+    try {
+      // Step 1: Abort current stream
+      if (abortControllerRef.current) {
+        console.log('[Interrupt] Aborting current stream')
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+
+      // Step 2: Salvage partial response from the last assistant message
+      const partialResponse = partialResponseRef.current || ''
+      console.log('[Interrupt] Salvaged partial response:', partialResponse.substring(0, 100), '...')
+
+      // Step 3: Update messages to finalize partial response with interruption marker
+      setMessages(prev => {
+        const updated = [...prev]
+
+        // Find the last assistant message (the one being streamed)
+        let lastAssistantIndex = -1
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === 'assistant') {
+            lastAssistantIndex = i
+            break
+          }
+        }
+
+        if (lastAssistantIndex !== -1) {
+          const currentContent = updated[lastAssistantIndex].content
+
+          // If we have partial content, keep it with interruption marker
+          if (currentContent && currentContent !== 'Thinking...') {
+            updated[lastAssistantIndex] = {
+              ...updated[lastAssistantIndex],
+              content: currentContent + '\n\n[Interrupted with new context...]'
+            }
+          } else {
+            // No meaningful content, remove the placeholder message
+            updated.splice(lastAssistantIndex, 1)
+          }
+        }
+
+        return updated
+      })
+
+      // Step 4: Clear input and reset state
+      setInput('')
+      setAttachedImages([])
+      setMentionSuggestions([])
+      setActiveMentions([])
+      setActiveDocuments([])
+      setIsLoading(false)
+      if (isToolExecuting) {
+        console.warn('[Interrupt] Interrupting during tool execution')
+        addNotification(
+          'Tool Execution Interrupted',
+          'A tool was interrupted mid-execution. Results may be incomplete.',
+          'warning'
+        )
+        setIsToolExecuting(false)
+      }
+      partialResponseRef.current = ''
+
+      // Step 5: Small delay to ensure UI updates before restart
+      await new Promise(resolve => setTimeout(resolve, 150))
+
+      // Step 6: Show notification
+      addNotification(
+        'Response Redirected',
+        'Previous response interrupted. Restarting with new context.',
+        'info'
+      )
+
+      // Step 7: Send new message with full conversation context (including salvaged response)
+      console.log('[Interrupt] Restarting with new message:', newMessage.substring(0, 50))
+
+      if (useAgentSDK && claudeCodeInstalled !== false) {
+        if (imagesToSend.length > 0) {
+          await sendMessageClassic(newMessage, imagesToSend)
+        } else {
+          await sendMessageAgentSDK(newMessage)
+        }
+      } else {
+        await sendMessageClassic(newMessage, imagesToSend)
+      }
+
+    } catch (err) {
+      console.error('[Interrupt] Error during interrupt sequence:', err)
+      addNotification(
+        'Interrupt Failed',
+        'Could not interrupt the response. Please try stopping first.',
+        'error'
+      )
+      setIsLoading(false)
+    } finally {
+      setIsInterrupting(false)
+    }
+  }, [isLoading, isInterrupting, isToolExecuting, useAgentSDK, claudeCodeInstalled, addNotification])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Handle ESC-ESC double-tap to stop streaming (within 500ms)
@@ -2847,6 +3083,14 @@ export function AgentChat() {
                                 }
                               }}
                             >{message.content}</ReactMarkdown>
+
+                            {/* Interrupted message indicator */}
+                            {message.content.includes('[Interrupted with new context...]') && (
+                              <div className="text-xs text-orange-400 italic mt-2 flex items-center gap-1">
+                                <Square className="w-3 h-3" />
+                                Response interrupted by user
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
                             <span>{formatTimestamp(message.timestamp)}</span>
@@ -3190,58 +3434,51 @@ export function AgentChat() {
             )}
           </button>
 
-          {/* Stop Button - shown during loading */}
-          {isLoading ? (
-            <button
-              onClick={stopStreaming}
-              className="p-3 rounded-xl transition-all bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30"
-              title="Stop response (or press ESC twice quickly)"
-              style={{
-                boxShadow: '0 0 15px rgba(239, 68, 68, 0.3)'
-              }}
-            >
+          {/* Send/Interrupt Button - unified button for sending and interrupting */}
+          <button
+            onClick={isLoading ? sendMessage : sendMessage}
+            disabled={(!input.trim() && attachedImages.length === 0) || isInterrupting}
+            className="px-4 py-3 rounded-xl transition-all border"
+            data-send-button
+            title={isLoading ? "Interrupt and redirect with new message" : "Send message"}
+            style={{
+              background: isLoading
+                ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' // Orange for interrupt
+                : 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)', // Purple for normal
+              color: 'white',
+              borderColor: isLoading ? 'rgba(249, 115, 22, 0.3)' : 'rgba(139, 92, 246, 0.3)',
+              boxShadow: isLoading ? '0 0 15px rgba(249, 115, 22, 0.3)' : '0 0 15px rgba(139, 92, 246, 0.3)',
+              opacity: (!input.trim() && attachedImages.length === 0) || isInterrupting ? 0.5 : 1,
+              cursor: (!input.trim() && attachedImages.length === 0) || isInterrupting ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isLoading ? (
               <Square className="w-5 h-5" fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              onClick={sendMessage}
-              disabled={!input.trim() && attachedImages.length === 0}
-              className="btn-primary px-4"
-              data-send-button
-              style={{
-                opacity: (input.trim() || attachedImages.length > 0) ? 1 : 0.5,
-                cursor: (input.trim() || attachedImages.length > 0) ? 'pointer' : 'not-allowed'
-              }}
-            >
+            ) : (
               <Send className="w-5 h-5" />
-            </button>
+            )}
+          </button>
+
+          {/* ESC-ESC still available for clean stop without restart */}
+          {isLoading && (
+            <span className="text-xs text-slate-500 absolute -bottom-6 right-0">
+              ESC-ESC to stop without restarting
+            </span>
           )}
         </div>
 
-        {/* Queued Messages Indicator */}
-        {queuedMessages.length > 0 && (
-          <div
-            className="mt-2 px-3 py-2 rounded-lg flex items-center gap-3"
+        {/* Interrupting indicator */}
+        {isInterrupting && (
+          <div className="mt-2 px-3 py-2 rounded-lg flex items-center gap-3"
             style={{
-              background: 'rgba(139, 92, 246, 0.1)',
-              border: '1px solid rgba(139, 92, 246, 0.3)'
+              background: 'rgba(249, 115, 22, 0.1)',
+              border: '1px solid rgba(249, 115, 22, 0.3)'
             }}
           >
-            <MessageCircle className="w-4 h-4 text-violet-400" />
-            <div className="flex-1">
-              <span className="text-sm text-violet-400 font-medium">
-                {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
-              </span>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Will be sent after current response completes
-              </p>
-            </div>
-            <button
-              onClick={() => setQueuedMessages([])}
-              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
-            >
-              Clear
-            </button>
+            <RefreshCw className="w-4 h-4 text-orange-400 animate-spin" />
+            <span className="text-sm text-orange-400">
+              Redirecting conversation...
+            </span>
           </div>
         )}
 

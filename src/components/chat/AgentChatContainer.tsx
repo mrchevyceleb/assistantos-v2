@@ -26,7 +26,8 @@ import { ClaudeService } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
 import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
 import { getCachedMCPTools } from '../../services/toolCache'
-import { getToolsForMessage, markToolUsed, extractIntegrationId } from '../../services/intent/toolLoadingManager'
+import { getToolsForMessage, markToolUsed } from '../../services/intent/toolLoadingManager'
+import { extractIntegrationId } from '../../services/intent/heuristicMatcher'
 import {
   parseMessage,
   getUnifiedSuggestions,

@@ -360,6 +360,19 @@ interface ElectronAPI {
     unregisterCustomIntegration: (integrationId: string) => Promise<{ success: boolean; error?: string }>
     updateCustomIntegration: (id: string, updates: Partial<MCPIntegration>) => Promise<{ success: boolean; error?: string }>
     loadCustomIntegrations: (integrations: MCPIntegration[]) => Promise<{ success: boolean }>
+    // OAuth methods
+    startOAuth: (integrationId: string) => Promise<{ success: boolean; tokens?: { accessToken: string; refreshToken: string; expiresAt: number }; error?: string }>
+    hasOAuthTokens: (integrationId: string) => Promise<boolean>
+    clearOAuthTokens: (integrationId: string) => Promise<{ success: boolean; error?: string }>
+    // Event listeners
+    on?: (channel: string, callback: (data: any) => void) => void
+    off?: (channel: string, callback: (data: any) => void) => void
+    // Gmail Account Management
+    addGmailAccount: (label: string) => Promise<{ success: boolean; account?: any; error?: string }>
+    removeGmailAccount: (accountId: string, integrationId: string) => Promise<{ success: boolean; error?: string }>
+  }
+  app: {
+    getVersion: () => Promise<string>
   }
   conversation: {
     save: (conversation: ConversationData) => Promise<{ success: boolean; id?: string; error?: string }>
