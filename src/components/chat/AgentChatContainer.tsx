@@ -34,6 +34,8 @@ import {
   type UnifiedSuggestion,
   type DocumentMention
 } from '../../services/mentions/parser'
+import { getPartialCommand, getCommandSuggestions, completeCommand, expandSlashCommand } from '../../services/shortcuts/parser'
+import { PromptShortcut } from '../../types/shortcut'
 import { generateChatTitle } from '../../services/titleGenerator'
 
 // Components
@@ -95,6 +97,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const maxTokens = useAppStore(state => state.maxTokens)
   const integrationConfigs = useAppStore(state => state.integrationConfigs)
   const memoryEnabled = useAppStore(state => state.memoryEnabled)
+  const shortcuts = useAppStore(state => state.shortcuts)
 
   // Agent store (per-agent state)
   const agent = useAgentStore(state => state.getAgent(agentId))
@@ -117,6 +120,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [mentionSuggestions, setMentionSuggestions] = useState<UnifiedSuggestion[]>([])
+  const [commandSuggestions, setCommandSuggestions] = useState<PromptShortcut[]>([])
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [activeMentions, setActiveMentions] = useState<string[]>([])
   const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
@@ -215,10 +219,22 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     resetConversation()
   }
 
-  // Handle input change with mention detection
+  // Handle input change with mention and slash command detection
   const handleInputChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
     setInput(value)
+
+    // Check for slash commands first
+    const partialCommand = getPartialCommand(value)
+    if (partialCommand) {
+      const suggestions = getCommandSuggestions(partialCommand, shortcuts)
+      setCommandSuggestions(suggestions)
+      setMentionSuggestions([])
+      setSelectedSuggestionIndex(0)
+      return
+    } else {
+      setCommandSuggestions([])
+    }
 
     // Parse mentions
     const { mentions, documentMentions } = await parseMessage(value, workspacePath)
@@ -252,11 +268,22 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     })
   }
 
+  // Handle command suggestion selection
+  const selectCommandSuggestion = (shortcut: PromptShortcut) => {
+    const newInput = completeCommand(input, shortcut)
+    setInput(newInput)
+    setCommandSuggestions([])
+    setSelectedSuggestionIndex(0)
+    textareaRef.current?.focus()
+  }
+
   // Send message handler
   const handleSendMessage = async () => {
     if (!input.trim() || !claudeServiceRef.current || isLoading || !agent) return
 
-    const userInput = input.trim()
+    // Expand slash commands before sending
+    const expandedInput = expandSlashCommand(input.trim(), shortcuts)
+    const userInput = expandedInput
     const isFirstMessage = messages.length === 0
 
     // Create user message
@@ -321,6 +348,14 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           updateMessage(agentId, assistantMessage.id, {
             content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + (chunk.text || ''),
           })
+        } else if (chunk.type === 'iteration_boundary') {
+          // Add paragraph break between agentic loop iterations
+          const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''
+          if (currentContent && !currentContent.endsWith('\n\n')) {
+            updateMessage(agentId, assistantMessage.id, {
+              content: currentContent + '\n\n',
+            })
+          }
         } else if (chunk.type === 'tool_use' && chunk.toolName && chunk.toolInput) {
           // Only handle tool_use chunks that have full input data
           // (The streaming API emits an early chunk without toolInput which we skip)
@@ -369,6 +404,29 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
   // Handle key press
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Handle command suggestions navigation
+    if (commandSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedSuggestionIndex(prev => (prev + 1) % commandSuggestions.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedSuggestionIndex(prev => prev === 0 ? commandSuggestions.length - 1 : prev - 1)
+        return
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault()
+        selectCommandSuggestion(commandSuggestions[selectedSuggestionIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        setCommandSuggestions([])
+        return
+      }
+    }
+
     // Handle mention suggestions navigation
     if (mentionSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -681,6 +739,25 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
       {/* Input Area */}
       <div className="border-t border-white/5 p-4">
+        {/* Command Suggestions (Slash Commands) */}
+        {commandSuggestions.length > 0 && (
+          <div className="mb-2 bg-slate-800 border border-white/10 rounded-lg overflow-hidden max-h-60 overflow-y-auto">
+            {commandSuggestions.map((shortcut, index) => (
+              <button
+                key={shortcut.name}
+                className={`
+                  w-full px-3 py-2 text-left text-sm flex items-center gap-2
+                  ${index === selectedSuggestionIndex ? 'bg-cyan-500/20 text-white' : 'text-slate-300 hover:bg-white/5'}
+                `}
+                onClick={() => selectCommandSuggestion(shortcut)}
+              >
+                <span className="text-cyan-400 font-mono">/{shortcut.name}</span>
+                <span className="text-slate-500 text-xs truncate">{shortcut.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Mention Suggestions */}
         {mentionSuggestions.length > 0 && (
           <div className="mb-2 bg-slate-800 border border-white/10 rounded-lg overflow-hidden">

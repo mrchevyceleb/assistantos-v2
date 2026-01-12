@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Tool, MessageParam, ContentBlock, ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages';
 
 export interface ChatChunk {
-  type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done';
+  type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'iteration_boundary';
   text?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
@@ -205,6 +205,9 @@ export class ClaudeService {
             role: 'user',
             content: toolResults,
           });
+
+          // Signal iteration boundary - UI can add line breaks between text segments
+          yield { type: 'iteration_boundary' };
 
           // Continue loop to get Claude's response after tool execution
           continueLoop = true;

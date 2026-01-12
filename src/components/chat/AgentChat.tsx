@@ -305,7 +305,7 @@ export function AgentChat() {
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
@@ -518,17 +518,27 @@ export function AgentChat() {
       // Append to existing input or set if empty
       setInput(prev => prev ? `${prev}${pendingChatInput}` : pendingChatInput)
       setPendingChatInput(null)
-      // Focus the input
+      // Focus the input and adjust height
       setTimeout(() => {
         const textarea = document.querySelector('textarea[placeholder*="Message"]') as HTMLTextAreaElement
         if (textarea) {
           textarea.focus()
           // Move cursor to end
           textarea.selectionStart = textarea.selectionEnd = textarea.value.length
+          // Adjust height for content
+          textarea.style.height = 'auto'
+          textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px'
         }
       }, 50)
     }
   }, [pendingChatInput, setPendingChatInput])
+
+  // Reset textarea height when input is cleared
+  useEffect(() => {
+    if (input === '' && inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
+  }, [input])
 
   // Save conversation handler
   const handleSaveConversation = useCallback(async () => {
@@ -2337,13 +2347,20 @@ export function AgentChat() {
           )}
 
           <div className="flex-1 relative">
-            <input
+            <textarea
               ref={inputRef}
               value={input}
-              onChange={(e) => handleInputChange(e.target.value)}
+              onChange={(e) => {
+                handleInputChange(e.target.value)
+                // Auto-resize textarea
+                e.target.style.height = 'auto'
+                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
+              }}
               onKeyDown={handleKeyDown}
               placeholder={isRecording ? "Listening..." : "Message your assistant (use @ for mentions, / for shortcuts)"}
-              className="input-metallic w-full text-sm pr-4"
+              className="input-metallic w-full text-sm pr-4 resize-none overflow-y-auto"
+              rows={1}
+              style={{ minHeight: '44px', maxHeight: '200px' }}
             />
             {/* Interim transcript indicator while recording */}
             {isRecording && interimTranscript && (
