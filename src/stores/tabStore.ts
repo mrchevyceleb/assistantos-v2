@@ -42,6 +42,7 @@ interface TabStore {
   // Tab queries
   findTabByAgentId: (agentId: string) => Tab | undefined
   findTabByFilePath: (filePath: string) => Tab | undefined
+  findTabByNoteId: (noteId: string) => Tab | undefined
   findTabByType: (type: TabType) => Tab | undefined
 
   // Special operations
@@ -51,9 +52,11 @@ interface TabStore {
   openOrFocusDashboard: () => string
   openOrFocusTasks: () => string
   openOrFocusLudicrous: () => string
+  openOrFocusNote: (noteId: string | null, title?: string) => string  // null for new note
 
   // Close agent tab (called when agent is removed)
   closeAgentTab: (agentId: string) => void
+  closeNoteTab: (noteId: string) => void
 
   // Keyboard navigation
   selectNextTab: () => void
@@ -194,6 +197,11 @@ export const useTabStore = create<TabStore>((set, get) => ({
     return get().tabs.find(t => t.type === 'file' && t.filePath === filePath)
   },
 
+  // Find tab by note ID
+  findTabByNoteId: (noteId) => {
+    return get().tabs.find(t => t.type === 'note' && t.noteId === noteId)
+  },
+
   // Find tab by type (for singleton tabs like dashboard, tasks, ludicrous)
   findTabByType: (type) => {
     return get().tabs.find(t => t.type === type)
@@ -290,9 +298,36 @@ export const useTabStore = create<TabStore>((set, get) => ({
     })
   },
 
+  // Open or focus note tab
+  openOrFocusNote: (noteId, title) => {
+    // If noteId is provided, check if tab already exists for this note
+    if (noteId) {
+      const existing = get().findTabByNoteId(noteId)
+      if (existing) {
+        set({ activeTabId: existing.id })
+        return existing.id
+      }
+    }
+
+    // Open new tab (for new note or editing existing)
+    return get().openTab({
+      type: 'note',
+      title: title || 'New Note',
+      noteId: noteId || undefined,
+    })
+  },
+
   // Close agent tab when agent is removed
   closeAgentTab: (agentId) => {
     const tab = get().findTabByAgentId(agentId)
+    if (tab) {
+      get().closeTab(tab.id)
+    }
+  },
+
+  // Close note tab when note is deleted
+  closeNoteTab: (noteId) => {
+    const tab = get().findTabByNoteId(noteId)
     if (tab) {
       get().closeTab(tab.id)
     }

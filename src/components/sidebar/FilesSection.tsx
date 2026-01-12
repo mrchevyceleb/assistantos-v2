@@ -4,12 +4,19 @@ import { useAppStore } from '../../stores/appStore'
 import { useTabStore } from '../../stores/tabStore'
 // isMediaFile imported if needed for future media handling
 import { FileSearch, FileSearchHandle } from './FileSearch'
+import { FileContextMenu } from '../filetree/FileContextMenu'
 
 interface FileEntry {
   name: string
   path: string
   isDirectory: boolean
   children?: FileEntry[]
+}
+
+interface ContextMenuState {
+  x: number
+  y: number
+  entry: FileEntry
 }
 
 interface FileItemProps {
@@ -20,6 +27,7 @@ interface FileItemProps {
   onFileClick: (path: string) => void
   isStarred: (path: string) => boolean
   onToggleStar: (path: string) => void
+  onContextMenu: (e: React.MouseEvent, entry: FileEntry) => void
 }
 
 function FileItem({
@@ -30,6 +38,7 @@ function FileItem({
   onFileClick,
   isStarred,
   onToggleStar,
+  onContextMenu,
 }: FileItemProps) {
   const isExpanded = expandedPaths.has(entry.path)
   const starred = isStarred(entry.path)
@@ -62,6 +71,7 @@ function FileItem({
         `}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={handleClick}
+        onContextMenu={(e) => onContextMenu(e, entry)}
       >
         {/* Expand/Collapse Icon */}
         {entry.isDirectory ? (
@@ -118,6 +128,7 @@ function FileItem({
               onFileClick={onFileClick}
               isStarred={isStarred}
               onToggleStar={onToggleStar}
+              onContextMenu={onContextMenu}
             />
           ))}
         </div>
@@ -135,6 +146,7 @@ export function FilesSection() {
   const [files, setFiles] = useState<FileEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(false)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
   const searchRef = useRef<FileSearchHandle>(null)
 
@@ -259,6 +271,16 @@ export function FilesSection() {
     openOrFocusFile(path)
   }
 
+  const handleContextMenu = (e: React.MouseEvent, entry: FileEntry) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      entry
+    })
+  }
+
   const handleSelectFolder = async () => {
     try {
       const folderPath = await window.electronAPI.fs.selectFolder()
@@ -358,11 +380,36 @@ export function FilesSection() {
                   onFileClick={handleFileClick}
                   isStarred={isStarred}
                   onToggleStar={toggleStarred}
+                  onContextMenu={handleContextMenu}
                 />
               ))
             )}
           </div>
         </>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <FileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          path={contextMenu.entry.path}
+          name={contextMenu.entry.name}
+          isDirectory={contextMenu.entry.isDirectory}
+          onClose={() => setContextMenu(null)}
+          onRename={() => {
+            // TODO: Add rename support
+            setContextMenu(null)
+          }}
+          onDelete={() => {
+            // TODO: Add delete support
+            setContextMenu(null)
+          }}
+          onSendToChat={() => {
+            // TODO: Add send to chat support
+            setContextMenu(null)
+          }}
+        />
       )}
     </div>
   )

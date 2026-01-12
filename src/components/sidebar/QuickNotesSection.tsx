@@ -1,49 +1,37 @@
-import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, ChevronRight, StickyNote, X, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, StickyNote, X, Plus, Edit3 } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
+import { useTabStore } from '@/stores/tabStore'
 
 export function QuickNotesSection() {
   const [isCollapsed, setIsCollapsed] = useState(true)
-  const [newNoteText, setNewNoteText] = useState('')
-  const [isAdding, setIsAdding] = useState(false)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const quickNotes = useAppStore((state) => state.quickNotes)
-  const addQuickNote = useAppStore((state) => state.addQuickNote)
   const deleteQuickNote = useAppStore((state) => state.deleteQuickNote)
+  const openOrFocusNote = useTabStore((state) => state.openOrFocusNote)
+  const closeNoteTab = useTabStore((state) => state.closeNoteTab)
 
-  // Focus input when adding mode is enabled
-  useEffect(() => {
-    if (isAdding && inputRef.current) {
-      inputRef.current.focus()
-    }
-  }, [isAdding])
-
-  const handleAddNote = () => {
-    const trimmed = newNoteText.trim()
-    if (trimmed) {
-      addQuickNote(trimmed)
-      setNewNoteText('')
-      setIsAdding(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleAddNote()
-    } else if (e.key === 'Escape') {
-      setIsAdding(false)
-      setNewNoteText('')
-    }
-  }
-
-  const handleStartAdding = (e: React.MouseEvent) => {
+  // Open new note in tab
+  const handleCreateNewNote = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setIsAdding(true)
-    // Make sure section is expanded
-    if (isCollapsed) {
-      setIsCollapsed(false)
+    openOrFocusNote(null, 'New Note')
+  }
+
+  // Open existing note in tab
+  const handleOpenNote = (noteId: string) => {
+    const note = quickNotes.find(n => n.id === noteId)
+    if (note) {
+      const title = note.text.split('\n')[0].slice(0, 30)
+      openOrFocusNote(noteId, title)
+    }
+  }
+
+  // Delete note and close its tab if open
+  const handleDeleteNote = (e: React.MouseEvent, noteId: string) => {
+    e.stopPropagation()
+    if (confirm('Delete this note?')) {
+      deleteQuickNote(noteId)
+      closeNoteTab(noteId)
     }
   }
 
@@ -89,9 +77,9 @@ export function QuickNotesSection() {
 
         {/* Add Button */}
         <button
-          onClick={handleStartAdding}
+          onClick={handleCreateNewNote}
           className="p-1 rounded hover:bg-white/10 text-slate-500 hover:text-amber-400 transition-colors"
-          title="Add note"
+          title="Create new note"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -100,60 +88,28 @@ export function QuickNotesSection() {
       {/* Notes Content */}
       {!isCollapsed && (
         <div className="px-3 pb-3">
-          {/* New Note Input */}
-          {isAdding && (
-            <div className="mb-2">
-              <textarea
-                ref={inputRef}
-                value={newNoteText}
-                onChange={(e) => setNewNoteText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={() => {
-                  if (!newNoteText.trim()) {
-                    setIsAdding(false)
-                  }
-                }}
-                placeholder="Type a quick note..."
-                className="
-                  w-full px-2 py-1.5 text-xs
-                  bg-slate-800/50 border border-slate-700/50
-                  rounded text-slate-200 placeholder-slate-500
-                  focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20
-                  resize-none
-                "
-                rows={2}
-                maxLength={200}
-              />
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-slate-600">
-                  Press Enter to save, Esc to cancel
-                </span>
-                <span className="text-[10px] text-slate-600">
-                  {newNoteText.length}/200
-                </span>
-              </div>
-            </div>
-          )}
-
           {/* Notes List */}
           <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
-            {quickNotes.length === 0 && !isAdding ? (
+            {quickNotes.length === 0 ? (
               <div className="text-xs text-slate-500 py-2 px-1">
-                No notes yet. Click + to add one.
+                No notes yet. Click + to create one.
               </div>
             ) : (
               quickNotes.map((note) => (
                 <div
                   key={note.id}
+                  onClick={() => handleOpenNote(note.id)}
                   className="
                     group relative
                     bg-slate-800/30 border border-slate-700/30
                     rounded px-2 py-1.5
-                    hover:border-slate-600/50 transition-colors
+                    hover:border-amber-500/30 hover:bg-slate-800/50
+                    cursor-pointer
+                    transition-colors
                   "
                 >
                   {/* Note Text */}
-                  <p className="text-xs text-slate-300 pr-5 whitespace-pre-wrap break-words">
+                  <p className="text-xs text-slate-300 pr-12 whitespace-pre-wrap break-words line-clamp-3">
                     {note.text}
                   </p>
 
@@ -162,20 +118,29 @@ export function QuickNotesSection() {
                     {formatTimeAgo(note.createdAt)}
                   </span>
 
-                  {/* Delete Button */}
-                  <button
-                    onClick={() => deleteQuickNote(note.id)}
-                    className="
-                      absolute top-1 right-1
-                      p-0.5 rounded
-                      text-slate-600 hover:text-red-400
-                      opacity-0 group-hover:opacity-100
-                      transition-opacity
-                    "
-                    title="Delete note"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                  {/* Action Buttons */}
+                  <div className="
+                    absolute top-1 right-1
+                    flex items-center gap-1
+                    opacity-0 group-hover:opacity-100
+                    transition-opacity
+                  ">
+                    {/* Edit indicator */}
+                    <Edit3 className="w-3 h-3 text-amber-400" />
+
+                    {/* Delete Button */}
+                    <button
+                      onClick={(e) => handleDeleteNote(e, note.id)}
+                      className="
+                        p-0.5 rounded
+                        text-slate-600 hover:text-red-400
+                        transition-colors
+                      "
+                      title="Delete note"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               ))
             )}

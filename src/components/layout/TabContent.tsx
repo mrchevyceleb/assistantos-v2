@@ -8,6 +8,7 @@ import { Dashboard } from '../dashboard/Dashboard'
 import { TaskPanel } from '../tasks/TaskPanel'
 import { WebBrowserPanel } from '../browser/WebBrowserPanel'
 import { LudicrousMode } from '../ludicrous/LudicrousMode'
+import { NoteEditor } from '../notes/NoteEditor'
 import { isMediaFile } from '../../utils/fileTypes'
 
 export function TabContent() {
@@ -68,6 +69,9 @@ export function TabContent() {
 
     case 'ludicrous':
       return <LudicrousMode />
+
+    case 'note':
+      return <NoteEditor noteId={activeTab.noteId} tabId={activeTab.id} />
 
     default:
       return (
