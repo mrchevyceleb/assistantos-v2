@@ -455,7 +455,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           // Group messages: tool messages should appear above their associated assistant response
           (() => {
             type MessageGroup = {
-              type: 'user' | 'assistant-with-tools'
+              type: 'user' | 'assistant-with-tools' | 'tools-pending'
               message: Message
               toolMessages?: Message[]
             }
@@ -473,20 +473,78 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
                   toolMessages: pendingTools.length > 0 ? [...pendingTools] : undefined
                 })
                 pendingTools = []
-              } else {
-                for (const tool of pendingTools) {
-                  groups.push({ type: 'user', message: tool })
+              } else if (msg.role === 'user') {
+                // Flush orphaned tools as tools-pending (should render on LEFT, not RIGHT)
+                if (pendingTools.length > 0) {
+                  groups.push({
+                    type: 'tools-pending',
+                    message: pendingTools[0],
+                    toolMessages: [...pendingTools]
+                  })
+                  pendingTools = []
                 }
-                pendingTools = []
                 groups.push({ type: 'user', message: msg })
               }
             }
-            for (const tool of pendingTools) {
-              groups.push({ type: 'user', message: tool })
+            // Handle trailing tools (during streaming)
+            if (pendingTools.length > 0) {
+              groups.push({
+                type: 'tools-pending',
+                message: pendingTools[0],
+                toolMessages: [...pendingTools]
+              })
             }
 
             return groups.map((group) => {
-              if (group.type === 'user' || group.message.role === 'user') {
+              // Tools pending (during streaming) - render on LEFT with bot avatar
+              if (group.type === 'tools-pending' && group.toolMessages) {
+                return (
+                  <div key={`pending-${group.message.id}`} className="flex gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-cyan-500/20">
+                      <Bot className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="space-y-1">
+                        {group.toolMessages.map((toolMsg) => (
+                          <div
+                            key={toolMsg.id}
+                            className="rounded-lg text-xs font-mono cursor-pointer select-none bg-slate-800/50 border border-white/5"
+                            onClick={() => toggleToolExpanded(toolMsg.id)}
+                          >
+                            <div className="flex items-center gap-2 text-slate-400 px-3 py-1.5 hover:text-slate-300 transition-colors">
+                              {expandedTools.has(toolMsg.id) ? (
+                                <ChevronDown className="w-3 h-3" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3" />
+                              )}
+                              <Terminal className="w-3 h-3 text-violet-400" />
+                              <span className="text-violet-400">{toolMsg.toolName}</span>
+                              {toolMsg.toolResult && !expandedTools.has(toolMsg.id) && (
+                                <span className="text-slate-500 ml-1">
+                                  {toolMsg.toolResult.split('\n').length > 1
+                                    ? `(${toolMsg.toolResult.split('\n').length} lines)`
+                                    : ''}
+                                </span>
+                              )}
+                            </div>
+                            {expandedTools.has(toolMsg.id) && toolMsg.toolResult && (
+                              <pre
+                                className="px-3 pb-2 text-slate-400 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto border-t border-white/5"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {toolMsg.toolResult}
+                              </pre>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              // User messages - render on RIGHT with user avatar
+              if (group.type === 'user' && group.message.role === 'user') {
                 const message = group.message
                 return (
                   <div key={message.id} className="flex gap-3 justify-end">
