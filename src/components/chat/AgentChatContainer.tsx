@@ -24,8 +24,9 @@ import { ChatMessage, setAgentConversationId } from '../../services/chatHistory/
 // Services
 import { ClaudeService } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
-import { assembleSystemPrompt } from '../../services/systemPrompt'
+import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
 import { getCachedMCPTools } from '../../services/toolCache'
+import { getToolsForMessage, markToolUsed, extractIntegrationId } from '../../services/intent/toolLoadingManager'
 import {
   parseMessage,
   getUnifiedSuggestions,
@@ -424,21 +425,54 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       const documentContext = await readDocumentContext(activeDocuments)
       const messageWithContext = userInput + documentContext
 
-      // Prepare tools - SELECTIVE loading based on @mentions
-      const tools = await prepareToolsForMessage(userInput, integrationConfigs, workspacePath)
-      // [Bug Fix] Pass custom tasks folder from settings
+      // Intelligent tool loading: detect intent and load tools dynamically
+      const { tools, loadedIntegrations: loadedIntegrationIds } = await getToolsForMessage(
+        agent.id,
+        userInput,
+        messages,
+        integrationConfigs,
+        apiKey,
+        allTools
+      )
+
+      // Fetch metadata for loaded integrations (for system prompt)
+      let loadedIntegrations: EnabledIntegration[] = []
+      if (loadedIntegrationIds.length > 0) {
+        try {
+          const allIntegrations = await window.electronAPI.mcp.getIntegrations()
+          loadedIntegrations = allIntegrations
+            .filter((int: any) => loadedIntegrationIds.includes(int.id))
+            .map((int: any) => ({
+              id: int.id,
+              name: int.name,
+              description: int.description
+            }))
+          console.log(`[AgentChatContainer] Loaded integrations for agent ${agent.id}:`, loadedIntegrationIds)
+        } catch (e) {
+          console.error('Failed to fetch integration metadata:', e)
+        }
+      }
+
+      // Assemble full system prompt with LOADED integrations
       const systemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
         customInstructions,
-        [], // enabled integrations
+        loadedIntegrations, // ← Synchronized with loaded tools
         null, // memory context
         kanbanSettings.customTasksFolder
       )
 
-      // Create tool executor with agent context for file locking
-      const toolExecutor = createToolExecutor(workspacePath || '', agentId, agent.name)
+      // Create tool executor with agent context and usage tracking
+      const baseToolExecutor = createToolExecutor(workspacePath || '', agentId, agent.name)
+      const toolExecutor = async (name: string, input: Record<string, unknown>) => {
+        const integrationId = extractIntegrationId(name)
+        if (integrationId) {
+          markToolUsed(agent.id, integrationId)
+        }
+        return baseToolExecutor(name, input)
+      }
 
       // Create assistant message placeholder with "Thinking..." content
       // This will be replaced by actual streaming content as it arrives

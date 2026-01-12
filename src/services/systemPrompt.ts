@@ -153,28 +153,33 @@ The workspace may not be a git repository. Users asking about "edits" are typica
 - Provide examples when helpful`
 
 /**
- * Build capability awareness section for enabled integrations
- * This tells Claude what external services are available
+ * Build capability awareness section for LOADED integrations
+ * This tells Claude what external services are CURRENTLY available
+ * CRITICAL: Only pass integrations that are actually loaded, not all enabled ones
  */
-function buildCapabilitySection(enabledIntegrations: EnabledIntegration[]): string {
-  if (enabledIntegrations.length === 0) return ''
+function buildCapabilitySection(loadedIntegrations: EnabledIntegration[]): string {
+  if (loadedIntegrations.length === 0) {
+    return '' // No capability section when no tools loaded
+  }
 
-  const integrationList = enabledIntegrations
+  const integrationList = loadedIntegrations
     .map(int => `- **${int.name}**: ${int.description}`)
     .join('\n')
 
-  return `## Available Integrations
+  return `## Currently Available Integrations
 
-You have access to these external services via MCP (Model Context Protocol). Use them naturally based on user intent - no special syntax required:
+The following external service tools are loaded and ready to use right now:
 
 ${integrationList}
 
-When a user's request relates to these services, proactively use the appropriate tools. For example:
-- "check my email" → use Gmail tools
-- "what's on my calendar" → use Calendar tools
-- "search the web for..." → use search tools
+These tools were loaded based on your request or conversation context. Use them naturally to complete the user's task. For example:
+- If Gmail is loaded: you can read, send, search emails
+- If Calendar is loaded: you can check schedule, create events
+- If search tools are loaded: you can research current information
 
-The tools are already loaded and ready to use.`
+**Note**: Other integrations can be loaded by:
+1. User @mentioning them explicitly (e.g., "@gmail check email")
+2. Natural conversation that requires them (system will auto-detect and load)`
 }
 
 

@@ -7,6 +7,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MCPIntegration, getAllIntegrations, getIntegration } from './registry.js';
+import type { BrowserWindow } from 'electron';
 
 export interface MCPTool {
   name: string;
@@ -33,6 +34,11 @@ export interface MCPToolResult {
 export class MCPManager {
   private servers: Map<string, MCPServerInstance> = new Map();
   private envVars: Map<string, Record<string, string>> = new Map();
+  private mainWindow?: BrowserWindow;
+
+  constructor(mainWindow?: BrowserWindow) {
+    this.mainWindow = mainWindow;
+  }
 
   /**
    * Configure environment variables for an integration
@@ -152,6 +158,15 @@ export class MCPManager {
         instance.status = 'error';
         instance.error = `Process exited with code ${code}`;
         console.log(`[MCPManager] ${integrationId} exited with code ${code}`);
+
+        // Notify renderer of crash
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('mcp:server-crashed', {
+            integrationId,
+            exitCode: code,
+            error: instance.error
+          });
+        }
       }
     });
 
@@ -233,47 +248,95 @@ export class MCPManager {
   }
 
   /**
-   * Execute a tool on an MCP server
+   * Execute a tool on an MCP server with automatic reconnection
    */
   async executeTool(
     integrationId: string,
     toolName: string,
     input: Record<string, unknown>
   ): Promise<MCPToolResult> {
-    const instance = this.servers.get(integrationId);
-    if (!instance) {
-      return {
-        success: false,
-        error: `Integration ${integrationId} is not running`
-      };
+    const MAX_RETRIES = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const instance = this.servers.get(integrationId);
+
+      if (!instance) {
+        return {
+          success: false,
+          error: `Integration ${integrationId} is not running`
+        };
+      }
+
+      // Auto-restart if not ready and first attempt
+      if (instance.status !== 'ready' && attempt === 0) {
+        console.log(`[MCPManager] Auto-reconnecting ${integrationId}...`);
+        try {
+          await this.startServer(integrationId);
+        } catch (err) {
+          lastError = err as Error;
+          await this.delay(100 * Math.pow(2, attempt));
+          continue;
+        }
+      }
+
+      if (instance.status !== 'ready') {
+        return {
+          success: false,
+          error: `Integration ${integrationId} is not ready (status: ${instance.status})`
+        };
+      }
+
+      // Remove prefix to get original tool name
+      const originalName = toolName.replace(instance.integration.toolPrefix, '');
+
+      try {
+        const result = await instance.client.callTool({
+          name: originalName,
+          arguments: input
+        });
+
+        return {
+          success: true,
+          result: result.content
+        };
+      } catch (error) {
+        lastError = error as Error;
+
+        // Check if it's a connection error (-32000 or connection closed message)
+        const errorMessage = error instanceof Error ? error.message : '';
+        const isConnectionError =
+          (error as any).code === -32000 ||
+          errorMessage.toLowerCase().includes('connection closed') ||
+          errorMessage.toLowerCase().includes('connection lost');
+
+        if (isConnectionError && attempt < MAX_RETRIES - 1) {
+          const delay = 100 * Math.pow(2, attempt);
+          console.log(`[MCPManager] Connection error on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+          instance.status = 'error'; // Mark for reconnection
+          await this.delay(delay);
+          continue;
+        }
+
+        // Non-connection error or final retry exhausted
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
     }
 
-    if (instance.status !== 'ready') {
-      return {
-        success: false,
-        error: `Integration ${integrationId} is not ready (status: ${instance.status})`
-      };
-    }
+    return {
+      success: false,
+      error: `Failed after ${MAX_RETRIES} attempts: ${lastError?.message || 'Unknown error'}`
+    };
+  }
 
-    // Remove prefix to get original tool name
-    const originalName = toolName.replace(instance.integration.toolPrefix, '');
-
-    try {
-      const result = await instance.client.callTool({
-        name: originalName,
-        arguments: input
-      });
-
-      return {
-        success: true,
-        result: result.content
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
+  /**
+   * Helper method for exponential backoff delays
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -365,9 +428,9 @@ export class MCPManager {
 // Singleton instance
 let mcpManagerInstance: MCPManager | null = null;
 
-export function getMCPManager(): MCPManager {
+export function getMCPManager(mainWindow?: BrowserWindow): MCPManager {
   if (!mcpManagerInstance) {
-    mcpManagerInstance = new MCPManager();
+    mcpManagerInstance = new MCPManager(mainWindow);
   }
   return mcpManagerInstance;
 }

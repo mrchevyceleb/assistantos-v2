@@ -33,6 +33,8 @@ export interface MCPIntegration {
   apiKeyUrl?: string;
   isCustom?: boolean;
   source?: string;
+  isGmailAccount?: boolean;       // Flag for Gmail account integrations
+  gmailAccountId?: string;        // Reference to GmailAccount.id
 }
 
 export const MCP_INTEGRATIONS: MCPIntegration[] = [
@@ -392,4 +394,36 @@ export function loadCustomIntegrations(integrations: MCPIntegration[]): void {
  */
 export function clearCustomIntegrations(): void {
   customIntegrations = [];
+}
+
+/**
+ * Create a virtual Gmail account integration
+ * Each Gmail account runs as a separate MCP server instance
+ */
+export function createGmailAccountIntegration(
+  accountId: string,
+  label: string,
+  email: string
+): MCPIntegration {
+  const sanitizedLabel = label.toLowerCase().replace(/\s+/g, '-');
+
+  return {
+    id: `gmail-${accountId}`,
+    name: `Gmail (${label})`,
+    description: `Gmail access for ${email}`,
+    mention: `@gmail-${sanitizedLabel}`,
+    mentionAliases: [],
+    category: 'google',
+    command: 'npx',
+    args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+    requiredEnvVars: [],
+    oauth: hasEmbeddedCredentials() ? {
+      provider: 'google',
+      scopes: GOOGLE_OAUTH_SCOPES.gmail
+    } : undefined,
+    toolPrefix: `gmail_${sanitizedLabel.replace(/-/g, '_')}_`,
+    isCustom: false,
+    isGmailAccount: true,
+    gmailAccountId: accountId
+  };
 }

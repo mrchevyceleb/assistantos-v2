@@ -113,6 +113,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startOAuth: (integrationId: string) => ipcRenderer.invoke('mcp:startOAuth', integrationId),
     hasOAuthTokens: (integrationId: string) => ipcRenderer.invoke('mcp:hasOAuthTokens', integrationId),
     clearOAuthTokens: (integrationId: string) => ipcRenderer.invoke('mcp:clearOAuthTokens', integrationId),
+    // Event listeners
+    on: (channel: string, callback: (data: any) => void) => {
+      ipcRenderer.on(channel, (_, data) => callback(data))
+    },
+    off: (channel: string, callback: (data: any) => void) => {
+      ipcRenderer.removeListener(channel, callback as any)
+    },
+    // Gmail Account Management
+    addGmailAccount: (label: string) => ipcRenderer.invoke('mcp:addGmailAccount', label),
+    removeGmailAccount: (accountId: string, integrationId: string) =>
+      ipcRenderer.invoke('mcp:removeGmailAccount', accountId, integrationId),
   },
 
   // Conversation persistence
@@ -441,6 +452,12 @@ declare global {
         startOAuth: (integrationId: string) => Promise<{ success: boolean; tokens?: { accessToken: string; refreshToken: string; expiresAt: number }; error?: string }>
         hasOAuthTokens: (integrationId: string) => Promise<boolean>
         clearOAuthTokens: (integrationId: string) => Promise<{ success: boolean; error?: string }>
+        // Event listeners
+        on: (channel: string, callback: (data: any) => void) => void
+        off: (channel: string, callback: (data: any) => void) => void
+        // Gmail Account Management
+        addGmailAccount: (label: string) => Promise<{ success: boolean; account?: any; error?: string }>
+        removeGmailAccount: (accountId: string, integrationId: string) => Promise<{ success: boolean; error?: string }>
       }
       conversation: {
         save: (conversation: ConversationData) => Promise<{ success: boolean; id?: string; error?: string }>

@@ -73,6 +73,21 @@ export interface IntegrationConfig {
   }
 }
 
+// Gmail Account (for multi-account support)
+export interface GmailAccount {
+  id: string                     // UUID
+  label: string                  // User-defined ("Work", "Personal")
+  email: string                  // Detected from Gmail API
+  enabled: boolean               // Active status
+  tokens: {
+    accessToken: string
+    refreshToken: string
+    expiresAt: number
+  }
+  createdAt: string              // ISO timestamp
+  integrationId: string          // Virtual integration ID (gmail-{id})
+}
+
 export const DEFAULT_CUSTOM_INSTRUCTIONS = `## My Preferences
 
 ### Communication Style
@@ -140,6 +155,14 @@ interface AppState {
   addCustomIntegration: (integration: MCPIntegration) => void
   removeCustomIntegration: (id: string) => void
   updateCustomIntegration: (id: string, updates: Partial<MCPIntegration>) => void
+
+  // Gmail Accounts (multi-account support)
+  gmailAccounts: GmailAccount[]
+  addGmailAccount: (account: GmailAccount) => void
+  removeGmailAccount: (id: string) => void
+  updateGmailAccount: (id: string, updates: Partial<GmailAccount>) => void
+  setGmailAccountEnabled: (id: string, enabled: boolean) => void
+  getGmailAccountByIntegrationId: (integrationId: string) => GmailAccount | undefined
 
   // Center Panel View Mode
   centerPanelView: CenterPanelView
@@ -357,6 +380,27 @@ export const useAppStore = create<AppState>()(
         ),
       })),
 
+      // Gmail Accounts (multi-account support)
+      gmailAccounts: [],
+      addGmailAccount: (account) => set((state) => ({
+        gmailAccounts: [...state.gmailAccounts, account],
+      })),
+      removeGmailAccount: (id) => set((state) => ({
+        gmailAccounts: state.gmailAccounts.filter((acc) => acc.id !== id),
+      })),
+      updateGmailAccount: (id, updates) => set((state) => ({
+        gmailAccounts: state.gmailAccounts.map((acc) =>
+          acc.id === id ? { ...acc, ...updates } : acc
+        ),
+      })),
+      setGmailAccountEnabled: (id, enabled) => set((state) => ({
+        gmailAccounts: state.gmailAccounts.map((acc) =>
+          acc.id === id ? { ...acc, enabled } : acc
+        ),
+      })),
+      getGmailAccountByIntegrationId: (integrationId) =>
+        get().gmailAccounts.find((acc) => acc.integrationId === integrationId),
+
       // Center Panel View Mode
       centerPanelView: 'editor' as CenterPanelView,
       setCenterPanelView: (view) => set({ centerPanelView: view }),
@@ -521,6 +565,41 @@ export const useAppStore = create<AppState>()(
           console.log('[AppStore] Migrating: Adding default shortcuts')
           state.resetAllShortcuts()
         }
+
+        // Migration: Convert single Gmail config to multi-account
+        if (
+          state &&
+          (!state.gmailAccounts || state.gmailAccounts.length === 0) &&
+          state.integrationConfigs?.['gmail']
+        ) {
+          console.log('[AppStore] Migrating single Gmail account to multi-account structure')
+
+          const oldConfig = state.integrationConfigs['gmail']
+          // Generate UUID using timestamp + random
+          const accountId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+          const migratedAccount: GmailAccount = {
+            id: accountId,
+            label: 'Primary',
+            email: 'Unknown (will be detected on next use)',
+            enabled: oldConfig.enabled,
+            tokens: {
+              accessToken: oldConfig.envVars['GOOGLE_ACCESS_TOKEN'] || '',
+              refreshToken: oldConfig.envVars['GOOGLE_REFRESH_TOKEN'] || '',
+              expiresAt: parseInt(oldConfig.envVars['GOOGLE_TOKEN_EXPIRES_AT'] || '0', 10)
+            },
+            createdAt: new Date().toISOString(),
+            integrationId: `gmail-${accountId}`
+          }
+
+          state.gmailAccounts = [migratedAccount]
+
+          // Remove old Gmail config from integrationConfigs
+          const { gmail, ...rest } = state.integrationConfigs
+          state.integrationConfigs = rest
+
+          console.log('[AppStore] Migration complete:', migratedAccount)
+        }
       },
       partialize: (state) => ({
         workspacePath: state.workspacePath,
@@ -532,6 +611,7 @@ export const useAppStore = create<AppState>()(
         customInstructions: state.customInstructions,
         integrationConfigs: state.integrationConfigs,
         customIntegrations: state.customIntegrations,
+        gmailAccounts: state.gmailAccounts,
         centerPanelView: state.centerPanelView,
         starredPaths: state.starredPaths,
         taskSettings: state.taskSettings,

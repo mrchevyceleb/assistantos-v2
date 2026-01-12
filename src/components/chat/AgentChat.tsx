@@ -51,6 +51,7 @@ import {
   truncateDocumentSmart,
   type ContextUsage
 } from '../../services/tokenService'
+import { getToolsForMessage, markToolUsed, extractIntegrationId } from '../../services/intent/toolLoadingManager'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 
@@ -497,6 +498,33 @@ export function AgentChat() {
     }
     checkClaudeCode()
   }, [useAgentSDK])
+
+  // Listen for MCP server crashes and show recovery notification
+  useEffect(() => {
+    const handleServerCrash = (data: { integrationId: string; exitCode: number; error: string }) => {
+      console.error(`[MCP] Server crashed: ${data.integrationId}`, data)
+
+      addNotification(
+        'MCP Connection Lost',
+        `${data.integrationId} disconnected unexpectedly. Click "Reconnect" to restore the connection.`,
+        'error',
+        {
+          actionLabel: 'Reconnect',
+          actionData: { integrationId: data.integrationId }
+        }
+      )
+    }
+
+    if (window.electronAPI?.mcp?.on) {
+      window.electronAPI.mcp.on('mcp:server-crashed', handleServerCrash)
+
+      return () => {
+        if (window.electronAPI?.mcp?.off) {
+          window.electronAPI.mcp.off('mcp:server-crashed', handleServerCrash)
+        }
+      }
+    }
+  }, [addNotification])
 
   // Initialize system prompt and tools for context usage calculation
   // This ensures the indicator shows immediately when enabled, not just after first message
@@ -1561,27 +1589,10 @@ export function AgentChat() {
         )
       }
 
-      // Get enabled integration IDs for tool loading and capability awareness
+      // Get enabled integration IDs (for loading tools based on intent)
       const enabledIds = Object.entries(integrationConfigs)
         .filter(([_, config]) => config.enabled)
         .map(([id]) => id)
-
-      // Fetch integration metadata for capability awareness in system prompt
-      let enabledIntegrations: EnabledIntegration[] = []
-      if (enabledIds.length > 0) {
-        try {
-          const allIntegrations = await window.electronAPI.mcp.getIntegrations()
-          enabledIntegrations = allIntegrations
-            .filter((int: any) => enabledIds.includes(int.id))
-            .map((int: any) => ({
-              id: int.id,
-              name: int.name,
-              description: int.description
-            }))
-        } catch (e) {
-          console.error('Failed to fetch integration metadata:', e)
-        }
-      }
 
       // Fetch memory context if enabled (skip for trivial messages to save tokens)
       let memoryContext: MemoryContext | null = null
@@ -1597,21 +1608,46 @@ export function AgentChat() {
         }
       }
 
-      // Assemble full system prompt with capability awareness and memory
-      // [Bug Fix] Pass custom tasks folder from settings
+      // Intelligent tool loading: detect intent and load tools dynamically
+      // This replaces the old @mention-only system with intent detection
+      const { tools, loadedIntegrations: loadedIntegrationIds } = await getToolsForMessage(
+        agent?.id || 'default',
+        messageText,
+        messages,
+        integrationConfigs,
+        apiKey,
+        allTools
+      )
+
+      // Fetch metadata for loaded integrations (for system prompt)
+      let loadedIntegrations: EnabledIntegration[] = []
+      if (loadedIntegrationIds.length > 0) {
+        try {
+          const allIntegrations = await window.electronAPI.mcp.getIntegrations()
+          loadedIntegrations = allIntegrations
+            .filter((int: any) => loadedIntegrationIds.includes(int.id))
+            .map((int: any) => ({
+              id: int.id,
+              name: int.name,
+              description: int.description
+            }))
+          console.log(`[AgentChat] Loaded integrations for agent ${agent?.id}:`, loadedIntegrationIds)
+        } catch (e) {
+          console.error('Failed to fetch integration metadata:', e)
+        }
+      }
+
+      // Assemble full system prompt with LOADED integrations (not all enabled)
+      // This synchronizes what the AI knows with what tools it actually has
       const fullSystemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
         customInstructions,
-        enabledIntegrations,
+        loadedIntegrations,  // ← Changed from enabledIntegrations
         memoryContext,
         kanbanSettings.customTasksFolder
       )
-
-      // Prepare tools - SELECTIVE loading based on @mentions
-      // Only loads MCP tools when that integration is @mentioned (saves 6K+ tokens)
-      const tools = await prepareToolsForMessage(messageText, integrationConfigs, workspacePath)
 
       // Cache system prompt and tools for context usage calculation
       if (showContextUsage) {
@@ -1624,8 +1660,16 @@ export function AgentChat() {
         ? `${messageText}${documentContext}`
         : messageText
 
-      // Setup tool executor
-      const toolExecutor = createToolExecutor(workspacePath)
+      // Setup tool executor with usage tracking
+      const baseToolExecutor = createToolExecutor(workspacePath)
+      const toolExecutor = async (name: string, input: Record<string, unknown>) => {
+        // Track tool usage for lifecycle management
+        const integrationId = extractIntegrationId(name)
+        if (integrationId && agent?.id) {
+          markToolUsed(agent.id, integrationId)
+        }
+        return baseToolExecutor(name, input)
+      }
 
       // Convert attached images to API format
       const imageContents = currentImages.length > 0
