@@ -247,10 +247,15 @@ export function AgentChat() {
     agentBypassPermissions} = useAppStore()
   const { handleLinkClick } = useLinkHandler()
 
-  // Debug: Log shortcuts on mount and changes
+  // Force reset shortcuts if empty (one-time migration fix)
+  const resetAllShortcuts = useAppStore(state => state.resetAllShortcuts)
   useEffect(() => {
     console.log('[AgentChat] Shortcuts loaded:', shortcuts?.length || 0, shortcuts?.map(s => s.name))
-  }, [shortcuts])
+    if (!shortcuts || shortcuts.length === 0) {
+      console.log('[AgentChat] Forcing shortcuts reset...')
+      resetAllShortcuts()
+    }
+  }, [shortcuts, resetAllShortcuts])
 
   // Speech recognition for voice dictation
   const {
