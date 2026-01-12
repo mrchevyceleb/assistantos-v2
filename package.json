@@ -88,11 +88,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico",
-      "certificateFile": "certs/cert.pfx",
-      "certificatePassword": "${env.WIN_CSC_PASSWORD}",
-      "signingHashAlgorithms": ["sha256"],
-      "publisherName": "Matt Johnston"
+      "icon": "assets/icon.ico"
     },
     "mac": {
       "target": "dmg",
