@@ -1208,49 +1208,76 @@ export function AgentChat() {
 
               return (
                 <div key={message.id}>
-                  {/* Tool blocks - rendered ABOVE assistant text, collapsed by default */}
+                  {/* Tool indicator - compact single line above assistant text */}
                   {toolMessages.length > 0 && (
-                    <div className="mb-2 space-y-1">
-                      {toolMessages.map((toolMsg) => (
-                        <div
-                          key={toolMsg.id}
-                          className="mx-8 rounded-lg text-xs font-mono cursor-pointer select-none"
-                          style={{
-                            background: 'rgba(0, 0, 0, 0.2)',
-                            border: '1px solid rgba(255, 255, 255, 0.03)'
-                          }}
-                          onClick={() => toggleToolExpanded(toolMsg.id)}
-                        >
-                          <div className="flex items-center gap-2 text-slate-500 px-3 py-1.5 hover:text-slate-400 transition-colors">
-                            {expandedTools.has(toolMsg.id) ? (
-                              <ChevronDown className="w-3 h-3" />
-                            ) : (
-                              <ChevronRight className="w-3 h-3" />
-                            )}
-                            {toolMsg.toolName === 'bash' ? (
-                              <Terminal className="w-3 h-3" />
-                            ) : (
-                              <FileText className="w-3 h-3" />
-                            )}
-                            <span>{toolMsg.toolName}</span>
-                            {toolMsg.toolResult && !expandedTools.has(toolMsg.id) && (
-                              <span className="text-slate-600 ml-1">
-                                {toolMsg.toolResult.split('\n').length > 1
-                                  ? `(${toolMsg.toolResult.split('\n').length} lines)`
-                                  : ''}
-                              </span>
-                            )}
-                          </div>
-                          {expandedTools.has(toolMsg.id) && toolMsg.toolResult && (
-                            <pre
-                              className="px-3 pb-2 text-slate-500 whitespace-pre-wrap overflow-hidden border-t border-white/5"
-                              onClick={(e) => e.stopPropagation()}
+                    <div className="mb-1 ml-12">
+                      <button
+                        onClick={() => {
+                          // Toggle all tools in this group
+                          const groupId = `tools-${message.id}`
+                          if (expandedTools.has(groupId)) {
+                            setExpandedTools(prev => {
+                              const next = new Set(prev)
+                              next.delete(groupId)
+                              return next
+                            })
+                          } else {
+                            setExpandedTools(prev => new Set([...prev, groupId]))
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] text-slate-500 hover:text-slate-400 transition-colors"
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.15)',
+                        }}
+                      >
+                        {expandedTools.has(`tools-${message.id}`) ? (
+                          <ChevronDown className="w-3 h-3" />
+                        ) : (
+                          <ChevronRight className="w-3 h-3" />
+                        )}
+                        <Terminal className="w-3 h-3" />
+                        <span>
+                          {toolMessages.length} tool{toolMessages.length > 1 ? 's' : ''}: {toolMessages.map(t => t.toolName).join(', ')}
+                        </span>
+                      </button>
+
+                      {/* Expanded tool details */}
+                      {expandedTools.has(`tools-${message.id}`) && (
+                        <div className="mt-1 space-y-1">
+                          {toolMessages.map((toolMsg) => (
+                            <div
+                              key={toolMsg.id}
+                              className="rounded text-xs font-mono"
+                              style={{
+                                background: 'rgba(0, 0, 0, 0.2)',
+                                border: '1px solid rgba(255, 255, 255, 0.03)'
+                              }}
                             >
-                              {toolMsg.toolResult}
-                            </pre>
-                          )}
+                              <div
+                                className="flex items-center gap-2 text-slate-500 px-2 py-1 cursor-pointer hover:text-slate-400"
+                                onClick={() => toggleToolExpanded(toolMsg.id)}
+                              >
+                                {expandedTools.has(toolMsg.id) ? (
+                                  <ChevronDown className="w-3 h-3" />
+                                ) : (
+                                  <ChevronRight className="w-3 h-3" />
+                                )}
+                                <span className="text-slate-400">{toolMsg.toolName}</span>
+                                {toolMsg.toolResult && (
+                                  <span className="text-slate-600">
+                                    ({toolMsg.toolResult.split('\n').length} lines)
+                                  </span>
+                                )}
+                              </div>
+                              {expandedTools.has(toolMsg.id) && toolMsg.toolResult && (
+                                <pre className="px-2 pb-1.5 text-slate-500 whitespace-pre-wrap overflow-hidden text-[10px] border-t border-white/5 max-h-40 overflow-y-auto">
+                                  {toolMsg.toolResult}
+                                </pre>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
 
