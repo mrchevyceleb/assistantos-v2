@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus } from 'lucide-react'
+import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
-import { parseTasksFromWorkspace, getProjectList, TASKS_FOLDER } from '../../services/taskParser'
+import { parseTasksFromWorkspace, getProjectList, getTasksFolder } from '../../services/taskParser'
 import { ParsedTask, DEFAULT_KANBAN_SETTINGS, KanbanSettings } from '../../types/task'
 import { KanbanBoard } from './KanbanBoard'
 import { ProjectSelector } from './ProjectSelector'
@@ -12,23 +12,26 @@ export function TaskPanel() {
   const [projects, setProjects] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [tasksFolderExists, setTasksFolderExists] = useState(true)
+  const [showFolderDialog, setShowFolderDialog] = useState(false)
+  const [folderInput, setFolderInput] = useState('')
 
   // Use store settings or defaults
   const settings: KanbanSettings = kanbanSettings || DEFAULT_KANBAN_SETTINGS
+  const effectiveTasksFolder = getTasksFolder(settings.customTasksFolder)
 
-  // Load projects list and check if TASKS folder exists
+  // Load projects list and check if tasks folder exists
   const loadProjects = useCallback(async () => {
     if (!workspacePath || !window.electronAPI) return
 
-    // Check if TASKS folder exists
-    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+    // Check if tasks folder exists (using custom or default)
+    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${effectiveTasksFolder}`
     const exists = await window.electronAPI.fs.exists(tasksPath)
     setTasksFolderExists(exists)
 
     // Get project list
-    const projectList = await getProjectList(workspacePath)
+    const projectList = await getProjectList(workspacePath, settings.customTasksFolder)
     setProjects(projectList)
-  }, [workspacePath])
+  }, [workspacePath, effectiveTasksFolder, settings.customTasksFolder])
 
   // Load tasks
   const loadTasks = useCallback(async () => {
@@ -38,7 +41,8 @@ export function TaskPanel() {
     try {
       const parsedTasks = await parseTasksFromWorkspace(
         workspacePath,
-        settings.selectedProject
+        settings.selectedProject,
+        settings.customTasksFolder
       )
       setTasks(parsedTasks)
 
@@ -49,7 +53,7 @@ export function TaskPanel() {
     } finally {
       setLoading(false)
     }
-  }, [workspacePath, settings.selectedProject, _hasHydrated, loadProjects])
+  }, [workspacePath, settings.selectedProject, settings.customTasksFolder, _hasHydrated, loadProjects])
 
   // Load on mount and when dependencies change
   useEffect(() => {
@@ -70,13 +74,13 @@ export function TaskPanel() {
   const openCount = tasks.filter(t => t.status !== 'done').length
   const totalCount = tasks.length
 
-  // Create TASKS folder with a default project
+  // Create tasks folder with a default project
   const handleCreateTasksFolder = async () => {
     if (!workspacePath || !window.electronAPI) return
 
-    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${effectiveTasksFolder}`
     try {
-      // Create TASKS folder
+      // Create tasks folder
       await window.electronAPI.fs.createDir(tasksPath)
 
       // Create a default "General" project folder
@@ -100,8 +104,27 @@ Add any project notes here.
       await loadProjects()
       await loadTasks()
     } catch (err) {
-      console.error('Failed to create TASKS folder:', err)
+      console.error('Failed to create tasks folder:', err)
     }
+  }
+
+  // Set custom tasks folder
+  const handleSetCustomFolder = () => {
+    const trimmed = folderInput.trim()
+    if (trimmed) {
+      setKanbanSettings({ customTasksFolder: trimmed })
+    } else {
+      setKanbanSettings({ customTasksFolder: null })
+    }
+    setShowFolderDialog(false)
+    setFolderInput('')
+    // Settings change will trigger loadTasks via useEffect
+  }
+
+  // Open folder dialog
+  const openFolderDialog = () => {
+    setFolderInput(settings.customTasksFolder || '')
+    setShowFolderDialog(true)
   }
 
   return (
@@ -144,6 +167,21 @@ Add any project notes here.
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2">
+            {/* Folder config */}
+            <button
+              onClick={openFolderDialog}
+              className={`
+                p-2 rounded-lg transition-colors
+                ${settings.customTasksFolder
+                  ? 'bg-violet-500/20 text-violet-400'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
+                }
+              `}
+              title={`Tasks folder: ${effectiveTasksFolder} (click to change)`}
+            >
+              <FolderCog className="w-4 h-4" />
+            </button>
+
             {/* Toggle completed */}
             <button
               onClick={toggleShowCompleted}
@@ -193,19 +231,28 @@ Add any project notes here.
         ) : !tasksFolderExists ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <FolderPlus className="w-12 h-12 text-slate-600 mb-4" />
-            <p className="text-slate-400 mb-2">No TASKS folder found</p>
+            <p className="text-slate-400 mb-2">No "{effectiveTasksFolder}" folder found</p>
             <p className="text-sm text-slate-500 mb-4">
-              Create a TASKS folder with a default project to get started
+              Create the folder or point to your existing tasks folder
             </p>
-            <button
-              onClick={handleCreateTasksFolder}
-              className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400
-                         hover:bg-cyan-500/30 transition-colors text-sm font-medium"
-            >
-              Create TASKS Folder
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCreateTasksFolder}
+                className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400
+                           hover:bg-cyan-500/30 transition-colors text-sm font-medium"
+              >
+                Create "{effectiveTasksFolder}" Folder
+              </button>
+              <button
+                onClick={openFolderDialog}
+                className="px-4 py-2 rounded-lg bg-violet-500/20 text-violet-400
+                           hover:bg-violet-500/30 transition-colors text-sm font-medium"
+              >
+                Set Custom Folder
+              </button>
+            </div>
             <p className="text-xs text-slate-600 mt-4 max-w-sm">
-              Structure: <code className="text-cyan-400/80">TASKS/ProjectName/tasks.md</code>
+              Structure: <code className="text-cyan-400/80">{effectiveTasksFolder}/ProjectName/tasks.md</code>
             </p>
           </div>
         ) : tasks.length === 0 && projects.length > 0 ? (
@@ -229,6 +276,69 @@ Add any project notes here.
           />
         )}
       </div>
+
+      {/* Folder Configuration Dialog */}
+      {showFolderDialog && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            className="w-96 rounded-xl p-5"
+            style={{
+              background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <FolderCog className="w-5 h-5 text-violet-400" />
+              <h3 className="text-lg font-semibold text-white">Tasks Folder</h3>
+            </div>
+
+            <p className="text-sm text-slate-400 mb-4">
+              Set a custom folder path relative to your workspace root, or leave empty to use the default "TASKS" folder.
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-xs text-slate-500 mb-1.5">
+                Folder path (relative to workspace)
+              </label>
+              <input
+                type="text"
+                value={folderInput}
+                onChange={(e) => setFolderInput(e.target.value)}
+                placeholder="e.g., Tasks, .tasks, projects/tasks"
+                className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500
+                           bg-black/20 border border-white/10 focus:border-violet-500/50
+                           focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSetCustomFolder()
+                  if (e.key === 'Escape') setShowFolderDialog(false)
+                }}
+              />
+              <p className="text-xs text-slate-600 mt-1.5">
+                Current: <code className="text-cyan-400/80">{effectiveTasksFolder}</code>
+              </p>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowFolderDialog(false)}
+                className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white
+                           hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSetCustomFolder}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white
+                           bg-violet-500/20 hover:bg-violet-500/30 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

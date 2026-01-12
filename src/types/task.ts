@@ -71,12 +71,14 @@ export interface KanbanSettings {
   selectedProject: string | null  // null = show all projects
   hideEmptyColumns: boolean
   showCompletedTasks: boolean
+  customTasksFolder: string | null  // Custom folder path (relative to workspace), null = default "TASKS"
 }
 
 export const DEFAULT_KANBAN_SETTINGS: KanbanSettings = {
   selectedProject: null,
   hideEmptyColumns: false,
   showCompletedTasks: true,
+  customTasksFolder: null,
 }
 
 // Legacy TaskSettings - kept temporarily for migration

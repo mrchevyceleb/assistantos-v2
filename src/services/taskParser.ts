@@ -1,7 +1,12 @@
 import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG } from '../types/task'
 
-// Fixed tasks folder name at workspace root
+// Default tasks folder name at workspace root
 export const TASKS_FOLDER = 'TASKS'
+
+// Get the effective tasks folder path (uses custom if set, otherwise default)
+export function getTasksFolder(customFolder: string | null | undefined): string {
+  return customFolder || TASKS_FOLDER
+}
 
 // Regex patterns for task parsing
 // Extended checkbox syntax: [ ] backlog, [o] todo, [>] in progress, [?] review, [x]/[X] done
@@ -32,10 +37,11 @@ function generateTaskId(filePath: string, lineNumber: number): string {
 }
 
 // Extract project name from file path
-// Expected structure: TASKS/{ProjectName}/file.md
-function extractProjectName(filePath: string, workspacePath: string): string {
+// Expected structure: {tasksFolder}/{ProjectName}/file.md
+function extractProjectName(filePath: string, workspacePath: string, customTasksFolder?: string | null): string {
   const normalizedFile = filePath.replace(/\\/g, '/')
   const normalizedWorkspace = workspacePath.replace(/\\/g, '/')
+  const tasksFolder = getTasksFolder(customTasksFolder)
 
   // Get relative path from workspace
   let relativePath = normalizedFile
@@ -46,9 +52,9 @@ function extractProjectName(filePath: string, workspacePath: string): string {
     }
   }
 
-  // Expected: TASKS/ProjectName/file.md
+  // Expected: {tasksFolder}/ProjectName/file.md
   const parts = relativePath.split('/')
-  if (parts.length >= 3 && parts[0].toUpperCase() === TASKS_FOLDER) {
+  if (parts.length >= 3 && parts[0].toUpperCase() === tasksFolder.toUpperCase()) {
     return parts[1] // Return the project folder name
   }
 
@@ -133,13 +139,14 @@ async function findMarkdownFiles(dirPath: string): Promise<string[]> {
   return files
 }
 
-// Get list of project folders in TASKS directory
-export async function getProjectList(workspacePath: string): Promise<string[]> {
+// Get list of project folders in tasks directory
+export async function getProjectList(workspacePath: string, customTasksFolder?: string | null): Promise<string[]> {
   const projects: string[] = []
 
   if (!window.electronAPI) return projects
 
-  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+  const tasksFolder = getTasksFolder(customTasksFolder)
+  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${tasksFolder}`
 
   try {
     const exists = await window.electronAPI.fs.exists(tasksPath)
@@ -163,16 +170,18 @@ export async function getProjectList(workspacePath: string): Promise<string[]> {
   return projects.sort()
 }
 
-// Parse all tasks from the TASKS folder
+// Parse all tasks from the tasks folder
 export async function parseTasksFromWorkspace(
   workspacePath: string,
-  projectFilter?: string | null // Optional: filter to specific project
+  projectFilter?: string | null, // Optional: filter to specific project
+  customTasksFolder?: string | null // Optional: custom tasks folder path
 ): Promise<ParsedTask[]> {
   const tasks: ParsedTask[] = []
 
   if (!window.electronAPI) return tasks
 
-  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+  const tasksFolder = getTasksFolder(customTasksFolder)
+  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${tasksFolder}`
 
   try {
     // Check if TASKS folder exists
@@ -202,7 +211,7 @@ export async function parseTasksFromWorkspace(
     // Parse each file
     for (const filePath of markdownFiles) {
       try {
-        const projectName = extractProjectName(filePath, workspacePath)
+        const projectName = extractProjectName(filePath, workspacePath, customTasksFolder)
         const content = await window.electronAPI.fs.readFile(filePath)
         const lines = content.split('\n')
 
@@ -273,11 +282,13 @@ export function getFileName(filePath: string): string {
 // Create a new project folder with initial tasks.md
 export async function createProject(
   workspacePath: string,
-  projectName: string
+  projectName: string,
+  customTasksFolder?: string | null
 ): Promise<boolean> {
   if (!window.electronAPI) return false
 
-  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+  const tasksFolder = getTasksFolder(customTasksFolder)
+  const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${tasksFolder}`
   const projectPath = `${tasksPath}/${projectName}`
 
   try {

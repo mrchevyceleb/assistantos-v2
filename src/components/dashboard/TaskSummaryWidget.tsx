@@ -2,28 +2,31 @@ import { useState, useEffect } from 'react'
 import { Kanban, Circle, AlertCircle, Play, HelpCircle, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { WidgetContainer } from './WidgetContainer'
-import { parseTasksFromWorkspace, TASKS_FOLDER } from '../../services/taskParser'
-import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG } from '../../types/task'
+import { parseTasksFromWorkspace, getTasksFolder } from '../../services/taskParser'
+import { ParsedTask, TaskStatus, DEFAULT_KANBAN_SETTINGS } from '../../types/task'
 
 export function TaskSummaryWidget() {
-  const { workspacePath, setCenterPanelView } = useAppStore()
+  const { workspacePath, setCenterPanelView, kanbanSettings } = useAppStore()
   const [tasks, setTasks] = useState<ParsedTask[]>([])
   const [loading, setLoading] = useState(false)
   const [tasksExist, setTasksExist] = useState(true)
+
+  const settings = kanbanSettings || DEFAULT_KANBAN_SETTINGS
+  const effectiveTasksFolder = getTasksFolder(settings.customTasksFolder)
 
   useEffect(() => {
     if (workspacePath) {
       loadTasks()
     }
-  }, [workspacePath])
+  }, [workspacePath, settings.customTasksFolder])
 
   const loadTasks = async () => {
     if (!workspacePath) return
     setLoading(true)
     try {
-      // Check if TASKS folder exists
+      // Check if tasks folder exists
       if (window.electronAPI) {
-        const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+        const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${effectiveTasksFolder}`
         const exists = await window.electronAPI.fs.exists(tasksPath)
         setTasksExist(exists)
         if (!exists) {
@@ -33,7 +36,7 @@ export function TaskSummaryWidget() {
         }
       }
 
-      const parsedTasks = await parseTasksFromWorkspace(workspacePath)
+      const parsedTasks = await parseTasksFromWorkspace(workspacePath, null, settings.customTasksFolder)
       setTasks(parsedTasks)
     } catch (err) {
       console.error('Failed to parse tasks:', err)
@@ -79,7 +82,7 @@ export function TaskSummaryWidget() {
       ) : !tasksExist ? (
         <div className="text-center py-4">
           <Kanban className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-          <p className="text-sm text-slate-400">No TASKS folder</p>
+          <p className="text-sm text-slate-400">No "{effectiveTasksFolder}" folder</p>
           <p className="text-xs text-slate-500 mt-1">Go to Tasks to set up your Kanban board</p>
         </div>
       ) : tasks.length === 0 ? (

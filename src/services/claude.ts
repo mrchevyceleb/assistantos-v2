@@ -177,6 +177,11 @@ export class ClaudeService {
 
           // Continue loop to get Claude's response after tool execution
           continueLoop = true;
+        } else if (currentText.trim() === '') {
+          // No tool use AND no text content - this is an empty response
+          // This can happen when the model fails to generate output after tool use
+          yield { type: 'error', error: 'Claude returned an empty response. This may indicate the request was too complex or hit a limit. Try simplifying your request or starting a new conversation.' };
+          continueLoop = false;
         } else {
           // No tool use, we're done
           continueLoop = false;
@@ -185,17 +190,24 @@ export class ClaudeService {
         // Check stop reason
         if (finalMessage.stop_reason === 'end_turn') {
           continueLoop = false;
+        } else if (finalMessage.stop_reason === 'max_tokens') {
+          // Model hit token limit - warn user if there's no text
+          if (currentText.trim() === '' && toolUseBlocks.length === 0) {
+            yield { type: 'error', error: 'Response was cut off due to token limits. Try reducing the context or starting a new conversation.' };
+          }
+          continueLoop = false;
         }
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('[Claude Service] Error in chat loop:', error);
         yield { type: 'error', error: errorMessage };
         continueLoop = false;
       }
     }
 
     if (iterations >= maxIterations) {
-      yield { type: 'error', error: 'Maximum iterations reached' };
+      yield { type: 'error', error: `Maximum iterations (${maxIterations}) reached. The task may be too complex for a single request.` };
     }
 
     yield { type: 'done' };
