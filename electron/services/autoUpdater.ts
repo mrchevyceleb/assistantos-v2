@@ -46,13 +46,11 @@ let updateStatus: UpdateStatus = {
  */
 export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> {
   if (!UPDATER_ENABLED) {
-    logger.info('Auto-updater not enabled. Install electron-updater to enable.')
+    logger.info('Auto-updater disabled in development mode')
     return
   }
 
-  // Uncomment the following when electron-updater is installed:
-  /*
-  autoUpdater.logger = logger
+  // Configure auto-updater
   autoUpdater.autoDownload = false  // Let user decide
 
   autoUpdater.on('checking-for-update', () => {
@@ -101,7 +99,6 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
   setTimeout(() => {
     checkForUpdates()
   }, 10000)  // Wait 10 seconds after app start
-  */
 }
 
 /**
@@ -109,12 +106,11 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
  */
 export async function checkForUpdates(): Promise<void> {
   if (!UPDATER_ENABLED) {
-    logger.warn('Auto-updater not enabled')
+    logger.warn('Auto-updater disabled in development mode')
     return
   }
 
-  // Uncomment when electron-updater is installed:
-  // await autoUpdater.checkForUpdates()
+  await autoUpdater.checkForUpdates()
 }
 
 /**
@@ -123,8 +119,7 @@ export async function checkForUpdates(): Promise<void> {
 export async function downloadUpdate(): Promise<void> {
   if (!UPDATER_ENABLED) return
 
-  // Uncomment when electron-updater is installed:
-  // await autoUpdater.downloadUpdate()
+  await autoUpdater.downloadUpdate()
 }
 
 /**
@@ -133,8 +128,7 @@ export async function downloadUpdate(): Promise<void> {
 export function installUpdate(): void {
   if (!UPDATER_ENABLED) return
 
-  // Uncomment when electron-updater is installed:
-  // autoUpdater.quitAndInstall()
+  autoUpdater.quitAndInstall()
 }
 
 /**

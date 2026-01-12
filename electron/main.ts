@@ -6,6 +6,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { registerMCPHandlers, cleanupMCPHandlers } from './mcp/ipcHandlers.js'
 import { registerMemoryHandlers, cleanupMemoryHandlers } from './memory/ipcHandlers.js'
+import { initAutoUpdater } from './services/autoUpdater.js'
 
 const execAsync = promisify(exec)
 
@@ -186,6 +187,11 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  // Initialize auto-updater (only runs in production)
+  if (mainWindow) {
+    initAutoUpdater(mainWindow)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
