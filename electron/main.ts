@@ -248,6 +248,11 @@ ipcMain.handle('updater:installUpdate', () => {
   installUpdate()
 })
 
+// IPC Handler for getting app version
+ipcMain.handle('app:getVersion', () => {
+  return app.getVersion()
+})
+
 // IPC Handlers for file system
 ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
   try {

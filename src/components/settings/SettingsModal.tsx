@@ -150,6 +150,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // Avatar state
   const [avatarTab, setAvatarTab] = useState<AgentAvatarType>(agentAvatarType)
 
+  // App version state
+  const [appVersion, setAppVersion] = useState<string>('...')
+
   // Update status
   const [updateStatus, setUpdateStatus] = useState<{
     checking: boolean
@@ -222,6 +225,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setApiKeyStatus('idle')
     setApiKeyError(null)
   }, [apiKey])
+
+  // Fetch app version when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      window.electronAPI?.app?.getVersion().then(version => {
+        setAppVersion(version)
+      }).catch(() => {
+        setAppVersion('Unknown')
+      })
+    }
+  }, [isOpen])
 
   // Set up update event listeners
   useEffect(() => {
@@ -1329,7 +1343,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}
               >
-                v1.3.1
+                v{appVersion}
               </div>
             </div>
 

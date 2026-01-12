@@ -71,6 +71,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // App info
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  },
+
   // Workspace management (for security validation)
   workspace: {
     setPath: (workspacePath: string | null) => ipcRenderer.invoke('workspace:setPath', workspacePath),
@@ -371,6 +376,9 @@ declare global {
       minimize: () => Promise<void>
       maximize: () => Promise<void>
       close: () => Promise<void>
+      app: {
+        getVersion: () => Promise<string>
+      }
       fs: {
         readDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
         readFile: (filePath: string) => Promise<string | null>
