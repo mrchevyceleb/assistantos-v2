@@ -242,7 +242,7 @@ export function AgentSection() {
   }
 
   return (
-    <div className="py-3">
+    <div className="py-3 flex-shrink-0">
       {/* Section Header */}
       <div className="flex items-center justify-between px-4 mb-2">
         <div className="flex items-center gap-2">

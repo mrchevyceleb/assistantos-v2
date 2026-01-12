@@ -23,14 +23,15 @@ export function Sidebar({ className = '' }: SidebarProps) {
       <aside
         className={`
           flex flex-col
-          w-[220px] min-w-[220px]
+          w-[220px] min-w-[220px] h-full
           bg-gradient-to-b from-slate-900/95 via-slate-900/90 to-slate-950/95
           border-r border-white/5
+          overflow-hidden
           ${className}
         `}
       >
         {/* App Header */}
-        <div className="px-4 py-4 border-b border-white/5">
+        <div className="px-4 py-4 border-b border-white/5 flex-shrink-0">
           <h1 className="text-lg font-semibold text-white tracking-tight">
             AssistantOS
           </h1>
@@ -44,7 +45,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
           onClick={() => openOrFocusDashboard()}
           className={`
             w-full flex items-center gap-3 px-4 py-3
-            text-sm transition-colors
+            text-sm transition-colors flex-shrink-0
             border-b border-white/5
             ${activeTab?.type === 'dashboard'
               ? 'text-cyan-400 bg-cyan-500/10'
@@ -64,7 +65,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
           onClick={() => openOrFocusTasks()}
           className={`
             w-full flex items-center gap-3 px-4 py-3
-            text-sm transition-colors
+            text-sm transition-colors flex-shrink-0
             border-b border-white/5
             ${activeTab?.type === 'tasks'
               ? 'text-violet-400 bg-violet-500/10'
@@ -76,14 +77,11 @@ export function Sidebar({ className = '' }: SidebarProps) {
           <span>Tasks</span>
         </button>
 
-        {/* Files Section - Collapsible */}
+        {/* Files Section - Collapsible, takes remaining space */}
         <FilesSection />
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
         {/* Bottom Section - Settings & MCPs */}
-        <div className="border-t border-white/5">
+        <div className="border-t border-white/5 flex-shrink-0">
           {/* MCP Indicators */}
           <MCPIndicators onManage={() => setShowIntegrations(true)} />
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, session } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -51,6 +51,24 @@ app.whenReady().then(() => {
   // Register MCP handlers
   registerMCPHandlers()
   registerMemoryHandlers()
+
+  // Configure webview session for browser panel
+  const browserSession = session.fromPartition('persist:browser')
+
+  // Set permissions for webview (allow all standard web permissions)
+  browserSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = [
+      'media', 'geolocation', 'notifications', 'midiSysex',
+      'pointerLock', 'fullscreen', 'openExternal', 'clipboard-read',
+      'clipboard-sanitized-write'
+    ]
+    callback(allowedPermissions.includes(permission))
+  })
+
+  // Allow webview to make web requests
+  browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    callback({ requestHeaders: details.requestHeaders })
+  })
 
   createWindow()
 

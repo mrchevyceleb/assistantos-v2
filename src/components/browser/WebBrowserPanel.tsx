@@ -35,11 +35,23 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
     }
   }, [pageTitle, activeTab?.id, updateTab])
 
+  // Track if webview is ready
+  const [webviewReady, setWebviewReady] = useState(false)
+  const pendingUrlRef = useRef<string | null>(null)
+
   // Setup webview event listeners
   useEffect(() => {
     const webview = webviewRef.current
     if (!webview) return
 
+    const handleDomReady = () => {
+      setWebviewReady(true)
+      // Load any pending URL
+      if (pendingUrlRef.current) {
+        webview.loadURL(pendingUrlRef.current)
+        pendingUrlRef.current = null
+      }
+    }
     const handleStartLoading = () => {
       setIsLoading(true)
       setErrorMessage(null)
@@ -75,6 +87,7 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
       }
     }
 
+    webview.addEventListener('dom-ready', handleDomReady)
     webview.addEventListener('did-start-loading', handleStartLoading)
     webview.addEventListener('did-stop-loading', handleStopLoading)
     webview.addEventListener('did-fail-load', handleDidFailLoad)
@@ -84,6 +97,7 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
     webview.addEventListener('new-window', handleNewWindow)
 
     return () => {
+      webview.removeEventListener('dom-ready', handleDomReady)
       webview.removeEventListener('did-start-loading', handleStartLoading)
       webview.removeEventListener('did-stop-loading', handleStopLoading)
       webview.removeEventListener('did-fail-load', handleDidFailLoad)
@@ -93,6 +107,16 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
       webview.removeEventListener('new-window', handleNewWindow)
     }
   }, [activeTab?.id, updateTab])
+
+  // Load initial URL when webview becomes ready
+  useEffect(() => {
+    if (webviewReady && currentUrl && currentUrl !== 'about:blank') {
+      const webview = webviewRef.current
+      if (webview) {
+        webview.loadURL(currentUrl)
+      }
+    }
+  }, [webviewReady]) // Only run when webviewReady changes
 
   const navigateTo = useCallback((url: string) => {
     if (!url.trim()) return
@@ -116,7 +140,15 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
 
     setCurrentUrl(finalUrl)
     setAddressBarValue(finalUrl)
-  }, [])
+
+    // Load URL via webview API if ready, otherwise queue it
+    const webview = webviewRef.current
+    if (webview && webviewReady) {
+      webview.loadURL(finalUrl)
+    } else {
+      pendingUrlRef.current = finalUrl
+    }
+  }, [webviewReady])
 
   const handleAddressBarSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -207,11 +239,11 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
       <div className="flex-1 bg-white relative">
         <webview
           ref={webviewRef as React.RefObject<Electron.WebviewTag>}
-          src={currentUrl}
+          src="about:blank"
           className="w-full h-full"
           allowpopups="true"
           partition="persist:browser"
-          webpreferences="nodeIntegration=no,contextIsolation=yes,sandbox=yes"
+          webpreferences="nodeIntegration=no,contextIsolation=yes"
           useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         />
         {errorMessage && (
