@@ -51,9 +51,17 @@ jobs:
           sips -z 1024 1024 assets/icon.png --out assets/icon.iconset/icon_512x512@2x.png
           iconutil -c icns assets/icon.iconset -o assets/icon.icns
 
+      - name: Prepare Windows code signing (Windows only)
+        if: matrix.os == 'windows-latest' && secrets.WIN_CSC_LINK != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path certs
+          [System.Convert]::FromBase64String("${{ secrets.WIN_CSC_LINK }}") | Set-Content certs/cert.pfx -AsByteStream
+
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_PASSWORD: ${{ secrets.WIN_CSC_PASSWORD }}
         run: npm run build:electron -- --publish always
 
       - name: Upload artifacts

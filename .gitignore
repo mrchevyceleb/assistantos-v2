@@ -32,3 +32,8 @@ release/
 *.tsbuildinfo
 nul
 tmpclaude-*
+
+# Code signing certificates
+certs/
+*.pfx
+*.p12
