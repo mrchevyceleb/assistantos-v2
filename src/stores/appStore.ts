@@ -507,6 +507,12 @@ export const useAppStore = create<AppState>()(
       onRehydrateStorage: () => (state) => {
         // Set hydrated flag after persisted state loads
         state?.setHasHydrated(true)
+
+        // Migration: Ensure shortcuts are populated (for users with old persisted state)
+        if (state && (!state.shortcuts || state.shortcuts.length === 0)) {
+          console.log('[AppStore] Migrating: Adding default shortcuts')
+          state.resetAllShortcuts()
+        }
       },
       partialize: (state) => ({
         workspacePath: state.workspacePath,

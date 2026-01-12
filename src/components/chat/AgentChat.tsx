@@ -247,6 +247,11 @@ export function AgentChat() {
     agentBypassPermissions} = useAppStore()
   const { handleLinkClick } = useLinkHandler()
 
+  // Debug: Log shortcuts on mount and changes
+  useEffect(() => {
+    console.log('[AgentChat] Shortcuts loaded:', shortcuts?.length || 0, shortcuts?.map(s => s.name))
+  }, [shortcuts])
+
   // Speech recognition for voice dictation
   const {
     isSupported: isSpeechSupported,
