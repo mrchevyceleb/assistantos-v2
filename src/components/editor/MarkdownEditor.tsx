@@ -175,7 +175,7 @@ export function MarkdownEditor() {
   if (!currentFile) {
     return (
       <div
-        className="h-full flex flex-col items-center justify-center"
+        className="w-full h-full flex flex-col items-center justify-center"
         style={{
           background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
         }}
@@ -197,7 +197,7 @@ export function MarkdownEditor() {
 
   return (
     <div
-      className="h-full flex flex-col"
+      className="w-full h-full flex flex-col"
       style={{
         background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
       }}

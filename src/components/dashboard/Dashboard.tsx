@@ -17,7 +17,7 @@ export function Dashboard() {
 
   return (
     <div
-      className="h-full flex flex-col overflow-hidden"
+      className="w-full h-full flex flex-col overflow-hidden"
       style={{
         background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
       }}

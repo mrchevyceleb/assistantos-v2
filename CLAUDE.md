@@ -33,7 +33,8 @@ AssistantOS is an Electron-based desktop application that serves as your **perso
 - Handles IPC for window controls (minimize, maximize, close)
 - Provides file system operations via IPC handlers:
   - `fs:readDir` - Read directory contents
-  - `fs:readFile` - Read file contents
+  - `fs:readFile` - Read file contents (UTF-8 text)
+  - `fs:readFileBase64` - Read file as base64 (for binary/media files)
   - `fs:writeFile` - Write file contents
   - `fs:selectFolder` - Open folder selection dialog
   - `fs:createDir` - Create directories
@@ -169,6 +170,8 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
   - Font size persists across sessions
 - `MediaViewer.tsx` - Native media file viewer for images, videos, and audio
   - Automatically displays when media files are clicked in FileTree
+  - Loads media via `fs:readFileBase64` IPC handler (converts to data URL)
+  - Shows loading spinner while media is being read
   - Supported formats:
     - **Images**: .png, .jpg, .jpeg, .gif, .webp, .bmp, .ico, .svg
     - **Videos**: .mp4, .webm, .mov, .avi

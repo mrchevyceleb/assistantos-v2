@@ -94,11 +94,16 @@ ipcMain.handle('window:close', () => {
 ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
-    return entries.map(entry => ({
+    const result = entries.map(entry => ({
       name: entry.name,
       path: path.join(dirPath, entry.name),
       isDirectory: entry.isDirectory(),
     }))
+    // Debug: log file counts
+    const fileCount = result.filter(e => !e.isDirectory).length
+    const dirCount = result.filter(e => e.isDirectory).length
+    console.log(`[fs:readDir] ${dirPath}: ${fileCount} files, ${dirCount} dirs`)
+    return result
   } catch (error) {
     console.error('Error reading directory:', error)
     return []
@@ -112,6 +117,18 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
   } catch (error) {
     console.error('Error reading file:', error)
     return null
+  }
+})
+
+// IPC Handler for reading files as base64 (for media files)
+ipcMain.handle('fs:readFileBase64', async (_, filePath: string) => {
+  try {
+    const buffer = await fs.promises.readFile(filePath)
+    const base64 = buffer.toString('base64')
+    return { success: true, data: base64 }
+  } catch (error) {
+    console.error('Error reading file as base64:', error)
+    return { success: false, error: String(error) }
   }
 })
 

@@ -45,7 +45,7 @@ export function LudicrousMode() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/50 overflow-hidden">
+    <div className="flex flex-col w-full h-full bg-slate-900/50 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
         <div className="flex items-center gap-3">

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { X, ZoomIn, ZoomOut, RotateCcw, Image, Film, Music, FileQuestion, Maximize2, Minimize2 } from 'lucide-react'
+import { X, ZoomIn, ZoomOut, RotateCcw, Image, Film, Music, FileQuestion, Maximize2, Minimize2, Loader2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { getMediaType, getMimeType, formatFileSize, getFileExtension } from '../../utils/fileTypes'
 
@@ -16,6 +16,8 @@ export function MediaViewer() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [dataUrl, setDataUrl] = useState<string | null>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -25,17 +27,34 @@ export function MediaViewer() {
   const mimeType = currentFile ? getMimeType(currentFile) : ''
   const fileExtension = currentFile ? getFileExtension(currentFile).toUpperCase().slice(1) : ''
 
-  // Create file URL for displaying media
-  // Electron uses file:// protocol to access local files
-  const fileUrl = currentFile ? `file:///${currentFile.replace(/\\/g, '/')}` : ''
-
-  // Reset state when file changes
+  // Load media file as base64 data URL when file changes
   useEffect(() => {
     setZoom(100)
     setMediaInfo(null)
     setError(null)
     setIsFullscreen(false)
-  }, [currentFile])
+    setDataUrl(null)
+
+    if (!currentFile || !mimeType) return
+
+    const loadMedia = async () => {
+      setIsLoading(true)
+      try {
+        const result = await window.electronAPI.fs.readFileBase64(currentFile)
+        if (result.success && result.data) {
+          setDataUrl(`data:${mimeType};base64,${result.data}`)
+        } else {
+          setError(result.error || 'Failed to load media file')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load media file')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadMedia()
+  }, [currentFile, mimeType])
 
   // Handle image load to get dimensions
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -126,13 +145,31 @@ export function MediaViewer() {
       )
     }
 
+    if (isLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+          <Loader2 className="w-12 h-12 mb-4 animate-spin" />
+          <p className="text-lg">Loading media...</p>
+        </div>
+      )
+    }
+
+    if (!dataUrl) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+          <FileQuestion className="w-12 h-12 mb-4" />
+          <p className="text-lg">No media loaded</p>
+        </div>
+      )
+    }
+
     switch (mediaType) {
       case 'image':
         return (
           <div className="flex items-center justify-center h-full overflow-auto p-4">
             <img
               ref={imageRef}
-              src={fileUrl}
+              src={dataUrl}
               alt={fileName}
               className="max-w-none object-contain transition-transform duration-200"
               style={{
@@ -152,7 +189,7 @@ export function MediaViewer() {
           <div className="flex items-center justify-center h-full p-4">
             <video
               ref={videoRef}
-              src={fileUrl}
+              src={dataUrl}
               controls
               className="max-w-full max-h-full rounded-lg shadow-lg"
               style={{
@@ -161,7 +198,7 @@ export function MediaViewer() {
               onLoadedMetadata={handleVideoMetadata}
               onError={() => setError('Unable to load video')}
             >
-              <source src={fileUrl} type={mimeType} />
+              <source src={dataUrl} type={mimeType} />
               Your browser does not support the video tag.
             </video>
           </div>
@@ -189,7 +226,7 @@ export function MediaViewer() {
                 onLoadedMetadata={handleAudioMetadata}
                 onError={() => setError('Unable to load audio')}
               >
-                <source src={fileUrl} type={mimeType} />
+                <source src={dataUrl} type={mimeType} />
                 Your browser does not support the audio tag.
               </audio>
             </div>
@@ -220,7 +257,7 @@ export function MediaViewer() {
   if (!currentFile) {
     return (
       <div
-        className="h-full flex flex-col items-center justify-center"
+        className="w-full h-full flex flex-col items-center justify-center"
         style={{
           background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
         }}
@@ -243,7 +280,7 @@ export function MediaViewer() {
   return (
     <div
       ref={containerRef}
-      className="h-full flex flex-col"
+      className="w-full h-full flex flex-col"
       style={{
         background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
       }}

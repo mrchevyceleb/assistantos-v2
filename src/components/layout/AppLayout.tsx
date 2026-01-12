@@ -34,7 +34,7 @@ export function AppLayout() {
   }, [agents])
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex w-full h-full overflow-hidden">
       {/* Sidebar */}
       <Sidebar />
 
@@ -44,7 +44,7 @@ export function AppLayout() {
         <TabBar />
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 w-full overflow-hidden">
           <TabContent />
         </div>
       </div>

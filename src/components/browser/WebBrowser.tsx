@@ -18,6 +18,7 @@ export function WebBrowser() {
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const [pageTitle, setPageTitle] = useState('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const webviewRef = useRef<Electron.WebviewTag | null>(null)
 
   // Sync address bar with browser URL
@@ -32,11 +33,20 @@ export function WebBrowser() {
     const webview = webviewRef.current
     if (!webview) return
 
-    const handleStartLoading = () => setIsLoading(true)
+    const handleStartLoading = () => {
+      setIsLoading(true)
+      setErrorMessage(null)
+    }
     const handleStopLoading = () => {
       setIsLoading(false)
       setCanGoBack(webview.canGoBack())
       setCanGoForward(webview.canGoForward())
+    }
+    const handleDidFailLoad = (e: Electron.DidFailLoadEvent) => {
+      // Ignore -3 (ERR_ABORTED) which happens during redirects
+      if (e.errorCode === -3) return
+      setIsLoading(false)
+      setErrorMessage(`Failed to load: ${e.errorDescription} (${e.errorCode})`)
     }
     const handleNavigate = (e: Electron.DidNavigateEvent) => {
       setAddressBarValue(e.url)
@@ -55,6 +65,7 @@ export function WebBrowser() {
 
     webview.addEventListener('did-start-loading', handleStartLoading)
     webview.addEventListener('did-stop-loading', handleStopLoading)
+    webview.addEventListener('did-fail-load', handleDidFailLoad)
     webview.addEventListener('did-navigate', handleNavigate)
     webview.addEventListener('did-navigate-in-page', handleNavigate)
     webview.addEventListener('page-title-updated', handleTitleUpdate)
@@ -63,6 +74,7 @@ export function WebBrowser() {
     return () => {
       webview.removeEventListener('did-start-loading', handleStartLoading)
       webview.removeEventListener('did-stop-loading', handleStopLoading)
+      webview.removeEventListener('did-fail-load', handleDidFailLoad)
       webview.removeEventListener('did-navigate', handleNavigate)
       webview.removeEventListener('did-navigate-in-page', handleNavigate)
       webview.removeEventListener('page-title-updated', handleTitleUpdate)
@@ -196,14 +208,30 @@ export function WebBrowser() {
         )}
 
         {/* Webview Container */}
-        <div className="flex-1 bg-white">
+        <div className="flex-1 bg-white relative">
           {browserUrl && (
             <webview
               ref={webviewRef as React.RefObject<Electron.WebviewTag>}
               src={browserUrl}
               className="w-full h-full"
               allowpopups="true"
+              partition="persist:browser"
+              webpreferences="nodeIntegration=no,contextIsolation=yes,sandbox=yes"
+              useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             />
+          )}
+          {errorMessage && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white">
+              <div className="text-center p-8 max-w-md">
+                <p className="text-red-600 font-medium mb-4">{errorMessage}</p>
+                <button
+                  onClick={handleRefresh}
+                  className="px-4 py-2 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 transition-colors"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

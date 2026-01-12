@@ -51,7 +51,7 @@ function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <TitleBar />
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 w-full flex overflow-hidden">
         <AppLayout />
       </main>
       {/* Legacy WebBrowser modal - kept for backward compatibility */}

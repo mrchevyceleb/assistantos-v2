@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useTabStore } from '../../stores/tabStore'
 import { useAppStore } from '../../stores/appStore'
 import { AgentChatContainer } from '../chat/AgentChatContainer'
@@ -12,6 +13,14 @@ import { isMediaFile } from '../../utils/fileTypes'
 export function TabContent() {
   const activeTab = useTabStore(state => state.getActiveTab())
   const setCurrentFile = useAppStore(state => state.openFile)
+  const currentFile = useAppStore(state => state.currentFile)
+
+  // Sync current file with active file tab (in useEffect to avoid render-time state updates)
+  useEffect(() => {
+    if (activeTab?.type === 'file' && activeTab.filePath && currentFile !== activeTab.filePath) {
+      setCurrentFile(activeTab.filePath)
+    }
+  }, [activeTab, currentFile, setCurrentFile])
 
   // No active tab
   if (!activeTab) {
@@ -42,12 +51,6 @@ export function TabContent() {
       if (!activeTab.filePath) {
         return <div className="p-4 text-slate-500">Invalid file tab</div>
       }
-      // Set the current file in app store for editor
-      // This is a bridge until we fully refactor the editor
-      if (useAppStore.getState().currentFile !== activeTab.filePath) {
-        setCurrentFile(activeTab.filePath)
-      }
-
       // Check if it's a media file
       if (isMediaFile(activeTab.filePath)) {
         return <MediaViewer />

@@ -236,7 +236,7 @@ export function FilesSection() {
   ).length
 
   return (
-    <div className="border-t border-white/5">
+    <div className="border-t border-white/5 flex flex-col flex-1 min-h-0">
       {/* Section Header */}
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -276,7 +276,7 @@ export function FilesSection() {
 
       {/* File Tree */}
       {!isCollapsed && (
-        <div className="pb-2 max-h-[300px] overflow-y-auto">
+        <div className="pb-2 flex-1 overflow-y-auto">
           {!workspacePath ? (
             <div className="px-4 py-2 text-xs text-slate-500">
               No workspace selected

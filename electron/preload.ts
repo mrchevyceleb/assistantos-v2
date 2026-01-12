@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fs: {
     readDir: (dirPath: string) => ipcRenderer.invoke('fs:readDir', dirPath),
     readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
+    readFileBase64: (filePath: string) => ipcRenderer.invoke('fs:readFileBase64', filePath),
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
     selectFolder: () => ipcRenderer.invoke('fs:selectFolder'),
     createDir: (dirPath: string) => ipcRenderer.invoke('fs:createDir', dirPath),
@@ -328,6 +329,7 @@ declare global {
       fs: {
         readDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
         readFile: (filePath: string) => Promise<string | null>
+        readFileBase64: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>
         writeFile: (filePath: string, content: string) => Promise<boolean>
         selectFolder: () => Promise<string | null>
         createDir: (dirPath: string) => Promise<boolean>
