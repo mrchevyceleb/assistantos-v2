@@ -93,6 +93,17 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
+  // Explicitly set the feed URL for GitHub releases
+  // This ensures we use the correct releases API endpoint
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'mrchevyceleb',
+    repo: 'AssistantOS',
+    releaseType: 'release'
+  })
+
+  logger.info('Auto-updater feed URL configured for GitHub releases')
+
   // Configure GitHub token for private repository access
   const ghToken = getGitHubToken()
   hasGitHubToken = !!ghToken
