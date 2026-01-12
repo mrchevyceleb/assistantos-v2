@@ -370,7 +370,8 @@ export function AgentChat() {
     agentCustomAvatar,
     agentPresetAvatar,
     showContextUsage,
-    agentBypassPermissions} = useAppStore()
+    agentBypassPermissions,
+    kanbanSettings} = useAppStore()  // [Bug Fix] Added kanbanSettings for custom tasks folder
   const addNotification = useNotificationStore(state => state.addNotification)
   const { handleLinkClick } = useLinkHandler()
 
@@ -511,13 +512,15 @@ export function AgentChat() {
           .map(([id]) => ({ id, name: id, description: `Integration ${id}` }))
 
         // Assemble system prompt
+        // [Bug Fix] Pass custom tasks folder from settings
         const systemPrompt = await assembleSystemPrompt(
           workspacePath,
           openFiles,
           currentFile,
           customInstructions,
           enabledIntegrations,
-          null // No memory context for initial calculation
+          null, // No memory context for initial calculation
+          kanbanSettings.customTasksFolder
         )
 
         // Prepare tools
@@ -1595,13 +1598,15 @@ export function AgentChat() {
       }
 
       // Assemble full system prompt with capability awareness and memory
+      // [Bug Fix] Pass custom tasks folder from settings
       const fullSystemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
         customInstructions,
         enabledIntegrations,
-        memoryContext
+        memoryContext,
+        kanbanSettings.customTasksFolder
       )
 
       // Prepare tools - SELECTIVE loading based on @mentions

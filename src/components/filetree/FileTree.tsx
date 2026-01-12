@@ -219,6 +219,7 @@ export function FileTree() {
 
   // Handle right-click context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
+    console.log('[Bug-Hunter] FileTree handleContextMenu called', { x: e.clientX, y: e.clientY, entry: entry.name })
     e.preventDefault()
     e.stopPropagation()
     setSelectedPath(entry.path)
@@ -227,6 +228,7 @@ export function FileTree() {
       y: e.clientY,
       entry
     })
+    console.log('[Bug-Hunter] FileTree contextMenu state set')
   }, [])
 
   // Handle drag start for file/folder entries
@@ -546,19 +548,22 @@ export function FileTree() {
 
       {/* Context Menu */}
       {contextMenu && (
-        <FileContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          path={contextMenu.entry.path}
-          name={contextMenu.entry.name}
-          isDirectory={contextMenu.entry.isDirectory}
-          onClose={() => setContextMenu(null)}
-          onRename={() => startRename(contextMenu.entry)}
-          onDelete={() => setDeleteTarget(contextMenu.entry)}
-          onSendToChat={() => sendToChat(contextMenu.entry)}
-          onNewFile={contextMenu.entry.isDirectory ? () => setNewItemState({ type: 'file', parentPath: contextMenu.entry.path }) : undefined}
-          onNewFolder={contextMenu.entry.isDirectory ? () => setNewItemState({ type: 'folder', parentPath: contextMenu.entry.path }) : undefined}
-        />
+        <>
+          {console.log('[Bug-Hunter] FileTree rendering FileContextMenu', contextMenu)}
+          <FileContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            path={contextMenu.entry.path}
+            name={contextMenu.entry.name}
+            isDirectory={contextMenu.entry.isDirectory}
+            onClose={() => setContextMenu(null)}
+            onRename={() => startRename(contextMenu.entry)}
+            onDelete={() => setDeleteTarget(contextMenu.entry)}
+            onSendToChat={() => sendToChat(contextMenu.entry)}
+            onNewFile={contextMenu.entry.isDirectory ? () => setNewItemState({ type: 'file', parentPath: contextMenu.entry.path }) : undefined}
+            onNewFolder={contextMenu.entry.isDirectory ? () => setNewItemState({ type: 'folder', parentPath: contextMenu.entry.path }) : undefined}
+          />
+        </>
       )}
 
       {/* Delete Confirmation Dialog */}

@@ -336,13 +336,18 @@ function IntegrationCard({
                 Click "Authorize" to connect your Google account. No additional configuration needed.
               </p>
               <button
-                onClick={() => {
+                onClick={async () => {
                   // Trigger OAuth flow via IPC
-                  window.electronAPI.mcp.start(integration.id).then(result => {
-                    if (!result.success) {
-                      console.error('OAuth start failed:', result.error)
-                    }
-                  })
+                  console.log('[IntegrationModal] Starting OAuth flow for', integration.id)
+                  const result = await window.electronAPI.mcp.startOAuth(integration.id)
+                  if (result.success) {
+                    console.log('[IntegrationModal] OAuth successful!')
+                    // Optionally enable the integration automatically
+                    onToggle(true)
+                  } else {
+                    console.error('[IntegrationModal] OAuth failed:', result.error)
+                    alert(`OAuth failed: ${result.error}`)
+                  }
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm transition-colors"
               >

@@ -104,6 +104,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('mcp:updateCustomIntegration', id, updates),
     loadCustomIntegrations: (integrations: MCPIntegration[]) =>
       ipcRenderer.invoke('mcp:loadCustomIntegrations', integrations),
+    // OAuth handlers
+    startOAuth: (integrationId: string) => ipcRenderer.invoke('mcp:startOAuth', integrationId),
+    hasOAuthTokens: (integrationId: string) => ipcRenderer.invoke('mcp:hasOAuthTokens', integrationId),
+    clearOAuthTokens: (integrationId: string) => ipcRenderer.invoke('mcp:clearOAuthTokens', integrationId),
   },
 
   // Conversation persistence
@@ -425,6 +429,10 @@ declare global {
         unregisterCustomIntegration: (integrationId: string) => Promise<{ success: boolean; error?: string }>
         updateCustomIntegration: (id: string, updates: Partial<MCPIntegration>) => Promise<{ success: boolean; error?: string }>
         loadCustomIntegrations: (integrations: MCPIntegration[]) => Promise<{ success: boolean }>
+        // OAuth methods
+        startOAuth: (integrationId: string) => Promise<{ success: boolean; tokens?: { accessToken: string; refreshToken: string; expiresAt: number }; error?: string }>
+        hasOAuthTokens: (integrationId: string) => Promise<boolean>
+        clearOAuthTokens: (integrationId: string) => Promise<{ success: boolean; error?: string }>
       }
       conversation: {
         save: (conversation: ConversationData) => Promise<{ success: boolean; id?: string; error?: string }>

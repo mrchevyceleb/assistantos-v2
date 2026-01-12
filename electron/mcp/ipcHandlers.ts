@@ -3,7 +3,7 @@
  * Bridge between renderer process and MCP Manager
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { getMCPManager } from './MCPManager.js';
 import {
   getMentionMap,
@@ -14,13 +14,15 @@ import {
   unregisterCustomIntegration,
   updateCustomIntegration,
   loadCustomIntegrations,
-  MCPIntegration
+  MCPIntegration,
+  getIntegration
 } from './registry.js';
+import { startGoogleOAuthWithAutoConfig } from './oauth.js';
 
 /**
  * Register all MCP-related IPC handlers
  */
-export function registerMCPHandlers(): void {
+export function registerMCPHandlers(mainWindow: BrowserWindow | null = null): void {
   const manager = getMCPManager();
 
   // Get all integrations from registry (built-in + custom)
@@ -157,6 +159,83 @@ export function registerMCPHandlers(): void {
   ipcMain.handle('mcp:loadCustomIntegrations', (_event, integrations: MCPIntegration[]) => {
     loadCustomIntegrations(integrations);
     return { success: true };
+  });
+
+  // ============================================
+  // OAuth Handlers
+  // ============================================
+
+  // Start OAuth flow for Google integrations
+  ipcMain.handle('mcp:startOAuth', async (_event, integrationId: string) => {
+    try {
+      const integration = getIntegration(integrationId);
+      if (!integration) {
+        return { success: false, error: `Unknown integration: ${integrationId}` };
+      }
+
+      if (!integration.oauth || integration.oauth.provider !== 'google') {
+        return { success: false, error: `Integration ${integrationId} does not support OAuth` };
+      }
+
+      // Determine service type based on integration ID
+      const service = integrationId === 'gmail' ? 'gmail' : 'calendar';
+
+      // Get user-configured credentials if any (for future use)
+      const userCredentials = manager.getEnvVars(integrationId);
+
+      // Start OAuth flow
+      const result = await startGoogleOAuthWithAutoConfig(service, mainWindow, {
+        clientId: userCredentials?.['GMAIL_CLIENT_ID'] || userCredentials?.['GOOGLE_CLIENT_ID'],
+        clientSecret: userCredentials?.['GMAIL_CLIENT_SECRET'] || userCredentials?.['GOOGLE_CLIENT_SECRET']
+      });
+
+      if (result.success && result.tokens) {
+        // Store tokens for this integration
+        const tokenEnvVars: Record<string, string> = {
+          GOOGLE_ACCESS_TOKEN: result.tokens.accessToken,
+          GOOGLE_REFRESH_TOKEN: result.tokens.refreshToken,
+          GOOGLE_TOKEN_EXPIRES_AT: result.tokens.expiresAt.toString()
+        };
+
+        // Merge with existing env vars
+        const existingVars = manager.getEnvVars(integrationId) || {};
+        manager.setEnvVars(integrationId, { ...existingVars, ...tokenEnvVars });
+
+        console.log(`[OAuth] Successfully authenticated ${integrationId}`);
+        return { success: true, tokens: result.tokens };
+      }
+
+      return result;
+    } catch (error) {
+      console.error('[OAuth] Error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error during OAuth'
+      };
+    }
+  });
+
+  // Check if OAuth tokens exist for an integration
+  ipcMain.handle('mcp:hasOAuthTokens', (_event, integrationId: string) => {
+    const envVars = manager.getEnvVars(integrationId);
+    return !!(envVars?.GOOGLE_ACCESS_TOKEN && envVars?.GOOGLE_REFRESH_TOKEN);
+  });
+
+  // Clear OAuth tokens for an integration
+  ipcMain.handle('mcp:clearOAuthTokens', (_event, integrationId: string) => {
+    try {
+      const envVars = manager.getEnvVars(integrationId) || {};
+      delete envVars.GOOGLE_ACCESS_TOKEN;
+      delete envVars.GOOGLE_REFRESH_TOKEN;
+      delete envVars.GOOGLE_TOKEN_EXPIRES_AT;
+      manager.setEnvVars(integrationId, envVars);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   });
 
   console.log('[MCP] IPC handlers registered');

@@ -111,6 +111,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const integrationConfigs = useAppStore(state => state.integrationConfigs)
   const memoryEnabled = useAppStore(state => state.memoryEnabled)
   const shortcuts = useAppStore(state => state.shortcuts)
+  const kanbanSettings = useAppStore(state => state.kanbanSettings)  // [Bug Fix] Added for custom tasks folder
 
   // Agent store (per-agent state)
   const agent = useAgentStore(state => state.getAgent(agentId))
@@ -329,13 +330,15 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
       // Prepare tools - SELECTIVE loading based on @mentions
       const tools = await prepareToolsForMessage(userInput, integrationConfigs, workspacePath)
+      // [Bug Fix] Pass custom tasks folder from settings
       const systemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
         customInstructions,
         [], // enabled integrations
-        null // memory context
+        null, // memory context
+        kanbanSettings.customTasksFolder
       )
 
       // Create tool executor with agent context for file locking

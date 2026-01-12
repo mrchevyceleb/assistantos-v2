@@ -4,7 +4,7 @@
  * and tasks for injection into the system prompt.
  */
 
-import { parseTasksFromWorkspace, TASKS_FOLDER } from './taskParser'
+import { parseTasksFromWorkspace, TASKS_FOLDER, getTasksFolder } from './taskParser'
 import type { ParsedTask } from '../types/task'
 
 export interface TaskSummary {
@@ -172,7 +172,8 @@ async function gatherEnhancedWorkspaceStructure(
 export async function gatherDynamicContext(
   workspacePath: string | null,
   openFiles: string[],
-  currentFile: string | null
+  currentFile: string | null,
+  customTasksFolder?: string | null  // [Bug Fix] Accept custom tasks folder from settings
 ): Promise<DynamicContext> {
   const now = new Date()
 
@@ -265,11 +266,14 @@ export async function gatherDynamicContext(
 
   // Gather task information if TASKS folder exists
   try {
-    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+    // [Bug Fix] Use getTasksFolder to respect custom tasks folder setting
+    const effectiveTasksFolder = getTasksFolder(customTasksFolder)
+    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${effectiveTasksFolder}`
     const tasksExist = await window.electronAPI.fs.exists(tasksPath)
 
     if (tasksExist) {
-      const tasks = await parseTasksFromWorkspace(workspacePath)
+      // [Bug Fix] Pass customTasksFolder to parseTasksFromWorkspace
+      const tasks = await parseTasksFromWorkspace(workspacePath, null, customTasksFolder)
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const nextWeek = new Date(today)

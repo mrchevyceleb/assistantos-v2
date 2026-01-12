@@ -382,10 +382,43 @@ export async function updateTaskStatus(
   try {
     // Check if this is a file-level task (lineNumber === 0)
     if (lineNumber === 0) {
-      // For filename-based tasks, we don't update status manually
-      // Status is auto-calculated from checkbox completion in the file
-      // Just return true to indicate success (status will refresh on next parse)
-      console.log('[taskParser] File-level task status is auto-calculated from checkboxes')
+      // For filename-based tasks, update the status marker in the filename
+      // Expected format: "ProjectName - Task Title - Due YYYY-MM-DD [status].md"
+      const normalizedPath = filePath.replace(/\\/g, '/')
+      const dirPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'))
+      const filename = normalizedPath.split('/').pop() || ''
+
+      // Check if filename matches the task convention
+      const match = filename.match(FILENAME_TASK_REGEX)
+      if (!match) {
+        console.log('[taskParser] File-level task does not match filename convention')
+        return false
+      }
+
+      const [, projectName, taskTitle, dueDate] = match
+
+      // Generate new filename with status marker
+      const statusChar = statusToChar(newStatus)
+      const sanitize = (str: string) => str.replace(/[<>:"/\\|?*]/g, '-').trim()
+      const newFilename = `${sanitize(projectName)} - ${sanitize(taskTitle)} - Due ${dueDate} [${statusChar}].md`
+      const newPath = `${dirPath}/${newFilename}`
+
+      // Don't rename if the path is the same (status hasn't changed)
+      if (normalizedPath === newPath) {
+        console.log('[taskParser] Status already matches, no rename needed')
+        return true
+      }
+
+      // Check if target file already exists
+      const targetExists = await window.electronAPI.fs.exists(newPath)
+      if (targetExists) {
+        console.warn('[taskParser] Cannot rename - target file exists:', newFilename)
+        return false
+      }
+
+      // Rename the file to update the status marker
+      await window.electronAPI.fs.rename(filePath, newPath)
+      console.log('[taskParser] File-level task status updated via rename:', newFilename)
       return true
     }
 

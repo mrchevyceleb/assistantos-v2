@@ -273,7 +273,8 @@ export async function assembleSystemPrompt(
   currentFile: string | null,
   customInstructions: string,
   enabledIntegrations: EnabledIntegration[] = [],
-  memoryContext: MemoryContext | null = null
+  memoryContext: MemoryContext | null = null,
+  customTasksFolder?: string | null  // [Bug Fix] Accept custom tasks folder from settings
 ): Promise<string> {
   const sections: string[] = []
 
@@ -302,7 +303,8 @@ ${customInstructions}`)
   }
 
   // Layer 3: Dynamic context (gathered at runtime)
-  const context = await gatherDynamicContext(workspacePath, openFiles, currentFile)
+  // [Bug Fix] Pass customTasksFolder to context gathering
+  const context = await gatherDynamicContext(workspacePath, openFiles, currentFile, customTasksFolder)
   const contextString = formatContextForPrompt(context)
   sections.push(`## Current Context
 

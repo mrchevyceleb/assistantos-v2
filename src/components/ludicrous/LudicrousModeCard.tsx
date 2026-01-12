@@ -42,6 +42,7 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
   const currentFile = useAppStore(state => state.currentFile)
   const customInstructions = useAppStore(state => state.customInstructions)
   const maxTokens = useAppStore(state => state.maxTokens)
+  const kanbanSettings = useAppStore(state => state.kanbanSettings)  // [Bug Fix] Added for custom tasks folder
 
   // Agent store actions
   const addMessage = useAgentStore(state => state.addMessage)
@@ -95,13 +96,15 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
       addMessage(agent.id, assistantMessage)
 
       // Prepare for chat
+      // [Bug Fix] Pass custom tasks folder from settings
       const systemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,
         currentFile,
         customInstructions,
         [],
-        null
+        null,
+        kanbanSettings.customTasksFolder
       )
       const toolExecutor = createToolExecutor(workspacePath || '.', agent.id, agent.name)
 

@@ -145,8 +145,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // Register MCP handlers
-  registerMCPHandlers()
+  // Create window first
+  createWindow()
+
+  // Register handlers with mainWindow reference (for OAuth flow)
+  registerMCPHandlers(mainWindow)
   registerMemoryHandlers()
 
   // Configure webview session for browser panel
@@ -185,8 +188,6 @@ app.whenReady().then(() => {
     // Use default verification (don't bypass)
     callback(-3) // -3 means use default behavior
   })
-
-  createWindow()
 
   // Initialize auto-updater (only runs in production)
   if (mainWindow) {
