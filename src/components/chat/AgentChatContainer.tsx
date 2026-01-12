@@ -67,23 +67,36 @@ async function readDocumentContext(documents: DocumentMention[]): Promise<string
 }
 
 /**
- * Prepare all enabled MCP tools
+ * Prepare tools for a message - SELECTIVE loading based on @mentions
+ * Only loads MCP tools when that integration is @mentioned
  */
-async function prepareAllEnabledTools(
-  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
+async function prepareToolsForMessage(
+  message: string,
+  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>,
+  workspacePath: string | null = null
 ) {
-  const enabledIds = Object.entries(integrationConfigs)
-    .filter(([_, config]) => config.enabled)
-    .map(([id]) => id)
+  // Always include core tools
+  const tools = [...allTools]
 
-  if (enabledIds.length === 0) return allTools
+  // Parse @mentions from message
+  const { mentions: mentionedIntegrationIds } = await parseMessage(message, workspacePath)
+
+  // Filter to only enabled integrations that were @mentioned
+  const enabledMentionedIds = mentionedIntegrationIds.filter(id =>
+    integrationConfigs[id]?.enabled
+  )
+
+  if (enabledMentionedIds.length === 0) {
+    return tools
+  }
 
   try {
-    const mcpTools = await getCachedMCPTools(enabledIds)
-    return [...allTools, ...mcpTools]
+    const mcpTools = await getCachedMCPTools(enabledMentionedIds)
+    console.log(`[AgentChatContainer] Loaded tools for @mentioned integrations: ${enabledMentionedIds.join(', ')}`)
+    return [...tools, ...mcpTools]
   } catch (e) {
     console.error('Failed to load MCP tools:', e)
-    return allTools
+    return tools
   }
 }
 
@@ -314,8 +327,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       const documentContext = await readDocumentContext(activeDocuments)
       const messageWithContext = userInput + documentContext
 
-      // Prepare tools and system prompt
-      const tools = await prepareAllEnabledTools(integrationConfigs)
+      // Prepare tools - SELECTIVE loading based on @mentions
+      const tools = await prepareToolsForMessage(userInput, integrationConfigs, workspacePath)
       const systemPrompt = await assembleSystemPrompt(
         workspacePath,
         openFiles,

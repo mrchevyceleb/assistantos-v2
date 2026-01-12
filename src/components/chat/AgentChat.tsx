@@ -284,9 +284,49 @@ async function readDocumentContext(documents: DocumentMention[]): Promise<{
 }
 
 /**
- * Prepare all enabled MCP tools (Claude Code-like behavior)
- * Tools are loaded based on enabled integrations, not @mentions
+ * Prepare tools for a message - SELECTIVE loading based on @mentions
+ * Only loads MCP tools when that integration is @mentioned
+ * This dramatically reduces context usage (6K+ tokens saved when not using integrations)
+ *
+ * @param message - The user message to check for @mentions
  * @param integrationConfigs - Integration configurations from store
+ * @param workspacePath - Workspace path for document mention parsing
+ */
+async function prepareToolsForMessage(
+  message: string,
+  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>,
+  workspacePath: string | null = null
+) {
+  // Always include core tools (small footprint: ~350 tokens)
+  const tools = [...allTools]
+
+  // Parse @mentions from message to get mentioned integration IDs
+  const { mentions: mentionedIntegrationIds } = await parseMessage(message, workspacePath)
+
+  // Filter to only enabled integrations that were @mentioned
+  const enabledMentionedIds = mentionedIntegrationIds.filter(id =>
+    integrationConfigs[id]?.enabled
+  )
+
+  if (enabledMentionedIds.length === 0) {
+    console.log('[AgentChat] No @mentioned integrations - using core tools only (~350 tokens)')
+    return tools
+  }
+
+  try {
+    // Only load tools for @mentioned integrations
+    const mcpTools = await getCachedMCPTools(enabledMentionedIds)
+    console.log(`[AgentChat] Loaded tools for @mentioned integrations: ${enabledMentionedIds.join(', ')} (${mcpTools.length} tools)`)
+    return [...tools, ...mcpTools]
+  } catch (e) {
+    console.error('Failed to load MCP tools:', e)
+    return tools
+  }
+}
+
+/**
+ * Legacy function for context usage display - shows maximum possible tools
+ * @deprecated Use prepareToolsForMessage for actual tool preparation
  */
 async function prepareAllEnabledTools(
   integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
@@ -523,18 +563,28 @@ export function AgentChat() {
   }, [messages, lastSystemPrompt, lastTools, selectedModel, showContextUsage, hasShownCompactionWarning])
 
   // Auto-compaction when context exceeds threshold
+  // Re-triggers when context grows again after previous compaction
   useEffect(() => {
     const performAutoCompaction = async () => {
-      // Only auto-compact once per conversation and when conditions are met
+      // Check conditions for auto-compaction
       if (
         !contextUsage ||
         isAutoCompacting ||
-        hasAutoCompactedRef.current ||
         !shouldCompact(contextUsage.percentage) ||
         messages.length < 15 || // Need enough messages to compact
         isLoading ||
         !apiKey
       ) {
+        // Reset the flag when context drops below threshold (allows re-compaction later)
+        if (contextUsage && contextUsage.percentage < 70 && hasAutoCompactedRef.current) {
+          hasAutoCompactedRef.current = false
+        }
+        return
+      }
+
+      // Prevent re-compaction while context is still high from same session
+      // This flag resets when context drops below 70%
+      if (hasAutoCompactedRef.current) {
         return
       }
 
@@ -555,6 +605,7 @@ export function AgentChat() {
 
         if (!compactionPrompt) {
           setIsAutoCompacting(false)
+          hasAutoCompactedRef.current = false
           return
         }
 
@@ -587,10 +638,14 @@ export function AgentChat() {
           }
 
           setMessages([compactedMessage, ...recentMessages])
-          console.log('Auto-compaction completed: Condensed conversation history')
+          console.log('[AgentChat] Auto-compaction completed: Condensed conversation history')
+          addNotification('Context Compacted', 'Older messages have been summarized to save space.', 'info')
+
+          // Note: hasAutoCompactedRef stays true until context drops below 70%
+          // This prevents immediate re-compaction but allows future compaction
         }
       } catch (error) {
-        console.error('Auto-compaction failed:', error)
+        console.error('[AgentChat] Auto-compaction failed:', error)
         // Reset so user can try again
         hasAutoCompactedRef.current = false
       } finally {
@@ -599,7 +654,7 @@ export function AgentChat() {
     }
 
     performAutoCompaction()
-  }, [contextUsage, messages, isLoading, apiKey, isAutoCompacting])
+  }, [contextUsage, messages, isLoading, apiKey, isAutoCompacting, addNotification])
 
   // Sync speech recognition transcript to input field
   useEffect(() => {
@@ -1549,9 +1604,9 @@ export function AgentChat() {
         memoryContext
       )
 
-      // Prepare tools (native + all enabled MCP integrations)
-      // Claude Code-like behavior: all enabled tools available, no @mention required
-      const tools = await prepareAllEnabledTools(integrationConfigs)
+      // Prepare tools - SELECTIVE loading based on @mentions
+      // Only loads MCP tools when that integration is @mentioned (saves 6K+ tokens)
+      const tools = await prepareToolsForMessage(messageText, integrationConfigs, workspacePath)
 
       // Cache system prompt and tools for context usage calculation
       if (showContextUsage) {
