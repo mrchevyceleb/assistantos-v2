@@ -37,6 +37,13 @@ import {
 import { getPartialCommand, getCommandSuggestions, completeCommand, expandSlashCommand } from '../../services/shortcuts/parser'
 import { PromptShortcut } from '../../types/shortcut'
 import { generateChatTitle } from '../../services/titleGenerator'
+import {
+  getContextUsage,
+  formatTokenCount,
+  getContextUsageColor,
+  shouldCompact,
+  type ContextUsage
+} from '../../services/tokenService'
 
 // Components
 import { SettingsModal } from '../settings/SettingsModal'
@@ -100,6 +107,30 @@ async function prepareToolsForMessage(
   }
 }
 
+/**
+ * Prepare ALL enabled tools for context usage calculation
+ * Unlike prepareToolsForMessage, this loads all enabled integrations regardless of @mentions
+ */
+async function prepareAllEnabledTools(
+  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
+) {
+  // Get all enabled integration IDs
+  const enabledIds = Object.entries(integrationConfigs)
+    .filter(([_, config]) => config.enabled)
+    .map(([id]) => id)
+
+  if (enabledIds.length === 0) return allTools
+
+  try {
+    // Use cached tools for performance
+    const mcpTools = await getCachedMCPTools(enabledIds)
+    return [...allTools, ...mcpTools]
+  } catch (e) {
+    console.error('[AgentChatContainer] Failed to load MCP tools for context calculation:', e)
+    return allTools
+  }
+}
+
 export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   // App store (global settings)
   const apiKey = useAppStore(state => state.apiKey)
@@ -112,6 +143,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const memoryEnabled = useAppStore(state => state.memoryEnabled)
   const shortcuts = useAppStore(state => state.shortcuts)
   const kanbanSettings = useAppStore(state => state.kanbanSettings)  // [Bug Fix] Added for custom tasks folder
+  const showContextUsage = useAppStore(state => state.showContextUsage)
 
   // Agent store (per-agent state)
   const agent = useAgentStore(state => state.getAgent(agentId))
@@ -138,6 +170,12 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [activeMentions, setActiveMentions] = useState<string[]>([])
   const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
+
+  // Context usage tracking
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
+  const [showContextTooltip, setShowContextTooltip] = useState(false)
+  const [lastSystemPrompt, setLastSystemPrompt] = useState('')
+  const [lastTools, setLastTools] = useState<any[]>([])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
@@ -197,6 +235,64 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Initialize context usage tracking (calculate system prompt + tools once)
+  useEffect(() => {
+    const initializeContextUsage = async () => {
+      if (!showContextUsage) return
+
+      try {
+        // Build enabled integrations list for system prompt
+        // For context usage initialization, we just need basic info
+        const enabledIntegrations = Object.entries(integrationConfigs)
+          .filter(([, config]) => config.enabled)
+          .map(([id]) => ({ id, name: id, description: `Integration ${id}` }))
+
+        // Assemble system prompt
+        const systemPrompt = await assembleSystemPrompt(
+          workspacePath,
+          openFiles,
+          currentFile,
+          customInstructions,
+          enabledIntegrations,
+          null, // No memory context for initial calculation
+          kanbanSettings.customTasksFolder
+        )
+
+        // Prepare tools
+        const tools = await prepareAllEnabledTools(integrationConfigs)
+
+        setLastSystemPrompt(systemPrompt)
+        setLastTools(tools)
+      } catch (error) {
+        console.error('[AgentChatContainer] Error initializing context usage:', error)
+      }
+    }
+
+    initializeContextUsage()
+  }, [showContextUsage, workspacePath, openFiles, currentFile, customInstructions, integrationConfigs, kanbanSettings.customTasksFolder])
+
+  // Calculate context usage when messages change
+  useEffect(() => {
+    if (!showContextUsage) {
+      setContextUsage(null)
+      return
+    }
+
+    // Calculate context usage with cached system prompt and tools
+    const usage = getContextUsage(
+      messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        toolName: m.toolName,
+        toolResult: m.toolResult
+      })),
+      lastSystemPrompt,
+      lastTools,
+      agentModel
+    )
+    setContextUsage(usage)
+  }, [messages, lastSystemPrompt, lastTools, agentModel, showContextUsage])
 
   // Toggle tool expanded state
   const toggleToolExpanded = (toolId: string) => {
@@ -545,6 +641,88 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
               <option key={model.id} value={model.id}>{model.name}</option>
             ))}
           </select>
+
+          {/* Context Usage Indicator */}
+          {showContextUsage && contextUsage && (
+            <div
+              className="relative"
+              onMouseEnter={() => setShowContextTooltip(true)}
+              onMouseLeave={() => setShowContextTooltip(false)}
+            >
+              <button
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                style={{
+                  background: getContextUsageColor(contextUsage.percentage) === 'red'
+                    ? 'rgba(239, 68, 68, 0.1)'
+                    : getContextUsageColor(contextUsage.percentage) === 'amber'
+                      ? 'rgba(251, 191, 36, 0.1)'
+                      : 'rgba(34, 197, 94, 0.1)',
+                  border: `1px solid ${
+                    getContextUsageColor(contextUsage.percentage) === 'red'
+                      ? 'rgba(239, 68, 68, 0.3)'
+                      : getContextUsageColor(contextUsage.percentage) === 'amber'
+                        ? 'rgba(251, 191, 36, 0.3)'
+                        : 'rgba(34, 197, 94, 0.3)'
+                  }`
+                }}
+              >
+                <span className={`text-xs font-mono ${
+                  getContextUsageColor(contextUsage.percentage) === 'red'
+                    ? 'text-red-400'
+                    : getContextUsageColor(contextUsage.percentage) === 'amber'
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                }`}>
+                  {formatTokenCount(contextUsage.total)} / {formatTokenCount(contextUsage.max)}
+                </span>
+              </button>
+
+              {/* Tooltip */}
+              {showContextTooltip && (
+                <div
+                  className="absolute top-full right-0 mt-2 z-50 p-3 rounded-lg w-56"
+                  style={{
+                    background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+                  }}
+                >
+                  <div className="text-xs font-medium text-white mb-2">Context Usage</div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Messages</span>
+                      <span className="text-slate-300 font-mono">{formatTokenCount(contextUsage.messages)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">System Prompt</span>
+                      <span className="text-slate-300 font-mono">{formatTokenCount(contextUsage.systemPrompt)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Tools</span>
+                      <span className="text-slate-300 font-mono">{formatTokenCount(contextUsage.tools)}</span>
+                    </div>
+                    <div className="border-t border-white/10 pt-1.5 mt-1.5 flex justify-between">
+                      <span className="text-white font-medium">Total</span>
+                      <span className={`font-mono font-medium ${
+                        getContextUsageColor(contextUsage.percentage) === 'red'
+                          ? 'text-red-400'
+                          : getContextUsageColor(contextUsage.percentage) === 'amber'
+                            ? 'text-amber-400'
+                            : 'text-emerald-400'
+                      }`}>
+                        {contextUsage.percentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  {shouldCompact(contextUsage.percentage) && (
+                    <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-amber-400">
+                      Context is high. Consider using /compact to summarize older messages.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Clear Chat */}
           <button
