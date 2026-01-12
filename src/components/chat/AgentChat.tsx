@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe, Square, MessageCircle } from 'lucide-react'
+import { Send, Bot, User, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe, Square, MessageCircle, ImagePlus, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
@@ -48,6 +48,7 @@ import {
   shouldCompact,
   generateCompactionPrompt,
   formatCompactedSummary,
+  truncateDocumentSmart,
   type ContextUsage
 } from '../../services/tokenService'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
@@ -84,6 +85,63 @@ interface Message {
   toolResult?: string
   bookmarked?: boolean
   isContextSummary?: boolean
+  images?: AttachedImage[]
+}
+
+/**
+ * Attached image for sending to Claude API
+ */
+interface AttachedImage {
+  id: string
+  data: string // base64 encoded data (without data URL prefix)
+  mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+  preview: string // data URL for preview display
+  name: string
+}
+
+/**
+ * Convert a File to AttachedImage format
+ */
+async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
+  // Validate file type
+  const validTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+  if (!validTypes.includes(file.type)) {
+    console.warn('Unsupported image type:', file.type)
+    return null
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      if (!dataUrl) {
+        resolve(null)
+        return
+      }
+
+      // Extract base64 data (remove "data:image/png;base64," prefix)
+      const base64Data = dataUrl.split(',')[1]
+
+      resolve({
+        id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        data: base64Data,
+        mediaType: file.type as AttachedImage['mediaType'],
+        preview: dataUrl,
+        name: file.name || 'image'
+      })
+    }
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * Convert clipboard data to AttachedImage
+ */
+async function clipboardToAttachedImage(item: DataTransferItem): Promise<AttachedImage | null> {
+  const file = item.getAsFile()
+  if (!file) return null
+  return fileToAttachedImage(file)
 }
 
 /**
@@ -185,24 +243,44 @@ function formatTimestamp(date: Date): string {
 }
 
 /**
- * Read and format referenced document content
+ * Read and potentially truncate document content for context injection
+ * Returns { content: string, warnings: string[] } with any truncation warnings
  */
-async function readDocumentContext(documents: DocumentMention[]): Promise<string> {
+async function readDocumentContext(documents: DocumentMention[]): Promise<{
+  content: string
+  warnings: string[]
+}> {
   const docContents: string[] = []
+  const warnings: string[] = []
 
   for (const doc of documents) {
     try {
       const content = await window.electronAPI.fs.readFile(doc.path)
       if (content) {
-        docContents.push(`--- ${doc.relativePath} ---\n${content}\n`)
+        // Apply smart truncation for large documents
+        const truncated = truncateDocumentSmart(content, doc.relativePath)
+
+        if (truncated.wasTruncated && truncated.warningMessage) {
+          warnings.push(truncated.warningMessage)
+          console.log(`[Document Context] ${truncated.warningMessage}`)
+        }
+
+        docContents.push(`--- ${doc.relativePath} ---\n${truncated.content}\n`)
       }
     } catch (e) {
       console.error(`Failed to read document: ${doc.path}`, e)
+      warnings.push(`Failed to read document: ${doc.relativePath}`)
     }
   }
 
-  if (docContents.length === 0) return ''
-  return `\n\n<referenced_documents>\n${docContents.join('\n')}</referenced_documents>`
+  if (docContents.length === 0) {
+    return { content: '', warnings }
+  }
+
+  return {
+    content: `\n\n<referenced_documents>\n${docContents.join('\n')}</referenced_documents>`,
+    warnings
+  }
 }
 
 /**
@@ -280,6 +358,9 @@ export function AgentChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
+  const [isImageDragOver, setIsImageDragOver] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [showIntegrations, setShowIntegrations] = useState(false)
@@ -376,6 +457,42 @@ export function AgentChat() {
     checkClaudeCode()
   }, [useAgentSDK])
 
+  // Initialize system prompt and tools for context usage calculation
+  // This ensures the indicator shows immediately when enabled, not just after first message
+  useEffect(() => {
+    if (!showContextUsage) return
+
+    const initializeContextUsage = async () => {
+      try {
+        // Build enabled integrations list for system prompt
+        // For context usage initialization, we just need basic info
+        const enabledIntegrations: EnabledIntegration[] = Object.entries(integrationConfigs)
+          .filter(([_, config]) => config.enabled)
+          .map(([id]) => ({ id, name: id, description: `Integration ${id}` }))
+
+        // Assemble system prompt
+        const systemPrompt = await assembleSystemPrompt(
+          workspacePath,
+          openFiles,
+          currentFile,
+          customInstructions,
+          enabledIntegrations,
+          null // No memory context for initial calculation
+        )
+
+        // Prepare tools
+        const tools = await prepareAllEnabledTools(integrationConfigs)
+
+        setLastSystemPrompt(systemPrompt)
+        setLastTools(tools)
+      } catch (error) {
+        console.error('[AgentChat] Error initializing context usage:', error)
+      }
+    }
+
+    initializeContextUsage()
+  }, [showContextUsage, workspacePath, openFiles, currentFile, customInstructions, integrationConfigs])
+
   // Calculate context usage when messages change (only if showContextUsage is enabled)
   useEffect(() => {
     if (!showContextUsage) {
@@ -397,8 +514,9 @@ export function AgentChat() {
     )
     setContextUsage(usage)
 
-    // Show compaction banner when context exceeds 80% (only once per session)
-    if (usage.percentage >= 80 && !hasShownCompactionWarning && messages.length > 10) {
+    // Show compaction banner when context exceeds 70% (only once per session)
+    // This gives users early warning before auto-compaction kicks in at 75%
+    if (usage.percentage >= 70 && !hasShownCompactionWarning && messages.length > 10) {
       setShowCompactionBanner(true)
       setHasShownCompactionWarning(true)
     }
@@ -971,6 +1089,106 @@ export function AgentChat() {
     setShowIntegrations(true)
   }, [])
 
+  // Image upload handlers
+  const handleImageUploadClick = useCallback(() => {
+    imageInputRef.current?.click()
+  }, [])
+
+  const handleImageFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const newImages: AttachedImage[] = []
+    for (const file of Array.from(files)) {
+      const image = await fileToAttachedImage(file)
+      if (image) {
+        newImages.push(image)
+      }
+    }
+
+    if (newImages.length > 0) {
+      setAttachedImages(prev => [...prev, ...newImages])
+    }
+
+    // Reset input so same file can be selected again
+    e.target.value = ''
+  }, [])
+
+  const handleRemoveImage = useCallback((imageId: string) => {
+    setAttachedImages(prev => prev.filter(img => img.id !== imageId))
+  }, [])
+
+  // Handle image drag-and-drop (separate from file mentions)
+  const handleImageDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Check if dropping images
+    if (e.dataTransfer.types.includes('Files')) {
+      const items = Array.from(e.dataTransfer.items)
+      const hasImages = items.some(item => item.type.startsWith('image/'))
+      if (hasImages) {
+        setIsImageDragOver(true)
+      }
+    }
+  }, [])
+
+  const handleImageDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsImageDragOver(false)
+  }, [])
+
+  const handleImageDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsImageDragOver(false)
+    setIsDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    const imageFiles = files.filter(file => file.type.startsWith('image/'))
+
+    if (imageFiles.length > 0) {
+      const newImages: AttachedImage[] = []
+      for (const file of imageFiles) {
+        const image = await fileToAttachedImage(file)
+        if (image) {
+          newImages.push(image)
+        }
+      }
+
+      if (newImages.length > 0) {
+        setAttachedImages(prev => [...prev, ...newImages])
+        inputRef.current?.focus()
+        return // Don't process as file mentions if we handled images
+      }
+    }
+
+    // If not images, let the existing handler deal with it as file mentions
+    // (the existing handleDrop will be called)
+  }, [])
+
+  // Handle clipboard paste for images
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items)
+    const imageItems = items.filter(item => item.type.startsWith('image/'))
+
+    if (imageItems.length > 0) {
+      e.preventDefault() // Prevent pasting image as text
+
+      const newImages: AttachedImage[] = []
+      for (const item of imageItems) {
+        const image = await clipboardToAttachedImage(item)
+        if (image) {
+          newImages.push(image)
+        }
+      }
+
+      if (newImages.length > 0) {
+        setAttachedImages(prev => [...prev, ...newImages])
+      }
+    }
+  }, [])
+
   /**
    * Send message using Agent SDK (Claude Code-like behavior)
    */
@@ -1028,7 +1246,18 @@ export function AgentChat() {
 
     try {
       // Read content of referenced documents and append to prompt
-      const documentContext = await readDocumentContext(activeDocuments)
+      const { content: documentContext, warnings: docWarnings } = await readDocumentContext(activeDocuments)
+
+      // Log any document truncation warnings
+      if (docWarnings.length > 0) {
+        console.log('[Agent SDK] Document warnings:', docWarnings)
+        addNotification(
+          'Large Document Truncated',
+          `${docWarnings.length} document(s) were truncated to save context space.`,
+          'info'
+        )
+      }
+
       const fullPrompt = documentContext
         ? `${userInput}${documentContext}`
         : userInput
@@ -1196,9 +1425,13 @@ export function AgentChat() {
   /**
    * Send message using classic ClaudeService (fallback mode)
    */
-  const sendMessageClassic = async (inputOverride?: string) => {
+  const sendMessageClassic = async (inputOverride?: string, imagesToSend?: AttachedImage[]) => {
     const messageInput = inputOverride || input
-    if (!messageInput.trim() || isLoading) return
+    const currentImages = imagesToSend || attachedImages
+
+    // Allow sending if there's text OR images
+    if (!messageInput.trim() && currentImages.length === 0) return
+    if (isLoading) return
 
     if (!apiKey) {
       setMessages(prev => [...prev, {
@@ -1224,15 +1457,20 @@ export function AgentChat() {
       claudeServiceRef.current = new ClaudeService(apiKey, selectedModel, maxTokens)
     }
 
+    // Build user message content
+    const messageText = messageInput.trim() || (currentImages.length > 0 ? 'What is in this image?' : '')
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: messageInput.trim(),
+      content: messageText,
       timestamp: new Date(),
+      images: currentImages.length > 0 ? [...currentImages] : undefined,
     }
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
+    setAttachedImages([]) // Clear attached images after sending
     setMentionSuggestions([])
     setActiveMentions([])
     setActiveDocuments([])
@@ -1252,8 +1490,18 @@ export function AgentChat() {
     abortControllerRef.current = new AbortController()
 
     try {
-      // Read content of referenced documents
-      const documentContext = await readDocumentContext(activeDocuments)
+      // Read content of referenced documents (with smart truncation)
+      const { content: documentContext, warnings: docWarnings } = await readDocumentContext(activeDocuments)
+
+      // Log any document truncation warnings to user
+      if (docWarnings.length > 0) {
+        console.log('[Classic Mode] Document warnings:', docWarnings)
+        addNotification(
+          'Large Document Truncated',
+          `${docWarnings.length} document(s) were truncated to save context space.`,
+          'info'
+        )
+      }
 
       // Get enabled integration IDs for tool loading and capability awareness
       const enabledIds = Object.entries(integrationConfigs)
@@ -1313,18 +1561,28 @@ export function AgentChat() {
 
       // Append document context to user message if documents were referenced
       const messageWithContext = documentContext
-        ? `${trimmedInput}${documentContext}`
-        : trimmedInput
+        ? `${messageText}${documentContext}`
+        : messageText
 
       // Setup tool executor
       const toolExecutor = createToolExecutor(workspacePath)
+
+      // Convert attached images to API format
+      const imageContents = currentImages.length > 0
+        ? currentImages.map(img => ({
+            type: 'base64' as const,
+            mediaType: img.mediaType,
+            data: img.data,
+          }))
+        : undefined
 
       const stream = claudeServiceRef.current.chat(
         messageWithContext,
         tools,
         fullSystemPrompt,
         toolExecutor,
-        abortControllerRef.current?.signal
+        abortControllerRef.current?.signal,
+        imageContents
       )
 
       for await (const chunk of stream) {
@@ -1384,10 +1642,18 @@ export function AgentChat() {
     // Use the expanded input directly
     const inputToSend = didExpand ? expandedInput : input
 
+    // Capture images to send before clearing
+    const imagesToSend = [...attachedImages]
+
     if (useAgentSDK && claudeCodeInstalled !== false) {
-      await sendMessageAgentSDK(inputToSend)
+      // Agent SDK doesn't support images yet, fall back to classic if images attached
+      if (imagesToSend.length > 0) {
+        await sendMessageClassic(inputToSend, imagesToSend)
+      } else {
+        await sendMessageAgentSDK(inputToSend)
+      }
     } else {
-      await sendMessageClassic(inputToSend)
+      await sendMessageClassic(inputToSend, imagesToSend)
     }
   }
 
@@ -1474,6 +1740,38 @@ export function AgentChat() {
     })
   }
 
+  /**
+   * Handle context overflow errors with a helpful UI message
+   */
+  const handleContextOverflowChunk = (chunk: ChatChunk, assistantMessageId: string) => {
+    // Show a user-friendly error with recovery options
+    const recoveryMessage = chunk.recoveryPossible
+      ? '\n\n**Recovery Options:**\n- Type `/compact` to summarize older messages and free up space\n- Start a new chat with a fresh context\n- Try asking a shorter question'
+      : '\n\n**Recovery Options:**\n- Start a new chat with a fresh context\n- Break your request into smaller parts'
+
+    setMessages(prev => {
+      const updated = [...prev]
+      const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+      if (lastIndex !== -1) {
+        updated[lastIndex] = {
+          ...updated[lastIndex],
+          content: `**Context Limit Reached**\n\n${chunk.error}${recoveryMessage}`
+        }
+      }
+      return updated
+    })
+
+    // Also show a notification
+    addNotification(
+      'Context Limit Reached',
+      'The conversation is too long. Use /compact or start a new chat.',
+      'error'
+    )
+
+    // Show compaction banner as a hint
+    setShowCompactionBanner(true)
+  }
+
   const handleChunk = (chunk: ChatChunk, assistantMessageId: string) => {
     switch (chunk.type) {
       case 'text':
@@ -1490,6 +1788,10 @@ export function AgentChat() {
 
       case 'error':
         handleErrorChunk(chunk, assistantMessageId)
+        break
+
+      case 'context_overflow':
+        handleContextOverflowChunk(chunk, assistantMessageId)
         break
 
       case 'done':
@@ -1609,6 +1911,7 @@ export function AgentChat() {
   const clearConversation = () => {
     setMessages([])
     setQueuedMessages([])
+    setAttachedImages([])
     setExpandedTools(new Set())
     setCurrentConversationId(null)
     setHasShownCompactionWarning(false)
@@ -1936,7 +2239,7 @@ export function AgentChat() {
             <div>
               <span className="text-sm text-amber-400 font-medium">Context is getting full</span>
               <p className="text-xs text-slate-400 mt-0.5">
-                Auto-compaction will activate at 80%. You can also use <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">/compact</code> manually.
+                Auto-compaction will activate at 75%. You can also use <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">/compact</code> manually.
               </p>
             </div>
           </div>
@@ -2119,6 +2422,52 @@ export function AgentChat() {
                           </div>
                         )}
                       </div>
+                      {/* Thinking indicator below pending tools - shows while loading */}
+                      {isLoading && (
+                        <div
+                          className="mt-2 max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden"
+                          style={{
+                            background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.6) 0%, rgba(20, 28, 45, 0.7) 100%)',
+                            border: '1px solid rgba(0, 212, 255, 0.2)',
+                          }}
+                        >
+                          <div
+                            className="absolute inset-0 rounded-2xl opacity-50"
+                            style={{
+                              background: 'linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent)',
+                              animation: 'shimmer 2s infinite',
+                            }}
+                          />
+                          <div className="relative flex items-center gap-3">
+                            <div
+                              className="w-8 h-8 rounded-lg flex items-center justify-center"
+                              style={{
+                                background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%)',
+                                animation: 'pulse 1.5s ease-in-out infinite',
+                              }}
+                            >
+                              <Brain className="w-4 h-4 text-cyan-400" />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm text-cyan-400 font-medium">Processing results...</span>
+                              <div className="flex gap-1">
+                                <span
+                                  className="w-1.5 h-1.5 bg-cyan-400/60 rounded-full"
+                                  style={{ animation: 'typingDot 1.4s infinite', animationDelay: '0ms' }}
+                                />
+                                <span
+                                  className="w-1.5 h-1.5 bg-cyan-400/60 rounded-full"
+                                  style={{ animation: 'typingDot 1.4s infinite', animationDelay: '200ms' }}
+                                />
+                                <span
+                                  className="w-1.5 h-1.5 bg-cyan-400/60 rounded-full"
+                                  style={{ animation: 'typingDot 1.4s infinite', animationDelay: '400ms' }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -2145,6 +2494,21 @@ export function AgentChat() {
                         }}
                         onContextMenu={(e) => handleMessageContextMenu(e, message)}
                       >
+                        {/* Display attached images */}
+                        {message.images && message.images.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {message.images.map(img => (
+                              <img
+                                key={img.id}
+                                src={img.preview}
+                                alt={img.name}
+                                className="rounded-lg max-w-[200px] max-h-[150px] object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => window.open(img.preview, '_blank')}
+                                title="Click to view full size"
+                              />
+                            ))}
+                          </div>
+                        )}
                         <p className="text-sm whitespace-pre-wrap">
                           <LinkifiedText text={message.content} linkClassName="text-cyan-900 hover:text-cyan-700 underline cursor-pointer" />
                         </p>
@@ -2289,13 +2653,51 @@ export function AgentChat() {
 
                       {/* Assistant text response - or thinking indicator at bottom */}
                       {isThinking ? (
-                        <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-400">
-                          <div className="flex gap-1">
-                            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        <div
+                          className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden"
+                          style={{
+                            background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.6) 0%, rgba(20, 28, 45, 0.7) 100%)',
+                            border: '1px solid rgba(0, 212, 255, 0.2)',
+                          }}
+                        >
+                          {/* Animated gradient border effect */}
+                          <div
+                            className="absolute inset-0 rounded-2xl opacity-50"
+                            style={{
+                              background: 'linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent)',
+                              animation: 'shimmer 2s infinite',
+                            }}
+                          />
+                          <div className="relative flex items-center gap-3">
+                            {/* Pulsing brain icon */}
+                            <div
+                              className="w-8 h-8 rounded-lg flex items-center justify-center"
+                              style={{
+                                background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%)',
+                                animation: 'pulse 1.5s ease-in-out infinite',
+                              }}
+                            >
+                              <Brain className="w-4 h-4 text-cyan-400" />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm text-cyan-400 font-medium">Claude is thinking...</span>
+                              {/* Animated typing dots */}
+                              <div className="flex gap-1">
+                                <span
+                                  className="w-1.5 h-1.5 bg-cyan-400/60 rounded-full"
+                                  style={{ animation: 'typingDot 1.4s infinite', animationDelay: '0ms' }}
+                                />
+                                <span
+                                  className="w-1.5 h-1.5 bg-cyan-400/60 rounded-full"
+                                  style={{ animation: 'typingDot 1.4s infinite', animationDelay: '200ms' }}
+                                />
+                                <span
+                                  className="w-1.5 h-1.5 bg-cyan-400/60 rounded-full"
+                                  style={{ animation: 'typingDot 1.4s infinite', animationDelay: '400ms' }}
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <span>Thinking...</span>
                         </div>
                       ) : (
                         <div
@@ -2374,7 +2776,82 @@ export function AgentChat() {
       </div>
 
       {/* Input */}
-      <div className="p-4" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+      <div
+        className="p-4"
+        style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}
+        onDragOver={handleImageDragOver}
+        onDragLeave={handleImageDragLeave}
+        onDrop={handleImageDrop}
+      >
+        {/* Image drag overlay */}
+        {isImageDragOver && (
+          <div
+            className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
+            style={{
+              background: 'rgba(139, 92, 246, 0.1)',
+              border: '2px dashed rgba(139, 92, 246, 0.5)',
+              borderRadius: '8px',
+              margin: '4px'
+            }}
+          >
+            <div
+              className="flex flex-col items-center gap-2 p-4 rounded-xl"
+              style={{
+                background: 'rgba(16, 20, 32, 0.95)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                boxShadow: '0 0 20px rgba(139, 92, 246, 0.2)'
+              }}
+            >
+              <ImagePlus className="w-8 h-8 text-violet-400" />
+              <span className="text-sm font-medium text-white">Drop images here</span>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden file input for image upload */}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          onChange={handleImageFileSelect}
+          className="hidden"
+        />
+
+        {/* Attached images preview */}
+        {attachedImages.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {attachedImages.map(image => (
+              <div
+                key={image.id}
+                className="relative group rounded-lg overflow-hidden"
+                style={{
+                  width: '80px',
+                  height: '80px',
+                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                  boxShadow: '0 0 10px rgba(139, 92, 246, 0.1)'
+                }}
+              >
+                <img
+                  src={image.preview}
+                  alt={image.name}
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  onClick={() => handleRemoveImage(image.id)}
+                  className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80"
+                  title="Remove image"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+                <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/60 text-[9px] text-white truncate">
+                  {image.name}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Active mentions indicator */}
         {(activeMentions.length > 0 || activeDocuments.length > 0) && (
           <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
@@ -2534,7 +3011,8 @@ export function AgentChat() {
                 e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
               }}
               onKeyDown={handleKeyDown}
-              placeholder={isRecording ? "Listening..." : "Message your assistant (use @ for mentions, / for shortcuts)"}
+              onPaste={handlePaste}
+              placeholder={isRecording ? "Listening..." : "Message your assistant (use @ for mentions, / for shortcuts, paste/drop images)"}
               className="input-metallic w-full text-sm pr-4 resize-none overflow-y-auto"
               rows={1}
               style={{ minHeight: '44px', maxHeight: '200px' }}
@@ -2546,6 +3024,29 @@ export function AgentChat() {
               </div>
             )}
           </div>
+
+          {/* Image Upload Button */}
+          <button
+            onClick={handleImageUploadClick}
+            className={`relative p-3 rounded-xl transition-all hover:bg-white/5 border border-transparent ${
+              attachedImages.length > 0
+                ? 'text-violet-400 bg-violet-500/10 border-violet-500/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Upload images (or paste/drop images)"
+          >
+            <ImagePlus className="w-5 h-5" />
+            {attachedImages.length > 0 && (
+              <span
+                className="absolute -top-1 -right-1 w-4 h-4 bg-violet-500 rounded-full text-[10px] text-white flex items-center justify-center font-medium"
+                style={{
+                  boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)'
+                }}
+              >
+                {attachedImages.length}
+              </span>
+            )}
+          </button>
 
           {/* Microphone Button */}
           <button
@@ -2600,12 +3101,12 @@ export function AgentChat() {
           ) : (
             <button
               onClick={sendMessage}
-              disabled={!input.trim()}
+              disabled={!input.trim() && attachedImages.length === 0}
               className="btn-primary px-4"
               data-send-button
               style={{
-                opacity: input.trim() ? 1 : 0.5,
-                cursor: input.trim() ? 'pointer' : 'not-allowed'
+                opacity: (input.trim() || attachedImages.length > 0) ? 1 : 0.5,
+                cursor: (input.trim() || attachedImages.length > 0) ? 'pointer' : 'not-allowed'
               }}
             >
               <Send className="w-5 h-5" />
