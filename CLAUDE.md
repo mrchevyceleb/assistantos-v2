@@ -309,6 +309,39 @@ Tailwind with custom theme: metallic dark + cyan/violet/pink accents, custom sha
 - `dist-electron/` - Compiled Electron TypeScript
 - `release/` - Electron-builder installers
 
+## Release Workflow
+
+**Multi-platform GitHub Actions CI** (`.github/workflows/release.yml`):
+- Triggered by pushing git tags: `git push origin v1.x.x`
+- Builds for **Windows**, **Mac**, and **Linux** in parallel
+- Requires `permissions: contents: write` in workflow file
+- Uses `electron-builder` with `--publish always` flag
+
+**Complete Release Process**:
+
+1. **Bump version** in `package.json`
+2. **Commit changes**: `git add -A && git commit -m "..."`
+3. **Push to GitHub**: `git push origin master`
+4. **Create and push tag**: `git tag v1.x.x && git push origin v1.x.x`
+5. **Monitor CI**: `gh run list`, `gh run watch`, `gh run view --log`
+6. **Publish release**: `gh release edit v1.x.x --draft=false --latest`
+
+**Build Artifacts** (auto-uploaded by CI):
+- Windows: `AssistantOS-Setup-{version}.exe` + `.exe.blockmap` + `latest.yml`
+- Mac: `AssistantOS-{version}-arm64.dmg` + `.dmg.blockmap` + `latest-mac.yml`
+- Linux: `AssistantOS-{version}.AppImage` + `latest-linux.yml`
+
+**Important Notes**:
+- Releases are created as **Draft** by default - must be published manually
+- Use `gh release edit v1.x.x --draft=false --latest` to publish
+- Electron-updater only detects **published** releases
+- Mac icon generation happens automatically in CI (uses `sips` and `iconutil`)
+
+**Troubleshooting**:
+- If CI fails with `403 Forbidden`: Check workflow has `permissions: contents: write`
+- If app doesn't detect update: Verify release is published (not draft)
+- View CI logs: `gh run view --log-failed`
+
 ## Development Notes
 
 - ES modules (`"type": "module"`)
