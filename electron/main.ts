@@ -9,6 +9,80 @@ import { registerMemoryHandlers, cleanupMemoryHandlers } from './memory/ipcHandl
 
 const execAsync = promisify(exec)
 
+// =============================================================================
+// Security: Path Validation
+// =============================================================================
+
+/**
+ * Validate that a path is within allowed directories
+ * Prevents path traversal attacks (e.g., ../../etc/passwd)
+ */
+function isPathAllowed(targetPath: string, allowedBasePaths: string[]): boolean {
+  try {
+    const normalizedTarget = path.resolve(targetPath)
+    return allowedBasePaths.some(basePath => {
+      const normalizedBase = path.resolve(basePath)
+      return normalizedTarget.startsWith(normalizedBase + path.sep) || normalizedTarget === normalizedBase
+    })
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Get list of allowed base paths for file operations
+ * Includes workspace path and app data directory
+ */
+function getAllowedPaths(): string[] {
+  const allowed = [
+    app.getPath('userData'), // App data (conversations, etc.)
+    app.getPath('temp'),      // Temp files
+  ]
+  return allowed.filter(Boolean)
+}
+
+// Track current workspace path for validation
+let currentWorkspacePath: string | null = null
+
+/**
+ * Check if a path is safe for file operations
+ * Allows workspace path and app-specific directories
+ */
+function validatePath(targetPath: string): boolean {
+  const allowedPaths = getAllowedPaths()
+  if (currentWorkspacePath) {
+    allowedPaths.push(currentWorkspacePath)
+  }
+  return isPathAllowed(targetPath, allowedPaths)
+}
+
+// =============================================================================
+// Security: Shell Command Validation
+// =============================================================================
+
+// Dangerous command patterns that should be blocked
+const DANGEROUS_COMMAND_PATTERNS = [
+  /rm\s+(-rf?|-fr?)\s+\/(?!\w)/i,     // rm -rf / (root deletion)
+  /rm\s+(-rf?|-fr?)\s+~\/?$/i,        // rm -rf ~ (home deletion)
+  /:(){ :|:& };:/,                     // Fork bomb
+  />\s*\/dev\/sd[a-z]/i,              // Direct disk write
+  /dd\s+.*of=\/dev\/sd[a-z]/i,        // dd to disk
+  /mkfs/i,                             // Format filesystem
+  /shutdown/i,                         // Shutdown command
+  /reboot/i,                           // Reboot command
+  /halt/i,                             // Halt command
+  /init\s+[0-6]/i,                    // Runlevel change
+  /format\s+[a-z]:/i,                 // Windows format
+  /del\s+\/[sfq]\s+[a-z]:\\/i,        // Windows recursive delete
+]
+
+/**
+ * Check if a shell command contains dangerous patterns
+ */
+function isDangerousCommand(command: string): boolean {
+  return DANGEROUS_COMMAND_PATTERNS.some(pattern => pattern.test(command))
+}
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -34,6 +108,28 @@ function createWindow() {
       webviewTag: true,
     },
   })
+
+  // Set Content Security Policy headers for production
+  if (!isDev) {
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self';" +
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:;" +
+            "style-src 'self' 'unsafe-inline';" +
+            "img-src 'self' data: blob: https:;" +
+            "font-src 'self' data:;" +
+            "connect-src 'self' https://api.anthropic.com https://api.openai.com https://*.supabase.co wss://*.supabase.co https://wttr.in;" +
+            "frame-src 'self';" +
+            "object-src 'none';" +
+            "base-uri 'self';"
+          ]
+        }
+      })
+    })
+  }
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
@@ -282,8 +378,24 @@ ipcMain.handle('fs:getInfo', async (_, filePath: string) => {
   }
 })
 
+// IPC Handler for setting workspace path (for security validation)
+ipcMain.handle('workspace:setPath', async (_, workspacePath: string | null) => {
+  currentWorkspacePath = workspacePath
+  return { success: true }
+})
+
 // IPC Handler for bash command execution
 ipcMain.handle('bash:execute', async (_, command: string, cwd: string) => {
+  // Security: Check for dangerous command patterns
+  if (isDangerousCommand(command)) {
+    console.error('[Security] Blocked dangerous command:', command)
+    return {
+      stdout: '',
+      stderr: 'Error: This command has been blocked for security reasons. It matches a pattern known to be destructive.',
+      exitCode: 1
+    }
+  }
+
   try {
     const { stdout, stderr } = await execAsync(command, {
       cwd,

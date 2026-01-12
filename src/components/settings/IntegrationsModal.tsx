@@ -11,7 +11,6 @@ import {
   Loader2,
   Globe,
   Mail,
-  Calendar,
   Search,
   Cloud,
   Image,
@@ -20,10 +19,16 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Plus,
   Wrench
 } from 'lucide-react'
-import { useAppStore } from '../../stores/appStore'
+import { useAppStore, MCPIntegration } from '../../stores/appStore'
+
+// MCP Server status type
+interface MCPServerStatus {
+  status: string
+  error?: string
+  toolCount?: number
+}
 
 interface IntegrationsModalProps {
   isOpen: boolean

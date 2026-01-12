@@ -39,6 +39,8 @@ import {
   formatTokenCount,
   getContextUsageColor,
   shouldCompact,
+  generateCompactionPrompt,
+  formatCompactedSummary,
   type ContextUsage
 } from '../../services/tokenService'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
@@ -60,6 +62,7 @@ interface Message {
   toolName?: string
   toolResult?: string
   bookmarked?: boolean
+  isContextSummary?: boolean
 }
 
 /**
@@ -221,8 +224,6 @@ export function AgentChat() {
     pendingChatInput,
     setPendingChatInput,
     memoryEnabled,
-    memorySupabaseUrl,
-    memorySupabaseAnonKey,
     memoryUserId,
     shortcuts,
     userProfilePicture,
@@ -270,6 +271,9 @@ export function AgentChat() {
   const [lastTools, setLastTools] = useState<any[]>([])
   const [hasShownCompactionWarning, setHasShownCompactionWarning] = useState(false)
   const [showCompactionBanner, setShowCompactionBanner] = useState(false)
+  // Auto-compaction tracking
+  const [isAutoCompacting, setIsAutoCompacting] = useState(false)
+  const hasAutoCompactedRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -321,6 +325,85 @@ export function AgentChat() {
       setHasShownCompactionWarning(true)
     }
   }, [messages, lastSystemPrompt, lastTools, selectedModel, showContextUsage, hasShownCompactionWarning])
+
+  // Auto-compaction when context exceeds threshold
+  useEffect(() => {
+    const performAutoCompaction = async () => {
+      // Only auto-compact once per conversation and when conditions are met
+      if (
+        !contextUsage ||
+        isAutoCompacting ||
+        hasAutoCompactedRef.current ||
+        !shouldCompact(contextUsage.percentage) ||
+        messages.length < 15 || // Need enough messages to compact
+        isLoading ||
+        !apiKey
+      ) {
+        return
+      }
+
+      // Mark as compacting to prevent double-execution
+      setIsAutoCompacting(true)
+      hasAutoCompactedRef.current = true
+
+      try {
+        // Generate compaction prompt for older messages (keep last 10)
+        const messagesForPrompt = messages.map(m => ({
+          role: m.role as 'user' | 'assistant' | 'tool',
+          content: m.content,
+          toolName: m.toolName,
+          toolResult: m.toolResult
+        }))
+
+        const compactionPrompt = generateCompactionPrompt(messagesForPrompt, 10)
+
+        if (!compactionPrompt) {
+          setIsAutoCompacting(false)
+          return
+        }
+
+        // Use Haiku for fast compaction
+        const compactionService = new ClaudeService(apiKey, 'claude-3-5-haiku-20241022', 2000)
+
+        // Stream the compaction response
+        let summary = ''
+        for await (const event of compactionService.streamMessage(
+          [{ role: 'user', content: compactionPrompt }],
+          'You are a helpful assistant that creates concise conversation summaries. Focus on preserving essential context.'
+        )) {
+          if (event.type === 'content' && event.text) {
+            summary += event.text
+          }
+        }
+
+        if (summary) {
+          // Create the compacted summary message
+          const summaryContent = formatCompactedSummary(summary)
+
+          // Replace old messages with summary + keep recent messages
+          const recentMessages = messages.slice(-10)
+          const compactedMessage: Message = {
+            id: `compacted-${Date.now()}`,
+            role: 'assistant',
+            content: summaryContent,
+            timestamp: new Date(),
+            isContextSummary: true
+          }
+
+          setMessages([compactedMessage, ...recentMessages])
+          console.log('Auto-compaction completed: Condensed conversation history')
+        }
+      } catch (error) {
+        console.error('Auto-compaction failed:', error)
+        // Reset so user can try again
+        hasAutoCompactedRef.current = false
+      } finally {
+        setIsAutoCompacting(false)
+      }
+    }
+
+    performAutoCompaction()
+  }, [contextUsage, messages, isLoading, apiKey, isAutoCompacting])
 
   // Sync speech recognition transcript to input field
   useEffect(() => {
@@ -449,7 +532,7 @@ export function AgentChat() {
         setSavedConversations(list)
 
         // Extract and save memories if enabled
-        if (memoryEnabled && memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
+        if (memoryEnabled && memoryUserId) {
           try {
             // Filter to user and assistant messages only (exclude tool messages)
             const chatMessages = messages
@@ -480,18 +563,18 @@ export function AgentChat() {
               for (const pref of extracted.preferences) {
                 await window.electronAPI.memory.upsertPreference({
                   domain: pref.domain,
-                  preference_key: pref.preference_key,
-                  preference_value: pref.preference_value
+                  preference_key: pref.preferenceKey,
+                  preference_value: pref.preferenceValue
                 })
               }
 
               // Save conversation summary
               await window.electronAPI.memory.addSummary({
                 local_conversation_id: convId,
-                workspace_path: workspacePath,
+                workspace_path: workspacePath ?? undefined,
                 title: conversationTitle,
                 summary: extracted.summary.summary,
-                key_decisions: extracted.summary.key_decisions,
+                key_decisions: extracted.summary.keyDecisions,
                 message_count: messages.length,
                 model_used: selectedModel,
                 started_at: messages[0]?.timestamp.toISOString(),
@@ -511,7 +594,7 @@ export function AgentChat() {
     } finally {
       setIsSaving(false)
     }
-  }, [messages, currentConversationId, selectedModel, workspacePath, savedConversations, isSaving, memoryEnabled, memorySupabaseUrl, memorySupabaseAnonKey, memoryUserId])
+  }, [messages, currentConversationId, selectedModel, workspacePath, savedConversations, isSaving, memoryEnabled, memoryUserId])
 
   // Load conversation handler
   const handleLoadConversation = useCallback(async (conversationId: string) => {
@@ -858,7 +941,7 @@ export function AgentChat() {
       // Fetch memory context if enabled (skip for trivial messages to save tokens)
       let memoryContext: MemoryContext | null = null
       const trimmedInput = input.trim()
-      if (memoryEnabled && memoryUserId && memorySupabaseUrl && memorySupabaseAnonKey && !isTrivialMessage(trimmedInput)) {
+      if (memoryEnabled && memoryUserId && !isTrivialMessage(trimmedInput)) {
         try {
           const memoryData = await window.electronAPI.memory.getRelevantMemories(trimmedInput)
           if (memoryData.profile || memoryData.facts.length > 0 || memoryData.summaries.length > 0) {
@@ -1384,8 +1467,29 @@ export function AgentChat() {
         )}
       </div>
 
+      {/* Auto-Compaction Progress Banner */}
+      {isAutoCompacting && (
+        <div
+          className="mx-4 mt-2 px-4 py-3 rounded-lg flex items-center gap-3"
+          style={{
+            background: 'rgba(34, 197, 94, 0.1)',
+            border: '1px solid rgba(34, 197, 94, 0.3)'
+          }}
+        >
+          <div className="animate-spin">
+            <RefreshCw className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <span className="text-sm text-emerald-400 font-medium">Auto-compacting conversation</span>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Summarizing older messages to free up context space...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Compaction Warning Banner */}
-      {showCompactionBanner && (
+      {showCompactionBanner && !isAutoCompacting && (
         <div
           className="mx-4 mt-2 px-4 py-3 rounded-lg flex items-center justify-between"
           style={{
@@ -1398,28 +1502,16 @@ export function AgentChat() {
             <div>
               <span className="text-sm text-amber-400 font-medium">Context is getting full</span>
               <p className="text-xs text-slate-400 mt-0.5">
-                Use <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">/compact</code> to summarize older messages and free up space.
+                Auto-compaction will activate at 80%. You can also use <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">/compact</code> manually.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setShowCompactionBanner(false)
-                setInput('/compact')
-                inputRef.current?.focus()
-              }}
-              className="px-3 py-1.5 text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded-lg transition-colors"
-            >
-              Compact Now
-            </button>
-            <button
-              onClick={() => setShowCompactionBanner(false)}
-              className="p-1.5 text-slate-500 hover:text-white transition-colors"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={() => setShowCompactionBanner(false)}
+            className="p-1.5 text-slate-500 hover:text-white transition-colors"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </button>
         </div>
       )}
 

@@ -51,9 +51,8 @@ export function CalendarWidget() {
         }
       )
 
-      if (result?.content) {
-        // Parse the response - MCP returns content as text
-        const content = result.content[0]?.text || ''
+      if (result?.success && result.result) {
+        // Parse the response - MCP returns result data
         // Simple parsing - adjust based on actual MCP response format
         setEvents([]) // Will be populated when MCP is properly configured
       }

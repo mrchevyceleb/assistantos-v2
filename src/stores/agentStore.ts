@@ -30,6 +30,14 @@ export interface Agent {
 // Maximum number of concurrent agents
 export const MAX_AGENTS = 5
 
+// Loaded conversation data for creating agent with history
+interface LoadedConversation {
+  conversationId: string
+  title: string
+  model: ModelId
+  messages: Message[]
+}
+
 // Agent store interface
 interface AgentStore {
   // State
@@ -38,6 +46,7 @@ interface AgentStore {
 
   // Agent lifecycle
   createAgent: () => string | null        // Returns agent ID or null if at max
+  createAgentWithConversation: (conversation: LoadedConversation) => string | null  // Create agent with loaded history
   removeAgent: (id: string) => void
 
   // Agent selection
@@ -61,6 +70,7 @@ interface AgentStore {
   // Utility
   canCreateAgent: () => boolean
   getAgentCount: () => number
+  findAgentByConversationId: (conversationId: string) => Agent | undefined
 
   // Reset (for fresh sessions)
   resetAllAgents: () => void
@@ -101,6 +111,30 @@ export const useAgentStore = create<AgentStore>((set, get) => {
       }
 
       const newAgent = createDefaultAgent()
+      set({
+        agents: [...agents, newAgent],
+        activeAgentId: newAgent.id,
+      })
+      return newAgent.id
+    },
+
+    // Create an agent with a loaded conversation
+    createAgentWithConversation: (conversation) => {
+      const { agents } = get()
+      if (agents.length >= MAX_AGENTS) {
+        return null
+      }
+
+      const newAgent: Agent = {
+        id: generateAgentId(),
+        name: conversation.title,
+        status: 'idle',
+        model: conversation.model,
+        messages: conversation.messages,
+        conversationId: conversation.conversationId,
+        createdAt: new Date(),
+      }
+
       set({
         agents: [...agents, newAgent],
         activeAgentId: newAgent.id,
@@ -263,6 +297,11 @@ export const useAgentStore = create<AgentStore>((set, get) => {
     // Get current agent count
     getAgentCount: () => {
       return get().agents.length
+    },
+
+    // Find agent by conversation ID (to avoid loading duplicates)
+    findAgentByConversationId: (conversationId) => {
+      return get().agents.find(a => a.conversationId === conversationId)
     },
 
     // Reset all agents (for fresh session)

@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // Workspace management (for security validation)
+  workspace: {
+    setPath: (workspacePath: string | null) => ipcRenderer.invoke('workspace:setPath', workspacePath),
+  },
+
   // MCP integrations
   mcp: {
     getIntegrations: () => ipcRenderer.invoke('mcp:getIntegrations'),
@@ -81,8 +86,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Memory system (persistent cross-device memory)
   memory: {
-    initialize: (url: string, anonKey: string, anonymousId: string) =>
-      ipcRenderer.invoke('memory:initialize', url, anonKey, anonymousId),
+    initialize: (anonymousId: string) =>
+      ipcRenderer.invoke('memory:initialize', anonymousId),
     getStatus: () => ipcRenderer.invoke('memory:getStatus'),
     disconnect: () => ipcRenderer.invoke('memory:disconnect'),
     // Embeddings
@@ -359,6 +364,9 @@ declare global {
       }
       shell: {
         openExternal: (url: string) => Promise<boolean>
+      }
+      workspace: {
+        setPath: (workspacePath: string | null) => Promise<{ success: boolean }>
       }
       mcp: {
         getIntegrations: () => Promise<MCPIntegration[]>

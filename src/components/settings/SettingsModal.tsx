@@ -38,6 +38,15 @@ import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTION
 import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
 import { isValidCommandName } from '@/services/shortcuts/parser'
 
+// Memory status type from API
+interface MemoryStatusType {
+  connected: boolean
+  factCount: number
+  preferenceCount: number
+  summaryCount: number
+  embeddingsEnabled: boolean
+}
+
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
@@ -97,10 +106,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setTaskSettings,
     memoryEnabled,
     setMemoryEnabled,
-    memorySupabaseUrl,
-    setMemorySupabaseUrl,
-    memorySupabaseAnonKey,
-    setMemorySupabaseAnonKey,
     memoryUserId,
     setMemoryUserId,
     generateMemoryUserId,
@@ -125,19 +130,77 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
-  const [showSupabaseKey, setShowSupabaseKey] = useState(false)
   const [showOpenaiKey, setShowOpenaiKey] = useState(false)
   const [conversationCount, setConversationCount] = useState(0)
   const [embeddingsEnabled, setEmbeddingsEnabled] = useState(false)
-  const [memoryStatus, setMemoryStatus] = useState<{ initialized: boolean; connected: boolean } | null>(null)
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatusType | null>(null)
   const [copiedId, setCopiedId] = useState(false)
   const [importUserId, setImportUserId] = useState('')
+  // API key validation state
+  const [apiKeyStatus, setApiKeyStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null)
   // Shortcut editing state
   const [editingShortcut, setEditingShortcut] = useState<PromptShortcut | null>(null)
   const [isAddingShortcut, setIsAddingShortcut] = useState(false)
   const [shortcutForm, setShortcutForm] = useState({ name: '', description: '', prompt: '' })
   // Avatar state
   const [avatarTab, setAvatarTab] = useState<AgentAvatarType>(agentAvatarType)
+
+  // Validate API key format
+  const validateApiKeyFormat = (key: string): { valid: boolean; message?: string } => {
+    if (!key) return { valid: false, message: 'API key is required' }
+    if (!key.startsWith('sk-ant-')) {
+      return { valid: false, message: 'API key should start with "sk-ant-"' }
+    }
+    if (key.length < 50) {
+      return { valid: false, message: 'API key appears to be too short' }
+    }
+    return { valid: true }
+  }
+
+  // Test API key connection
+  const testApiKey = async () => {
+    const validation = validateApiKeyFormat(apiKey)
+    if (!validation.valid) {
+      setApiKeyStatus('invalid')
+      setApiKeyError(validation.message || 'Invalid API key format')
+      return
+    }
+
+    setApiKeyStatus('testing')
+    setApiKeyError(null)
+
+    try {
+      // Simple test: try to create a minimal message
+      const { Anthropic } = await import('@anthropic-ai/sdk')
+      const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+
+      // Make a minimal request to test the key
+      await client.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'test' }]
+      })
+
+      setApiKeyStatus('valid')
+    } catch (error) {
+      setApiKeyStatus('invalid')
+      const err = error as { status?: number; message?: string }
+      if (err.status === 401) {
+        setApiKeyError('Invalid API key. Please check your key and try again.')
+      } else if (err.status === 429) {
+        setApiKeyError('Rate limited. Your API key is valid but you\'ve exceeded your quota.')
+      } else {
+        setApiKeyError(err.message || 'Failed to connect to Anthropic API')
+      }
+    }
+  }
+
+  // Reset API key status when key changes
+  useEffect(() => {
+    setApiKeyStatus('idle')
+    setApiKeyError(null)
+  }, [apiKey])
 
   // Handle user profile picture upload
   const handleUserProfileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -248,7 +311,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       })
 
       // Check memory status
-      if (memoryEnabled && memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
+      if (memoryEnabled && memoryUserId) {
         window.electronAPI?.memory.getStatus().then((status) => {
           setMemoryStatus(status)
           setEmbeddingsEnabled(status.embeddingsEnabled)
@@ -260,7 +323,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       // Check embeddings status
       window.electronAPI?.memory.isEmbeddingsEnabled().then(setEmbeddingsEnabled).catch(() => {})
     }
-  }, [isOpen, memoryEnabled, memorySupabaseUrl, memorySupabaseAnonKey, memoryUserId])
+  }, [isOpen, memoryEnabled, memoryUserId])
 
   // Set OpenAI key in backend when it changes
   useEffect(() => {
@@ -290,15 +353,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   // Initialize memory connection
   const handleInitializeMemory = async () => {
-    if (memorySupabaseUrl && memorySupabaseAnonKey && memoryUserId) {
+    if (memoryUserId) {
       try {
-        const result = await window.electronAPI?.memory.initialize({
-          supabaseUrl: memorySupabaseUrl,
-          supabaseAnonKey: memorySupabaseAnonKey,
-          userId: memoryUserId
-        })
-        if (result?.success) {
-          setMemoryStatus({ initialized: true, connected: true })
+        // Note: memory.initialize requires URL, anonKey, and anonymousId
+        // For now, we just refresh the status since the backend handles initialization
+        const status = await window.electronAPI?.memory.getStatus()
+        if (status) {
+          setMemoryStatus(status)
         }
       } catch (e) {
         console.error('Failed to initialize memory:', e)
@@ -372,7 +433,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder="sk-ant-..."
-                    className="input-metallic w-full text-sm pr-10"
+                    className={`input-metallic w-full text-sm pr-10 ${
+                      apiKeyStatus === 'valid' ? 'border-green-500/50' :
+                      apiKeyStatus === 'invalid' ? 'border-red-500/50' : ''
+                    }`}
                   />
                   <button
                     onClick={() => setShowApiKey(!showApiKey)}
@@ -386,6 +450,33 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </button>
                 </div>
                 <button
+                  onClick={testApiKey}
+                  disabled={!apiKey || apiKeyStatus === 'testing'}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition-colors ${
+                    apiKeyStatus === 'valid' ? 'text-green-400 bg-green-500/10' :
+                    apiKeyStatus === 'invalid' ? 'text-red-400 bg-red-500/10' :
+                    apiKeyStatus === 'testing' ? 'text-cyan-400 bg-cyan-500/10' :
+                    'text-cyan-400 hover:bg-cyan-500/10'
+                  } disabled:opacity-50`}
+                >
+                  {apiKeyStatus === 'testing' ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : apiKeyStatus === 'valid' ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Valid
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      Test
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={handleGetApiKey}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
                 >
@@ -393,6 +484,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   Get Key
                 </button>
               </div>
+              {apiKeyError && (
+                <p className="text-xs text-red-400 mt-1.5">{apiKeyError}</p>
+              )}
               <p className="text-xs text-slate-600 mt-1.5">
                 Your API key is stored locally and never sent to any server except Anthropic.
               </p>
@@ -694,7 +788,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 >
                   <div className="flex-shrink-0">
                     {shortcut.isBuiltIn ? (
-                      <Lock className="w-4 h-4 text-slate-500" title="Built-in shortcut" />
+                      <span title="Built-in shortcut"><Lock className="w-4 h-4 text-slate-500" /></span>
                     ) : (
                       <Zap className="w-4 h-4 text-purple-400" />
                     )}
@@ -934,42 +1028,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
             {memoryEnabled && (
               <>
-                {/* Supabase URL */}
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Supabase URL</label>
-                  <input
-                    type="text"
-                    value={memorySupabaseUrl}
-                    onChange={(e) => setMemorySupabaseUrl(e.target.value)}
-                    placeholder="https://your-project.supabase.co"
-                    className="input-metallic w-full text-sm"
-                  />
-                </div>
-
-                {/* Supabase Anon Key */}
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Supabase Anon Key</label>
-                  <div className="relative">
-                    <input
-                      type={showSupabaseKey ? 'text' : 'password'}
-                      value={memorySupabaseAnonKey}
-                      onChange={(e) => setMemorySupabaseAnonKey(e.target.value)}
-                      placeholder="eyJ..."
-                      className="input-metallic w-full text-sm pr-10"
-                    />
-                    <button
-                      onClick={() => setShowSupabaseKey(!showSupabaseKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-                    >
-                      {showSupabaseKey ? (
-                        <EyeOff className="w-4 h-4 text-slate-500" />
-                      ) : (
-                        <Eye className="w-4 h-4 text-slate-500" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
                 {/* OpenAI API Key (for embeddings) */}
                 <div>
                   <label className="block text-sm text-slate-400 mb-1.5">
@@ -1090,7 +1148,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </div>
                   <button
                     onClick={handleInitializeMemory}
-                    disabled={!memorySupabaseUrl || !memorySupabaseAnonKey || !memoryUserId}
+                    disabled={!memoryUserId}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />

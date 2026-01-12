@@ -246,7 +246,7 @@ export function WebBrowserPanel({ url: initialUrl }: WebBrowserPanelProps) {
           ref={webviewRef as React.RefObject<Electron.WebviewTag>}
           src="about:blank"
           className="w-full h-full"
-          allowpopups="true"
+          allowpopups={true}
           partition="persist:browser"
           webpreferences="nodeIntegration=no,contextIsolation=yes"
           useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

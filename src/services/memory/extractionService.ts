@@ -5,7 +5,7 @@
  * Uses both rule-based patterns and optional AI extraction.
  */
 
-import type { UserFact, UserPreference, ConversationSummary } from './types'
+import type { UserFact, UserPreference, ConversationSummary, FactCategory, FactSource, PreferenceDomain } from './types'
 
 /**
  * Patterns for extracting different types of facts from user messages
@@ -54,8 +54,8 @@ const FACT_PATTERNS = {
 /**
  * Extract potential facts from a user message using pattern matching
  */
-export function extractFactsFromMessage(message: string): Omit<UserFact, 'id' | 'user_id' | 'created_at'>[] {
-  const facts: Omit<UserFact, 'id' | 'user_id' | 'created_at'>[] = []
+export function extractFactsFromMessage(message: string): Omit<UserFact, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'keywords' | 'extractedFromConversation' | 'isActive'>[] {
+  const facts: Omit<UserFact, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'keywords' | 'extractedFromConversation' | 'isActive'>[] = []
   const seenFacts = new Set<string>()
 
   for (const [_type, patterns] of Object.entries(FACT_PATTERNS)) {
@@ -73,9 +73,9 @@ export function extractFactsFromMessage(message: string): Omit<UserFact, 'id' | 
         if (!seenFacts.has(key)) {
           seenFacts.add(key)
           facts.push({
-            category,
+            category: category as FactCategory,
             fact,
-            source: 'conversation',
+            source: 'inferred' as FactSource,
             confidence: 0.8, // Pattern-matched facts have good confidence
           })
         }
@@ -108,8 +108,15 @@ const PREFERENCE_PATTERNS = [
 /**
  * Extract preferences from user messages
  */
-export function extractPreferencesFromMessage(message: string): Omit<UserPreference, 'id' | 'user_id' | 'updated_at'>[] {
-  const preferences: Omit<UserPreference, 'id' | 'user_id' | 'updated_at'>[] = []
+type ExtractedPreference = {
+  domain: PreferenceDomain
+  preferenceKey: string
+  preferenceValue: unknown
+  confidence: number
+}
+
+export function extractPreferencesFromMessage(message: string): ExtractedPreference[] {
+  const preferences: ExtractedPreference[] = []
   const seenPrefs = new Set<string>()
 
   for (const { pattern, domain, key, value, valueExtract } of PREFERENCE_PATTERNS) {
@@ -121,9 +128,9 @@ export function extractPreferencesFromMessage(message: string): Omit<UserPrefere
       if (!seenPrefs.has(prefKey)) {
         seenPrefs.add(prefKey)
         preferences.push({
-          domain,
-          preference_key: key,
-          preference_value: prefValue,
+          domain: domain as PreferenceDomain,
+          preferenceKey: key,
+          preferenceValue: prefValue,
           confidence: 0.7,
         })
       }
@@ -201,8 +208,8 @@ export function generateConversationSummary(
   return {
     title,
     summary,
-    workspace_path: workspacePath,
-    key_decisions: [], // Could be enhanced to extract actual decisions
+    workspacePath,
+    keyDecisions: [], // Could be enhanced to extract actual decisions
     keywords,
   }
 }
@@ -278,7 +285,7 @@ export function processConversationForMemory(
     // Extract preferences
     const newPrefs = extractPreferencesFromMessage(msg.content)
     for (const pref of newPrefs) {
-      const key = `${pref.domain}:${pref.preference_key}`
+      const key = `${pref.domain}:${pref.preferenceKey}`
       if (!seenPrefs.has(key)) {
         seenPrefs.add(key)
         preferences.push(pref)

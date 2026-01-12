@@ -8,19 +8,23 @@
  * - Per-agent model selection
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Trash2, Star, Brain } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Stores
 import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appStore'
-import { useAgentStore, type Message, type AgentStatus } from '../../stores/agentStore'
+import { useAgentStore, type Message } from '../../stores/agentStore'
 import { useTabStore } from '../../stores/tabStore'
 
+// Hooks
+import { useChatAutosave } from '../../hooks/useChatAutosave'
+import { ChatMessage, setAgentConversationId } from '../../services/chatHistory/chatHistoryService'
+
 // Services
-import { ClaudeService, type ChatChunk } from '../../services/claude'
+import { ClaudeService } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
-import { assembleSystemPrompt, type EnabledIntegration, type MemoryContext } from '../../services/systemPrompt'
+import { assembleSystemPrompt } from '../../services/systemPrompt'
 import { getCachedMCPTools } from '../../services/toolCache'
 import {
   parseMessage,
@@ -31,7 +35,6 @@ import {
   type DocumentMention
 } from '../../services/mentions/parser'
 import { generateChatTitle } from '../../services/titleGenerator'
-import { useLinkHandler } from '../../hooks/useLinkHandler'
 
 // Components
 import { SettingsModal } from '../settings/SettingsModal'
@@ -101,6 +104,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const updateAgentStatus = useAgentStore(state => state.updateAgentStatus)
   const updateAgentName = useAgentStore(state => state.updateAgentName)
   const updateAgentModel = useAgentStore(state => state.updateAgentModel)
+  const setAgentConversationIdStore = useAgentStore(state => state.setAgentConversationId)
 
   // Tab store
   const updateTab = useTabStore(state => state.updateTab)
@@ -120,11 +124,46 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const { handleLinkClick } = useLinkHandler()
-
   // Get messages from agent
   const messages = agent?.messages || []
   const agentModel = agent?.model || 'claude-sonnet-4-20250514'
+
+  // Convert messages to ChatMessage format for autosave
+  const chatMessages: ChatMessage[] = messages.map(m => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    timestamp: m.timestamp,
+    toolName: m.toolName,
+    toolResult: m.toolResult,
+    bookmarked: m.bookmarked,
+  }))
+
+  // Autosave hook - automatically saves conversations as the user chats
+  const { resetConversation, setConversationId } = useChatAutosave(chatMessages, {
+    enabled: true,
+    agentId,
+    agentName: agent?.name || 'New Chat',
+    modelId: agentModel,
+    workspacePath,
+    debounceDelay: 2000,
+    onSaveComplete: (result) => {
+      if (result.success && result.conversationId) {
+        // Update agent store with conversation ID
+        setAgentConversationIdStore(agentId, result.conversationId)
+        // Also update the chat history service mapping
+        setAgentConversationId(agentId, result.conversationId)
+        console.log('[AgentChat] Autosaved conversation:', result.conversationId)
+      }
+    },
+  })
+
+  // Sync conversation ID if agent already has one (loaded from history)
+  useEffect(() => {
+    if (agent?.conversationId) {
+      setConversationId(agent.conversationId)
+    }
+  }, [agent?.conversationId, setConversationId])
 
   // Initialize Claude service for this agent
   useEffect(() => {
@@ -171,6 +210,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     if (activeTab?.type === 'agent' && activeTab.agentId === agentId) {
       updateTab(activeTab.id, { title: 'New Chat' })
     }
+    // Reset autosave state for new conversation
+    resetConversation()
   }
 
   // Handle input change with mention detection
@@ -257,7 +298,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       )
 
       // Create tool executor with agent context for file locking
-      const toolExecutor = createToolExecutor(workspacePath, agentId, agent.name)
+      const toolExecutor = createToolExecutor(workspacePath || '', agentId, agent.name)
 
       // Create assistant message placeholder
       const assistantMessage: Message = {
@@ -641,7 +682,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           <div className="mb-2 bg-slate-800 border border-white/10 rounded-lg overflow-hidden">
             {mentionSuggestions.map((suggestion, index) => (
               <button
-                key={suggestion.type === 'integration' ? suggestion.id : suggestion.path}
+                key={suggestion.type === 'integration' ? suggestion.integrationId : suggestion.path}
                 className={`
                   w-full px-3 py-2 text-left text-sm flex items-center gap-2
                   ${index === selectedSuggestionIndex ? 'bg-cyan-500/20 text-white' : 'text-slate-300 hover:bg-white/5'}

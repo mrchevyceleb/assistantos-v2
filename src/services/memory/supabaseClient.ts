@@ -3,45 +3,38 @@
  *
  * Manages the connection to Supabase for persistent memory storage.
  * Uses anonymous UUID for cross-device user identification.
+ * All users share the same Supabase backend.
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { MEMORY_SUPABASE_URL, MEMORY_SUPABASE_ANON_KEY } from './constants'
 
 let supabaseClient: SupabaseClient | null = null
-let currentConfig: { url: string; anonKey: string } | null = null
 
 /**
- * Initialize or get the Supabase client
+ * Initialize or get the Supabase client (uses hardcoded credentials)
  */
-export function getSupabaseClient(url: string, anonKey: string): SupabaseClient {
-  // Return existing client if config hasn't changed
-  if (
-    supabaseClient &&
-    currentConfig &&
-    currentConfig.url === url &&
-    currentConfig.anonKey === anonKey
-  ) {
+export function getSupabaseClient(): SupabaseClient {
+  if (supabaseClient) {
     return supabaseClient
   }
 
-  // Create new client with new config
-  supabaseClient = createClient(url, anonKey, {
+  supabaseClient = createClient(MEMORY_SUPABASE_URL, MEMORY_SUPABASE_ANON_KEY, {
     auth: {
       persistSession: false, // We don't use auth sessions
       autoRefreshToken: false,
     },
   })
 
-  currentConfig = { url, anonKey }
   return supabaseClient
 }
 
 /**
  * Check if we have a valid Supabase connection
  */
-export async function testConnection(url: string, anonKey: string): Promise<boolean> {
+export async function testConnection(): Promise<boolean> {
   try {
-    const client = getSupabaseClient(url, anonKey)
+    const client = getSupabaseClient()
     // Try a simple query to test connection
     const { error } = await client.from('memory_users').select('id').limit(1)
     return !error

@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Settings, LayoutDashboard, ListTodo } from 'lucide-react'
 import { AgentSection } from './AgentSection'
 import { FilesSection } from './FilesSection'
 import { QuickNotesSection } from './QuickNotesSection'
+import { ChatHistorySection } from './ChatHistorySection'
 import { MCPIndicators } from './MCPIndicators'
 import { SettingsModal } from '../settings/SettingsModal'
 import { IntegrationsModal } from '../settings/IntegrationsModal'
 import { useTabStore } from '@/stores/tabStore'
+import { useAgentStore, Message } from '@/stores/agentStore'
+import { loadConversation, conversationToMessages } from '@/services/chatHistory/chatHistoryService'
+import { ModelId, AVAILABLE_MODELS, DEFAULT_MODEL } from '@/stores/appStore'
 
 interface SidebarProps {
   className?: string
@@ -17,7 +21,65 @@ export function Sidebar({ className = '' }: SidebarProps) {
   const [showIntegrations, setShowIntegrations] = useState(false)
   const openOrFocusDashboard = useTabStore(state => state.openOrFocusDashboard)
   const openOrFocusTasks = useTabStore(state => state.openOrFocusTasks)
+  const openOrFocusAgent = useTabStore(state => state.openOrFocusAgent)
   const activeTab = useTabStore(state => state.getActiveTab())
+
+  // Agent store methods for loading conversations
+  const createAgentWithConversation = useAgentStore(state => state.createAgentWithConversation)
+  const findAgentByConversationId = useAgentStore(state => state.findAgentByConversationId)
+  const setActiveAgent = useAgentStore(state => state.setActiveAgent)
+  const canCreateAgent = useAgentStore(state => state.canCreateAgent)
+
+  // Get active conversation ID if current tab is an agent
+  const activeConversationId = activeTab?.type === 'agent' && activeTab.agentId
+    ? useAgentStore.getState().getAgent(activeTab.agentId)?.conversationId
+    : null
+
+  // Handle loading a conversation from history
+  const handleLoadConversation = useCallback(async (conversationId: string) => {
+    // Check if this conversation is already open in an agent
+    const existingAgent = findAgentByConversationId(conversationId)
+    if (existingAgent) {
+      // Focus the existing agent
+      setActiveAgent(existingAgent.id)
+      openOrFocusAgent(existingAgent.id, existingAgent.name)
+      return
+    }
+
+    // Check if we can create a new agent
+    if (!canCreateAgent()) {
+      console.warn('[ChatHistory] Cannot load conversation: max agents reached')
+      return
+    }
+
+    // Load the conversation
+    const conversation = await loadConversation(conversationId)
+    if (!conversation) {
+      console.error('[ChatHistory] Failed to load conversation:', conversationId)
+      return
+    }
+
+    // Convert messages to the correct format
+    const messages: Message[] = conversationToMessages(conversation)
+
+    // Validate and get model ID
+    const modelId: ModelId = AVAILABLE_MODELS.some(m => m.id === conversation.model)
+      ? conversation.model as ModelId
+      : DEFAULT_MODEL
+
+    // Create a new agent with the loaded conversation
+    const newAgentId = createAgentWithConversation({
+      conversationId: conversation.id,
+      title: conversation.title,
+      model: modelId,
+      messages,
+    })
+
+    if (newAgentId) {
+      // Open/focus the new agent tab
+      openOrFocusAgent(newAgentId, conversation.title)
+    }
+  }, [findAgentByConversationId, setActiveAgent, openOrFocusAgent, canCreateAgent, createAgentWithConversation])
 
   return (
     <>
@@ -60,6 +122,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
 
         {/* Agent Section */}
         <AgentSection />
+
+        {/* Chat History Section */}
+        <ChatHistorySection
+          onLoadConversation={handleLoadConversation}
+          activeConversationId={activeConversationId}
+        />
 
         {/* Tasks Section */}
         <button

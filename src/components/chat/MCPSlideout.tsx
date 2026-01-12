@@ -18,7 +18,14 @@ import {
   ChevronRight,
   Settings2
 } from 'lucide-react'
-import { useAppStore } from '../../stores/appStore'
+import { useAppStore, MCPIntegration } from '../../stores/appStore'
+
+// MCP Server status type
+interface MCPServerStatus {
+  status: string
+  error?: string
+  toolCount?: number
+}
 
 interface MCPSlideoutProps {
   isOpen: boolean

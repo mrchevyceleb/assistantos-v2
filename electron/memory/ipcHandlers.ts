@@ -2,6 +2,7 @@
  * Memory IPC Handlers
  *
  * Bridges the renderer process to the memory service running in the main process.
+ * All users share the same Supabase backend.
  */
 
 import { ipcMain } from 'electron'
@@ -14,22 +15,24 @@ import {
   formatEmbeddingForSupabase,
 } from './embeddingService.js'
 
+// Hardcoded Supabase credentials - shared by all users
+const MEMORY_SUPABASE_URL = 'https://kvrygtsjobgmrgldwdhw.supabase.co'
+const MEMORY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cnlndHNqb2JnbXJnbGR3ZGh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgwOTA3MDYsImV4cCI6MjA4MzY2NjcwNn0.nITa5CVrPJO5VkHcAJnjBQLcaLAX5EwdxGaZK7UEm08'
+
 // In-memory state for the memory service
 let supabaseClient: SupabaseClient | null = null
-let currentConfig: { url: string; anonKey: string } | null = null
 let internalUserId: string | null = null
 
 /**
- * Get or create Supabase client
+ * Get or create Supabase client (uses hardcoded credentials)
  */
-function getClient(url: string, anonKey: string): SupabaseClient {
-  if (supabaseClient && currentConfig?.url === url && currentConfig?.anonKey === anonKey) {
+function getClient(): SupabaseClient {
+  if (supabaseClient) {
     return supabaseClient
   }
-  supabaseClient = createClient(url, anonKey, {
+  supabaseClient = createClient(MEMORY_SUPABASE_URL, MEMORY_SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
-  currentConfig = { url, anonKey }
   return supabaseClient
 }
 
@@ -59,12 +62,12 @@ function extractKeywords(text: string): string[] {
  * Register all memory IPC handlers
  */
 export function registerMemoryHandlers(): void {
-  // Initialize/connect to Supabase
+  // Initialize/connect to Supabase (uses hardcoded credentials)
   ipcMain.handle(
     'memory:initialize',
-    async (_event, url: string, anonKey: string, anonymousId: string) => {
+    async (_event, anonymousId: string) => {
       try {
-        const client = getClient(url, anonKey)
+        const client = getClient()
 
         // Test connection
         const { error: testError } = await client.from('memory_users').select('id').limit(1)
@@ -560,7 +563,6 @@ export function registerMemoryHandlers(): void {
   // Disconnect/cleanup
   ipcMain.handle('memory:disconnect', async () => {
     supabaseClient = null
-    currentConfig = null
     internalUserId = null
     return { success: true }
   })
@@ -571,6 +573,5 @@ export function registerMemoryHandlers(): void {
  */
 export function cleanupMemoryHandlers(): void {
   supabaseClient = null
-  currentConfig = null
   internalUserId = null
 }

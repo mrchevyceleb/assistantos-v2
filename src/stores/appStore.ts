@@ -166,13 +166,9 @@ interface AppState {
 
   // Memory Settings
   memoryEnabled: boolean
-  memorySupabaseUrl: string
-  memorySupabaseAnonKey: string
   memoryUserId: string | null
   memoryOpenaiKey: string
   setMemoryEnabled: (enabled: boolean) => void
-  setMemorySupabaseUrl: (url: string) => void
-  setMemorySupabaseAnonKey: (key: string) => void
   setMemoryUserId: (id: string | null) => void
   setMemoryOpenaiKey: (key: string) => void
   generateMemoryUserId: () => string
@@ -240,7 +236,11 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       // Workspace
       workspacePath: null,
-      setWorkspacePath: (path) => set({ workspacePath: path }),
+      setWorkspacePath: (path) => {
+        // Notify main process of workspace path for security validation
+        window.electronAPI?.workspace?.setPath(path)
+        set({ workspacePath: path })
+      },
 
       // Files
       currentFile: null,
@@ -389,13 +389,9 @@ export const useAppStore = create<AppState>()(
 
       // Memory Settings
       memoryEnabled: false,
-      memorySupabaseUrl: '',
-      memorySupabaseAnonKey: '',
       memoryUserId: null,
       memoryOpenaiKey: '',
       setMemoryEnabled: (enabled) => set({ memoryEnabled: enabled }),
-      setMemorySupabaseUrl: (url) => set({ memorySupabaseUrl: url }),
-      setMemorySupabaseAnonKey: (key) => set({ memorySupabaseAnonKey: key }),
       setMemoryUserId: (id) => set({ memoryUserId: id }),
       setMemoryOpenaiKey: (key) => set({ memoryOpenaiKey: key }),
       generateMemoryUserId: () => {
@@ -520,8 +516,6 @@ export const useAppStore = create<AppState>()(
         kanbanSettings: state.kanbanSettings,
         onboardedWorkspaces: state.onboardedWorkspaces,
         memoryEnabled: state.memoryEnabled,
-        memorySupabaseUrl: state.memorySupabaseUrl,
-        memorySupabaseAnonKey: state.memorySupabaseAnonKey,
         memoryUserId: state.memoryUserId,
         memoryOpenaiKey: state.memoryOpenaiKey,
         editorFontSize: state.editorFontSize,

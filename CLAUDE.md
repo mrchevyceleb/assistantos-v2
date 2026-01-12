@@ -169,9 +169,38 @@ Two types of mentions:
 
 ### Slash Commands (`src/types/shortcut.ts`, `src/services/shortcuts/parser.ts`)
 
-Type `/` to see shortcuts. Built-in: `/intake`, `/morning`, `/check-email`, `/check-calendar`, `/research`
+Type `/` to see shortcuts. Built-in: `/intake`, `/morning`, `/check-email`, `/check-calendar`, `/research`, `/compact`
 
 **Functions**: `getPartialCommand()`, `getCommandSuggestions()`, `completeCommand()`, `isValidCommandName()`
+
+### Context Token Tracking (`src/services/tokenService.ts`)
+
+Tracks context window usage with visual indicator and auto-compaction warning.
+
+**Settings** (Settings > Claude):
+- `showContextUsage: boolean` - Toggle context indicator in chat header (default: off)
+
+**Features**:
+- **Context Indicator**: Shows "4.2K / 200K" in chat header when enabled
+- **Color Coding**: Green (<50%), Amber (50-80%), Red (>80%)
+- **Tooltip**: Click indicator to see breakdown (messages, system prompt, tools)
+- **Auto-Compaction Warning**: Banner appears when context exceeds 80%, suggests `/compact`
+- **Manual Compaction**: Use `/compact` command to summarize older messages
+
+**Token Service Functions**:
+- `estimateTokens(text)` - Simple estimation (~4 chars/token)
+- `getContextUsage(messages, systemPrompt, tools, modelId)` - Calculate total usage
+- `getMaxTokens(modelId)` - Return context limit (200K for all current models)
+- `formatTokenCount(tokens)` - Format as "4.2K" or "1.2M"
+- `getContextUsageColor(percentage)` - Get color based on usage
+- `shouldCompact(percentage)` - Check if compaction recommended (>80%)
+
+**Model Context Limits**:
+| Model | Context Window |
+|-------|---------------|
+| Claude Opus 4 | 200K |
+| Claude Sonnet 4 | 200K |
+| Claude Haiku 3.5 | 200K |
 
 ### Context Menus
 - **FileContextMenu**: New File/Folder, Send to Chat, Copy Path, Show in Explorer, Rename, Delete
@@ -179,6 +208,52 @@ Type `/` to see shortcuts. Built-in: `/intake`, `/morning`, `/check-email`, `/ch
 - **EditorContextMenu**: Cut/Copy/Paste, Select All, Bold/Italic/Strikethrough/Code, Insert Link
 - **ChatMessageContextMenu**: Copy Text, Copy Code, Re-send (user messages), Delete
 - **Shared** (`src/components/shared/ContextMenu.tsx`): `MenuItem`, `MenuDivider`, `MenuHeader`, `ContextMenuContainer`, `useContextMenuPosition`, `useContextMenuClose`
+
+### Chat History (`src/components/sidebar/ChatHistorySection.tsx`, `src/services/chatHistory/`)
+
+**Autosave System**:
+- Conversations automatically saved to `%APPDATA%/assistantos/conversations/` as JSON files
+- Debounced saving (2 second delay) to avoid excessive writes
+- Triggers after each completed message (not during streaming)
+- Minimum 2 messages required before saving
+
+**Chat History Service** (`src/services/chatHistory/chatHistoryService.ts`):
+- `saveConversationDebounced()` - Save with 2s debounce
+- `saveConversationImmediate()` - Save immediately
+- `loadConversation()` - Load by ID
+- `listConversations()` - Get all saved conversations (metadata)
+- `deleteConversation()` - Remove from storage
+- `groupConversationsByDate()` - Organize by Today/Yesterday/Last 7 Days/etc.
+
+**Autosave Hook** (`src/hooks/useChatAutosave.ts`):
+- `useChatAutosave(messages, options)` - Hook for components
+- Returns: `conversationId`, `saveNow()`, `resetConversation()`, `setConversationId()`
+- Automatically tracks conversation ID per agent
+
+**Chat History UI** (Sidebar):
+- Collapsible section showing saved conversations grouped by date
+- Click to load conversation into new agent tab
+- Delete button to remove conversations
+- Shows title, preview, timestamp, and message count
+- Highlights currently active conversation
+
+**Data Structure** (per conversation):
+```typescript
+{
+  id: string              // Unique conversation ID
+  title: string           // Auto-generated from first message
+  createdAt: string       // ISO timestamp
+  updatedAt: string       // ISO timestamp
+  model: string           // Model used (e.g., claude-sonnet-4)
+  messages: Message[]     // Full message history
+  bookmarks: string[]     // Bookmarked message IDs
+  workspace: string|null  // Associated workspace path
+}
+```
+
+**Agent Store Extensions**:
+- `createAgentWithConversation()` - Create agent with loaded history
+- `findAgentByConversationId()` - Find existing agent for conversation
 
 ### Quick Notes (`src/components/sidebar/QuickNotesSection.tsx`)
 Sticky notes in sidebar. Max 200 chars per note. Persisted in appStore.
@@ -250,7 +325,6 @@ Tailwind with custom theme: metallic dark + cyan/violet/pink accents, custom sha
 
 ## Future Enhancements
 
-- Context management (token counting, auto-save)
 - Additional MCP integrations (GitHub, Slack, Discord)
 - Subagents (parallel task execution)
 - Skills system (reusable workflows)

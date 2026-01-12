@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { AppLayout } from './components/layout/AppLayout'
 import { TitleBar } from './components/layout/TitleBar'
 import { WebBrowser } from './components/browser/WebBrowser'
+import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { useAppStore } from './stores/appStore'
 
 function App() {
@@ -49,14 +50,18 @@ function App() {
   }, [integrationConfigs])
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
-      <TitleBar />
-      <main className="flex-1 w-full flex overflow-hidden">
-        <AppLayout />
-      </main>
-      {/* Legacy WebBrowser modal - kept for backward compatibility */}
-      <WebBrowser />
-    </div>
+    <ErrorBoundary>
+      <div className="h-screen flex flex-col overflow-hidden">
+        <TitleBar />
+        <main className="flex-1 w-full flex overflow-hidden">
+          <ErrorBoundary>
+            <AppLayout />
+          </ErrorBoundary>
+        </main>
+        {/* Legacy WebBrowser modal - kept for backward compatibility */}
+        <WebBrowser />
+      </div>
+    </ErrorBoundary>
   )
 }
 

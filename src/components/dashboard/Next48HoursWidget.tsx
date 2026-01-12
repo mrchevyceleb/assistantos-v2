@@ -159,9 +159,10 @@ export function Next48HoursWidget() {
             }
           )
 
-          if (result?.content) {
+          if (result?.success && result.result) {
             // Parse the response - format may vary based on MCP implementation
-            const content = result.content[0]?.text || ''
+            const resultData = result.result as { content?: Array<{ text?: string }> }
+            const content = resultData?.content?.[0]?.text || ''
             try {
               // Try to parse as JSON array of events
               const events: CalendarEvent[] = JSON.parse(content)
