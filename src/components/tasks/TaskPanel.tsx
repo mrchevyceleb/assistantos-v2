@@ -11,17 +11,23 @@ export function TaskPanel() {
   const [tasks, setTasks] = useState<ParsedTask[]>([])
   const [projects, setProjects] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [tasksExist, setTasksExist] = useState(true)
+  const [tasksFolderExists, setTasksFolderExists] = useState(true)
 
   // Use store settings or defaults
   const settings: KanbanSettings = kanbanSettings || DEFAULT_KANBAN_SETTINGS
 
-  // Load projects list
+  // Load projects list and check if TASKS folder exists
   const loadProjects = useCallback(async () => {
-    if (!workspacePath) return
+    if (!workspacePath || !window.electronAPI) return
+
+    // Check if TASKS folder exists
+    const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
+    const exists = await window.electronAPI.fs.exists(tasksPath)
+    setTasksFolderExists(exists)
+
+    // Get project list
     const projectList = await getProjectList(workspacePath)
     setProjects(projectList)
-    setTasksExist(projectList.length > 0)
   }, [workspacePath])
 
   // Load tasks
@@ -64,14 +70,35 @@ export function TaskPanel() {
   const openCount = tasks.filter(t => t.status !== 'done').length
   const totalCount = tasks.length
 
-  // Create TASKS folder helper
+  // Create TASKS folder with a default project
   const handleCreateTasksFolder = async () => {
     if (!workspacePath || !window.electronAPI) return
 
     const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${TASKS_FOLDER}`
     try {
+      // Create TASKS folder
       await window.electronAPI.fs.createDir(tasksPath)
+
+      // Create a default "General" project folder
+      const defaultProjectPath = `${tasksPath}/General`
+      await window.electronAPI.fs.createDir(defaultProjectPath)
+
+      // Create initial tasks.md file
+      const initialContent = `# General Tasks
+
+## Active Tasks
+
+- [ ] First task (edit or delete this)
+
+## Notes
+
+Add any project notes here.
+`
+      await window.electronAPI.fs.writeFile(`${defaultProjectPath}/tasks.md`, initialContent)
+
+      // Reload projects and tasks
       await loadProjects()
+      await loadTasks()
     } catch (err) {
       console.error('Failed to create TASKS folder:', err)
     }
@@ -163,12 +190,12 @@ export function TaskPanel() {
           <div className="flex items-center justify-center h-full">
             <RefreshCw className="w-6 h-6 text-slate-500 animate-spin" />
           </div>
-        ) : !tasksExist ? (
+        ) : !tasksFolderExists ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <FolderPlus className="w-12 h-12 text-slate-600 mb-4" />
             <p className="text-slate-400 mb-2">No TASKS folder found</p>
             <p className="text-sm text-slate-500 mb-4">
-              Create a TASKS folder with project subfolders to get started
+              Create a TASKS folder with a default project to get started
             </p>
             <button
               onClick={handleCreateTasksFolder}
