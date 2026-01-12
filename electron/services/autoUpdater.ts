@@ -14,8 +14,10 @@
  */
 
 import { BrowserWindow } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import pkg from 'electron-updater'
 import { createLogger } from './logger.js'
+
+const { autoUpdater } = pkg
 
 const logger = createLogger('AutoUpdater')
 
@@ -50,8 +52,9 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
     return
   }
 
-  // Configure auto-updater
-  autoUpdater.autoDownload = false  // Let user decide
+  // Configure auto-updater for automatic updates
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
     updateStatus.checking = true
