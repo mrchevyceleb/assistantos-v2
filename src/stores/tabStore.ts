@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 // Types of tabs supported
-export type TabType = 'agent' | 'file' | 'browser' | 'dashboard' | 'tasks' | 'ludicrous'
+export type TabType = 'agent' | 'file' | 'browser' | 'dashboard' | 'tasks' | 'ludicrous' | 'note'
 
 // Tab interface
 export interface Tab {
@@ -13,6 +13,7 @@ export interface Tab {
   agentId?: string      // For 'agent' tabs
   filePath?: string     // For 'file' tabs
   url?: string          // For 'browser' tab
+  noteId?: string       // For 'note' tabs
 }
 
 // Tab store interface

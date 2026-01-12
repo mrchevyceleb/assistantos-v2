@@ -1,7 +1,10 @@
 import { useState, useCallback, useRef } from 'react'
+import { Plus } from 'lucide-react'
 import { ParsedTask, TaskStatus, KANBAN_COLUMN_ORDER, KanbanSettings } from '../../types/task'
-import { updateTaskStatus } from '../../services/taskParser'
+import { updateTaskStatus, getTasksFolder } from '../../services/taskParser'
 import { KanbanColumn } from './KanbanColumn'
+import { NewTaskDialog } from './NewTaskDialog'
+import { useAppStore } from '../../stores/appStore'
 
 interface KanbanBoardProps {
   tasks: ParsedTask[]
@@ -10,7 +13,10 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps) {
+  const { workspacePath } = useAppStore()
   const [updating, setUpdating] = useState(false)
+  const [showNewTaskDialog, setShowNewTaskDialog] = useState(false)
+  const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('todo')
   const draggedTaskRef = useRef<ParsedTask | null>(null)
 
   // Group tasks by status
@@ -59,6 +65,58 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
     }
   }, [onTaskUpdate])
 
+  // Handle new task creation
+  const handleCreateTask = useCallback(async (projectName: string, taskTitle: string, dueDate: string, status: TaskStatus) => {
+    if (!workspacePath || !window.electronAPI) return
+
+    setUpdating(true)
+    try {
+      // Get tasks folder path
+      const tasksFolder = getTasksFolder(settings.customTasksFolder)
+      const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${tasksFolder}`
+
+      // Create project folder if it doesn't exist
+      const projectPath = `${tasksPath}/${projectName}`
+      const projectExists = await window.electronAPI.fs.exists(projectPath)
+      if (!projectExists) {
+        await window.electronAPI.fs.createDir(projectPath)
+      }
+
+      // Create task file with filename convention: "ProjectName - Task Title - Due YYYY-MM-DD.md"
+      const filename = `${projectName} - ${taskTitle} - Due ${dueDate}.md`
+      const filePath = `${tasksPath}/${filename}`
+
+      // Create initial file content with a checkbox based on status
+      const statusChar = status === 'backlog' ? ' ' : status === 'todo' ? 'o' : status === 'in_progress' ? '>' : status === 'review' ? '?' : 'x'
+      const content = `# ${taskTitle}
+
+## Description
+
+Add task description here...
+
+## Checklist
+
+- [${statusChar}] ${taskTitle}
+
+## Notes
+
+`
+
+      const success = await window.electronAPI.fs.writeFile(filePath, content)
+      if (success) {
+        // Refresh the task list
+        onTaskUpdate()
+        setShowNewTaskDialog(false)
+      } else {
+        console.error('Failed to create task file')
+      }
+    } catch (err) {
+      console.error('Failed to create new task:', err)
+    } finally {
+      setUpdating(false)
+    }
+  }, [workspacePath, settings.customTasksFolder, onTaskUpdate])
+
   // Get columns to display (optionally hide empty)
   const visibleColumns = settings.hideEmptyColumns
     ? KANBAN_COLUMN_ORDER.filter((status) => tasksByStatus[status].length > 0)
@@ -81,6 +139,10 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
             showProject={showProject}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
+            onAddTask={(columnStatus) => {
+              setDefaultStatus(columnStatus)
+              setShowNewTaskDialog(true)
+            }}
           />
         ))}
 
@@ -99,6 +161,32 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
           <div className="text-sm text-cyan-400">Updating...</div>
         </div>
+      )}
+
+      {/* Floating New Task Button */}
+      <button
+        onClick={() => {
+          setDefaultStatus('todo')
+          setShowNewTaskDialog(true)
+        }}
+        className="absolute bottom-6 right-6 p-4 rounded-full shadow-2xl transition-all hover:scale-105"
+        style={{
+          background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.9) 0%, rgba(147, 51, 234, 0.9) 100%)',
+          boxShadow: '0 10px 30px rgba(0, 212, 255, 0.4), 0 0 60px rgba(147, 51, 234, 0.3)'
+        }}
+        title="Create New Task"
+      >
+        <Plus className="w-6 h-6 text-white" />
+      </button>
+
+      {/* New Task Dialog */}
+      {showNewTaskDialog && (
+        <NewTaskDialog
+          onConfirm={handleCreateTask}
+          onCancel={() => setShowNewTaskDialog(false)}
+          defaultProject={settings.selectedProject || ''}
+          defaultStatus={defaultStatus}
+        />
       )}
     </div>
   )

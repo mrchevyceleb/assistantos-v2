@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG } from '../../types/task'
 import { KanbanCard } from './KanbanCard'
 
@@ -8,6 +9,7 @@ interface KanbanColumnProps {
   showProject?: boolean
   onDragStart: (e: React.DragEvent, task: ParsedTask) => void
   onDrop: (status: TaskStatus) => void
+  onAddTask?: (status: TaskStatus) => void
 }
 
 export function KanbanColumn({
@@ -15,7 +17,8 @@ export function KanbanColumn({
   tasks,
   showProject = false,
   onDragStart,
-  onDrop
+  onDrop,
+  onAddTask
 }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const config = TASK_STATUS_CONFIG[status]
@@ -71,15 +74,26 @@ export function KanbanColumn({
             {config.label}
           </h3>
         </div>
-        <span
-          className="text-xs font-medium px-2 py-0.5 rounded-full"
-          style={{
-            background: 'rgba(255, 255, 255, 0.08)',
-            color: 'rgba(255, 255, 255, 0.6)'
-          }}
-        >
-          {tasks.length}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-xs font-medium px-2 py-0.5 rounded-full"
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}
+          >
+            {tasks.length}
+          </span>
+          {onAddTask && (
+            <button
+              onClick={() => onAddTask(status)}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              title={`Add task to ${config.label}`}
+            >
+              <Plus className="w-4 h-4 text-slate-400 hover:text-cyan-400" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Task List */}
