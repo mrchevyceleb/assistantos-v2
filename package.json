@@ -1,6 +1,6 @@
 {
   "name": "assistantos",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "type": "module",
   "description": "Your personal AI assistant operating system",
   "main": "dist-electron/electron/main.js",
