@@ -9,7 +9,7 @@ export function AppLayout() {
   const tabs = useTabStore(state => state.tabs)
   const openOrFocusAgent = useTabStore(state => state.openOrFocusAgent)
   const agents = useAgentStore(state => state.agents)
-  const activeAgentId = useAgentStore(state => state.activeAgentId)
+  const _activeAgentId = useAgentStore(state => state.activeAgentId)
 
   // Initialize: Open a tab for the default agent on first load
   useEffect(() => {

@@ -48,7 +48,7 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
   const updateMessage = useAgentStore(state => state.updateMessage)
   const clearMessages = useAgentStore(state => state.clearMessages)
   const updateAgentStatus = useAgentStore(state => state.updateAgentStatus)
-  const removeAgent = useAgentStore(state => state.removeAgent)
+  const _removeAgent = useAgentStore(state => state.removeAgent)
 
   // Get last 5 messages
   const recentMessages = agent.messages.slice(-5)
@@ -104,7 +104,7 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
         [],
         null
       )
-      const toolExecutor = createToolExecutor(workspacePath, agent.id, agent.name)
+      const toolExecutor = createToolExecutor(workspacePath || '.', agent.id, agent.name)
 
       // Stream response
       for await (const chunk of claudeServiceRef.current.chat(
@@ -117,7 +117,7 @@ export function LudicrousModeCard({ agent, onExpand }: LudicrousModeCardProps) {
           const currentAgent = useAgentStore.getState().getAgent(agent.id)
           const currentMsg = currentAgent?.messages.find(m => m.id === assistantMessage.id)
           updateMessage(agent.id, assistantMessage.id, {
-            content: (currentMsg?.content || '') + chunk.content,
+            content: (currentMsg?.content || '') + (chunk.text || ''),
           })
         }
       }

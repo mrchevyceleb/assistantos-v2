@@ -52,7 +52,7 @@ export function MCPIndicators({ onManage }: MCPIndicatorsProps) {
   }
 
   const enabledCount = mcpStatuses.length
-  const readyCount = mcpStatuses.filter(s => s.ready).length
+  const _readyCount = mcpStatuses.filter(s => s.ready).length
 
   return (
     <button

@@ -69,3 +69,42 @@ export function completeCommand(text: string, shortcut: PromptShortcut): string 
 export function isValidCommandName(name: string): boolean {
   return /^[\w-]+$/.test(name) && name.length > 0 && name.length <= 30
 }
+
+/**
+ * Expand a slash command if the input matches a known shortcut
+ * Handles both exact matches ("/morning") and commands with trailing content ("/morning extra stuff")
+ * @param text The input text
+ * @param shortcuts All available shortcuts
+ * @returns The expanded text with command replaced by prompt, or original text if no match
+ */
+export function expandSlashCommand(text: string, shortcuts: PromptShortcut[]): string {
+  const trimmed = text.trim()
+
+  // Check if input starts with a slash command
+  if (!trimmed.startsWith('/')) {
+    return text
+  }
+
+  // Extract the command name (first word after /)
+  const match = trimmed.match(/^\/(\S+)/)
+  if (!match) {
+    return text
+  }
+
+  const commandName = match[1].toLowerCase()
+  const restOfInput = trimmed.slice(match[0].length).trim()
+
+  // Find a matching shortcut
+  const shortcut = shortcuts.find(s => s.name.toLowerCase() === commandName)
+  if (!shortcut) {
+    return text
+  }
+
+  // Replace command with prompt
+  // If there's additional text after the command, append it
+  if (restOfInput) {
+    return `${shortcut.prompt}\n\n${restOfInput}`
+  }
+
+  return shortcut.prompt
+}

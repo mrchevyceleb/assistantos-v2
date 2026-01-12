@@ -9,7 +9,7 @@ import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS } from '../
 import { PromptShortcut } from '@/types/shortcut'
 
 // Shortcut Parser
-import { getPartialCommand, getCommandSuggestions, completeCommand } from '@/services/shortcuts/parser'
+import { getPartialCommand, getCommandSuggestions, completeCommand, expandSlashCommand } from '@/services/shortcuts/parser'
 
 // Services
 import { ClaudeService, type ChatChunk } from '../../services/claude'
@@ -45,6 +45,19 @@ import {
 } from '../../services/tokenService'
 import { useLinkHandler } from '../../hooks/useLinkHandler'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
+
+// Agent SDK
+import {
+  runAgent,
+  isAssistantMessage,
+  isResultMessage,
+  isSystemInitMessage,
+  isToolProgressMessage,
+  getAssistantText,
+  getToolUseBlocks,
+  isClaudeCodeInstalled,
+  type AgentConfig
+} from '../../services/agentService'
 
 // Components
 import { IntegrationsModal } from '../settings/IntegrationsModal'
@@ -230,7 +243,8 @@ export function AgentChat() {
     agentAvatarType,
     agentCustomAvatar,
     agentPresetAvatar,
-    showContextUsage} = useAppStore()
+    showContextUsage,
+    agentBypassPermissions} = useAppStore()
   const { handleLinkClick } = useLinkHandler()
 
   // Speech recognition for voice dictation
@@ -274,6 +288,11 @@ export function AgentChat() {
   // Auto-compaction tracking
   const [isAutoCompacting, setIsAutoCompacting] = useState(false)
   const hasAutoCompactedRef = useRef(false)
+  // Agent SDK mode - default enabled, falls back to classic if Claude Code CLI not installed
+  const useAgentSDK = true
+  const [claudeCodeInstalled, setClaudeCodeInstalled] = useState<boolean | null>(null)
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -297,6 +316,18 @@ export function AgentChat() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Check if Claude Code CLI is installed for Agent SDK mode
+  useEffect(() => {
+    const checkClaudeCode = async () => {
+      const installed = await isClaudeCodeInstalled()
+      setClaudeCodeInstalled(installed)
+      if (!installed && useAgentSDK) {
+        console.warn('Claude Code CLI not installed. Agent SDK mode requires: npm install -g @anthropic-ai/claude-code')
+      }
+    }
+    checkClaudeCode()
+  }, [useAgentSDK])
 
   // Calculate context usage when messages change (only if showContextUsage is enabled)
   useEffect(() => {
@@ -371,7 +402,7 @@ export function AgentChat() {
           [{ role: 'user', content: compactionPrompt }],
           'You are a helpful assistant that creates concise conversation summaries. Focus on preserving essential context.'
         )) {
-          if (event.type === 'content' && event.text) {
+          if (event.type === 'text' && event.text) {
             summary += event.text
           }
         }
@@ -721,6 +752,7 @@ export function AgentChat() {
     const partialCommand = getPartialCommand(value)
     if (partialCommand) {
       const suggestions = getCommandSuggestions(partialCommand, shortcuts)
+      console.log('[Shortcuts] Partial command:', partialCommand, 'Shortcuts count:', shortcuts.length, 'Suggestions:', suggestions.length)
       setCommandSuggestions(suggestions.slice(0, 10))
       setMentionSuggestions([])
       setSelectedSuggestionIndex(0)
@@ -862,8 +894,208 @@ export function AgentChat() {
     setShowIntegrations(true)
   }, [])
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return
+  /**
+   * Send message using Agent SDK (Claude Code-like behavior)
+   */
+  const sendMessageAgentSDK = async (inputOverride?: string) => {
+    const messageInput = inputOverride || input
+    if (!messageInput.trim() || isLoading) return
+
+    if (!workspacePath) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: 'Please select a workspace folder first using the file tree.',
+        timestamp: new Date(),
+      }])
+      return
+    }
+
+    if (claudeCodeInstalled === false) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: 'Claude Code CLI is not installed. Please install it with:\n\n```bash\nnpm install -g @anthropic-ai/claude-code\n```\n\nThen restart the app.',
+        timestamp: new Date(),
+      }])
+      return
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: messageInput.trim(),
+      timestamp: new Date(),
+    }
+
+    setMessages(prev => [...prev, userMessage])
+    const userInput = messageInput.trim()
+    setInput('')
+    setMentionSuggestions([])
+    setActiveMentions([])
+    setActiveDocuments([])
+    setIsLoading(true)
+
+    // Create assistant message for streaming content
+    const assistantMessageId = (Date.now() + 1).toString()
+    setMessages(prev => [...prev, {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    }])
+
+    // Create abort controller for cancellation
+    abortControllerRef.current = new AbortController()
+
+    try {
+      // Read content of referenced documents and append to prompt
+      const documentContext = await readDocumentContext(activeDocuments)
+      const fullPrompt = documentContext
+        ? `${userInput}${documentContext}`
+        : userInput
+
+      // Configure Agent SDK
+      // Permission modes: 'default' (ask), 'acceptEdits' (auto-accept edits), 'bypassPermissions' (full auto)
+      const permissionMode = agentBypassPermissions ? 'bypassPermissions' : 'acceptEdits'
+      console.log('[Agent SDK] Running with permissionMode:', permissionMode)
+
+      const config: AgentConfig = {
+        cwd: workspacePath,
+        permissionMode,
+        model: selectedModel,
+        includePartialMessages: true,
+        resume: agentSessionId || undefined,
+        settingSources: ['project'], // Load CLAUDE.md
+        abortController: abortControllerRef.current,
+        systemPrompt: customInstructions ? {
+          type: 'preset',
+          preset: 'claude_code',
+          append: customInstructions
+        } : undefined,
+      }
+
+      // Run agent query
+      console.log('[Agent SDK] Starting query with config:', { cwd: config.cwd, permissionMode: config.permissionMode, model: config.model })
+      for await (const message of runAgent(fullPrompt, config)) {
+        // Handle different message types
+        if (isSystemInitMessage(message)) {
+          // Capture session ID for resuming
+          setAgentSessionId(message.session_id)
+          console.log('Agent session started:', message.session_id)
+        }
+        else if (isAssistantMessage(message)) {
+          // Extract text and update assistant message
+          const text = getAssistantText(message)
+          if (text) {
+            setMessages(prev => {
+              const updated = [...prev]
+              const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+              if (lastIndex !== -1) {
+                updated[lastIndex] = {
+                  ...updated[lastIndex],
+                  content: text
+                }
+              }
+              return updated
+            })
+          }
+
+          // Handle tool use blocks
+          const toolBlocks = getToolUseBlocks(message)
+          for (const tool of toolBlocks) {
+            // Insert tool message before assistant message
+            setMessages(prev => {
+              const toolMessage: Message = {
+                id: `tool-${tool.id}`,
+                role: 'tool',
+                content: `Using ${tool.name}`,
+                toolName: tool.name,
+                toolResult: JSON.stringify(tool.input, null, 2).substring(0, 500),
+                timestamp: new Date(),
+              }
+
+              // Find last assistant message and insert before it
+              let lastAssistantIndex = -1
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].role === 'assistant') {
+                  lastAssistantIndex = i
+                  break
+                }
+              }
+
+              if (lastAssistantIndex !== -1) {
+                const updated = [...prev]
+                updated.splice(lastAssistantIndex, 0, toolMessage)
+                return updated
+              }
+              return [...prev, toolMessage]
+            })
+          }
+        }
+        else if (isToolProgressMessage(message)) {
+          // Update tool progress
+          setMessages(prev => {
+            const updated = [...prev]
+            const toolIndex = updated.findIndex(m => m.id === `tool-${message.tool_use_id}`)
+            if (toolIndex !== -1) {
+              updated[toolIndex] = {
+                ...updated[toolIndex],
+                content: `Using ${message.tool_name} (${Math.round(message.elapsed_time_seconds)}s)`
+              }
+            }
+            return updated
+          })
+        }
+        else if (isResultMessage(message)) {
+          // Handle result
+          if (message.subtype === 'success') {
+            console.log('Agent completed successfully:', {
+              turns: message.num_turns,
+              cost: message.total_cost_usd,
+              result: message.result
+            })
+          } else {
+            console.error('Agent error:', message)
+            setMessages(prev => {
+              const updated = [...prev]
+              const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+              if (lastIndex !== -1 && !updated[lastIndex].content) {
+                updated[lastIndex] = {
+                  ...updated[lastIndex],
+                  content: `Error: ${message.errors?.join(', ') || 'Agent execution failed'}`
+                }
+              }
+              return updated
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Agent SDK error:', error)
+      setMessages(prev => {
+        const updated = [...prev]
+        const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
+        if (lastIndex !== -1) {
+          updated[lastIndex] = {
+            ...updated[lastIndex],
+            content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+          }
+        }
+        return updated
+      })
+    } finally {
+      setIsLoading(false)
+      abortControllerRef.current = null
+    }
+  }
+
+  /**
+   * Send message using classic ClaudeService (fallback mode)
+   */
+  const sendMessageClassic = async (inputOverride?: string) => {
+    const messageInput = inputOverride || input
+    if (!messageInput.trim() || isLoading) return
 
     if (!apiKey) {
       setMessages(prev => [...prev, {
@@ -892,7 +1124,7 @@ export function AgentChat() {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: messageInput.trim(),
       timestamp: new Date(),
     }
 
@@ -940,7 +1172,7 @@ export function AgentChat() {
 
       // Fetch memory context if enabled (skip for trivial messages to save tokens)
       let memoryContext: MemoryContext | null = null
-      const trimmedInput = input.trim()
+      const trimmedInput = messageInput.trim()
       if (memoryEnabled && memoryUserId && !isTrivialMessage(trimmedInput)) {
         try {
           const memoryData = await window.electronAPI.memory.getRelevantMemories(trimmedInput)
@@ -974,8 +1206,8 @@ export function AgentChat() {
 
       // Append document context to user message if documents were referenced
       const messageWithContext = documentContext
-        ? `${input.trim()}${documentContext}`
-        : input.trim()
+        ? `${trimmedInput}${documentContext}`
+        : trimmedInput
 
       // Setup tool executor
       const toolExecutor = createToolExecutor(workspacePath)
@@ -1005,6 +1237,29 @@ export function AgentChat() {
       })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  /**
+   * Unified sendMessage - dispatches to Agent SDK or Classic mode
+   * Also handles slash command expansion before sending
+   */
+  const sendMessage = async () => {
+    // First, expand any slash commands in the input
+    const expandedInput = expandSlashCommand(input, shortcuts)
+    const didExpand = expandedInput !== input
+
+    if (didExpand) {
+      console.log('[Chat] Expanded slash command:', input, '->', expandedInput.substring(0, 100) + '...')
+    }
+
+    // Use the expanded input directly
+    const inputToSend = didExpand ? expandedInput : input
+
+    if (useAgentSDK && claudeCodeInstalled !== false) {
+      await sendMessageAgentSDK(inputToSend)
+    } else {
+      await sendMessageClassic(inputToSend)
     }
   }
 

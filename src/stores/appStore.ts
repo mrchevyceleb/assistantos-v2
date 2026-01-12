@@ -226,6 +226,10 @@ interface AppState {
   showContextUsage: boolean
   setShowContextUsage: (show: boolean) => void
 
+  // Agent SDK Settings
+  agentBypassPermissions: boolean
+  setAgentBypassPermissions: (bypass: boolean) => void
+
   // Hydration flag (for avoiding race conditions with persisted settings)
   _hasHydrated: boolean
   setHasHydrated: (state: boolean) => void
@@ -490,6 +494,10 @@ export const useAppStore = create<AppState>()(
       showContextUsage: false,
       setShowContextUsage: (show) => set({ showContextUsage: show }),
 
+      // Agent SDK Settings
+      agentBypassPermissions: true, // Default to true for autonomous operation
+      setAgentBypassPermissions: (bypass) => set({ agentBypassPermissions: bypass }),
+
       // Hydration flag
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
@@ -527,6 +535,7 @@ export const useAppStore = create<AppState>()(
         agentCustomAvatar: state.agentCustomAvatar,
         agentPresetAvatar: state.agentPresetAvatar,
         showContextUsage: state.showContextUsage,
+        agentBypassPermissions: state.agentBypassPermissions,
       }),
     }
   )

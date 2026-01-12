@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { X, ZoomIn, ZoomOut, RotateCcw, Image, Film, Music, FileQuestion, Maximize2, Minimize2, Loader2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
-import { getMediaType, getMimeType, formatFileSize, getFileExtension } from '../../utils/fileTypes'
+import { getMediaType, getMimeType, getFileExtension } from '../../utils/fileTypes'
 
 interface MediaInfo {
   size: number

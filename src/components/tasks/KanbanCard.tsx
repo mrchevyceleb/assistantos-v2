@@ -1,5 +1,5 @@
 import { Calendar, AlertTriangle, Folder } from 'lucide-react'
-import { ParsedTask, TASK_STATUS_CONFIG } from '../../types/task'
+import { ParsedTask } from '../../types/task'
 import { useAppStore } from '../../stores/appStore'
 
 interface KanbanCardProps {

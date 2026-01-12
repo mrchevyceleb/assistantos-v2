@@ -6,7 +6,7 @@
  * with multiple agents at once.
  */
 
-import { Zap, Maximize2, Bot } from 'lucide-react'
+import { Zap, Bot } from 'lucide-react'
 import { useAgentStore, MAX_AGENTS } from '../../stores/agentStore'
 import { useTabStore } from '../../stores/tabStore'
 import { LudicrousModeCard } from './LudicrousModeCard'

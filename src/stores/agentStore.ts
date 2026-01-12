@@ -62,6 +62,7 @@ interface AgentStore {
 
   // Message management
   addMessage: (agentId: string, message: Message) => void
+  insertMessageBefore: (agentId: string, message: Message, beforeMessageId: string) => void
   updateMessage: (agentId: string, messageId: string, updates: Partial<Message>) => void
   setMessages: (agentId: string, messages: Message[]) => void
   clearMessages: (agentId: string) => void
@@ -234,6 +235,23 @@ export const useAgentStore = create<AgentStore>((set, get) => {
             ? { ...a, messages: [...a.messages, message] }
             : a
         ),
+      }))
+    },
+
+    // Insert message before a specific message (used for tool messages before assistant)
+    insertMessageBefore: (agentId, message, beforeMessageId) => {
+      set(state => ({
+        agents: state.agents.map(a => {
+          if (a.id !== agentId) return a
+          const index = a.messages.findIndex(m => m.id === beforeMessageId)
+          if (index === -1) {
+            // If target not found, append to end
+            return { ...a, messages: [...a.messages, message] }
+          }
+          const newMessages = [...a.messages]
+          newMessages.splice(index, 0, message)
+          return { ...a, messages: newMessages }
+        }),
       }))
     },
 

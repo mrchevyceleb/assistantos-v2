@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Bot, FileText, Globe, LayoutDashboard, CheckSquare, Zap } from 'lucide-react'
+import { Plus, Bot, Globe, LayoutDashboard, CheckSquare, Zap } from 'lucide-react'
 import { useTabStore } from '../../stores/tabStore'
 import { useAgentStore } from '../../stores/agentStore'
-import { useAppStore } from '../../stores/appStore'
 
 interface MenuItem {
   id: string
@@ -151,7 +150,7 @@ export function AddTabButton() {
             py-1 min-w-[180px]
           "
         >
-          {menuItems.map((item, index) => (
+          {menuItems.map((item) => (
             <div key={item.id}>
               {/* Separator before LUDICROUS MODE */}
               {item.id === 'ludicrous' && (

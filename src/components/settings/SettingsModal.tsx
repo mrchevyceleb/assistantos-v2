@@ -34,8 +34,8 @@ import {
   Globe,
   Star
 } from 'lucide-react'
-import { useAppStore, AVAILABLE_MODELS, type ModelId, DEFAULT_CUSTOM_INSTRUCTIONS, PRESET_AVATARS, type AgentAvatarType } from '../../stores/appStore'
-import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
+import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS, type AgentAvatarType } from '../../stores/appStore'
+import { PromptShortcut } from '@/types/shortcut'
 import { isValidCommandName } from '@/services/shortcuts/parser'
 
 // Memory status type from API
@@ -102,8 +102,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setCustomInstructions,
     resetCustomInstructions,
     workspacePath,
-    taskSettings,
-    setTaskSettings,
     memoryEnabled,
     setMemoryEnabled,
     memoryUserId,
@@ -126,7 +124,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setAgentCustomAvatar,
     setAgentPresetAvatar,
     showContextUsage,
-    setShowContextUsage
+    setShowContextUsage,
+    agentBypassPermissions,
+    setAgentBypassPermissions
   } = useAppStore()
 
   const [showApiKey, setShowApiKey] = useState(false)
@@ -541,6 +541,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <span
                   className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
                     showContextUsage ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Agent Bypass Permissions */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/5">
+              <div>
+                <label className="text-sm text-slate-300">Bypass agent permissions</label>
+                <p className="text-xs text-slate-600">
+                  Allow agent to execute all actions without confirmation (recommended)
+                </p>
+              </div>
+              <button
+                onClick={() => setAgentBypassPermissions(!agentBypassPermissions)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  agentBypassPermissions ? 'bg-cyan-500' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    agentBypassPermissions ? 'left-6' : 'left-1'
                   }`}
                 />
               </button>

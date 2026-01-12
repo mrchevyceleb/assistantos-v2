@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Circle, Calendar, AlertTriangle, FileText } from 'lucide-react'
+import { Check, Calendar, AlertTriangle, FileText } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { ParsedTask } from '../../types/task'
 import { toggleTaskInFile, getFileName } from '../../services/taskParser'

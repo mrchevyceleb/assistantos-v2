@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { useTabStore } from '../../stores/tabStore'
-import { isMediaFile } from '../../utils/fileTypes'
+// isMediaFile imported if needed for future media handling
 import { FileSearch, FileSearchHandle } from './FileSearch'
 
 interface FileEntry {

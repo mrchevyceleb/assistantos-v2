@@ -99,6 +99,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   // Agent store (per-agent state)
   const agent = useAgentStore(state => state.getAgent(agentId))
   const addMessage = useAgentStore(state => state.addMessage)
+  const insertMessageBefore = useAgentStore(state => state.insertMessageBefore)
   const updateMessage = useAgentStore(state => state.updateMessage)
   const clearMessages = useAgentStore(state => state.clearMessages)
   const updateAgentStatus = useAgentStore(state => state.updateAgentStatus)
@@ -320,8 +321,11 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           updateMessage(agentId, assistantMessage.id, {
             content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + (chunk.text || ''),
           })
-        } else if (chunk.type === 'tool_use') {
-          // Add tool message
+        } else if (chunk.type === 'tool_use' && chunk.toolName && chunk.toolInput) {
+          // Only handle tool_use chunks that have full input data
+          // (The streaming API emits an early chunk without toolInput which we skip)
+          // Insert tool message BEFORE the assistant message so grouping works correctly
+          // Tools should appear above the assistant's text response in the UI
           const toolMessage: Message = {
             id: `msg-${Date.now()}-tool-${chunk.toolName}`,
             role: 'tool',
@@ -329,7 +333,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             timestamp: new Date(),
             toolName: chunk.toolName,
           }
-          addMessage(agentId, toolMessage)
+          insertMessageBefore(agentId, toolMessage, assistantMessage.id)
         } else if (chunk.type === 'tool_result') {
           // Update tool message with result
           const toolMessages = useAgentStore.getState().getAgent(agentId)?.messages.filter(m => m.role === 'tool') || []

@@ -50,6 +50,37 @@ export class ClaudeService {
     this.conversationHistory = [];
   }
 
+  /**
+   * Simple streaming message without tools (used for compaction, summaries)
+   */
+  async *streamMessage(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    systemPrompt: string
+  ): AsyncGenerator<ChatChunk> {
+    try {
+      const stream = this.client.messages.stream({
+        model: this.model,
+        max_tokens: this.maxTokens,
+        system: systemPrompt,
+        messages: messages as MessageParam[],
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta') {
+          const delta = event.delta;
+          if ('text' in delta) {
+            yield { type: 'text', text: delta.text };
+          }
+        }
+      }
+
+      yield { type: 'done' };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      yield { type: 'error', error: errorMessage };
+    }
+  }
+
   async *chat(
     userMessage: string,
     tools: Tool[],
