@@ -238,11 +238,11 @@ export function FilesSection() {
   return (
     <div className="border-t border-white/5">
       {/* Section Header */}
-      <button
+      <div
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="
           w-full flex items-center justify-between px-4 py-3
-          text-slate-400 hover:text-white transition-colors
+          text-slate-400 hover:text-white transition-colors cursor-pointer
         "
       >
         <div className="flex items-center gap-2">
@@ -272,7 +272,7 @@ export function FilesSection() {
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
         )}
-      </button>
+      </div>
 
       {/* File Tree */}
       {!isCollapsed && (

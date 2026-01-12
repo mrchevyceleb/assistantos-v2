@@ -179,12 +179,12 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     setInput(value)
 
     // Parse mentions
-    const { integrations, documents } = await parseMessage(value, workspacePath)
-    setActiveMentions(integrations)
-    setActiveDocuments(documents)
+    const { mentions, documentMentions } = await parseMessage(value, workspacePath)
+    setActiveMentions(mentions)
+    setActiveDocuments(documentMentions)
 
     // Get mention suggestions
-    const partialMention = getPartialMention(value, e.target.selectionStart || 0)
+    const partialMention = getPartialMention(value)
     if (partialMention) {
       const suggestions = await getUnifiedSuggestions(partialMention, workspacePath)
       setMentionSuggestions(suggestions)
@@ -198,15 +198,15 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const selectSuggestion = (suggestion: UnifiedSuggestion) => {
     if (!textareaRef.current) return
 
-    const cursorPos = textareaRef.current.selectionStart || 0
-    const newInput = completeMention(input, cursorPos, suggestion)
+    const mentionText = suggestion.type === 'integration' ? suggestion.mention : suggestion.mention
+    const newInput = completeMention(input, mentionText)
     setInput(newInput)
     setMentionSuggestions([])
 
     // Re-parse mentions
-    parseMessage(newInput, workspacePath).then(({ integrations, documents }) => {
-      setActiveMentions(integrations)
-      setActiveDocuments(documents)
+    parseMessage(newInput, workspacePath).then(({ mentions, documentMentions }) => {
+      setActiveMentions(mentions)
+      setActiveDocuments(documentMentions)
     })
   }
 
@@ -277,7 +277,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       )) {
         if (chunk.type === 'text') {
           updateMessage(agentId, assistantMessage.id, {
-            content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + chunk.content,
+            content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + (chunk.text || ''),
           })
         } else if (chunk.type === 'tool_use') {
           // Add tool message
@@ -380,13 +380,13 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             Open Settings
           </button>
         </div>
-        {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} />}
+        {showSettingsModal && <SettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />}
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/50">
+    <div className="flex flex-col h-full w-full bg-slate-900/50">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
         <div className="flex items-center gap-2">
@@ -428,9 +428,13 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
           {/* Settings */}
           <button
-            onClick={() => setShowSettingsModal(true)}
+            onClick={() => {
+              console.log('Settings button clicked')
+              setShowSettingsModal(true)
+            }}
             className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
             title="Settings"
+            type="button"
           >
             <Settings2 className="w-4 h-4" />
           </button>
@@ -448,63 +452,114 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             </p>
           </div>
         ) : (
-          messages.map(message => (
-            <div key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>
-              {message.role !== 'user' && (
-                <div className={`
-                  w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0
-                  ${message.role === 'tool' ? 'bg-violet-500/20' : 'bg-cyan-500/20'}
-                `}>
-                  {message.role === 'tool' ? (
-                    <Terminal className="w-4 h-4 text-violet-400" />
-                  ) : (
-                    <Bot className="w-4 h-4 text-cyan-400" />
-                  )}
-                </div>
-              )}
+          // Group messages: tool messages should appear above their associated assistant response
+          (() => {
+            type MessageGroup = {
+              type: 'user' | 'assistant-with-tools'
+              message: Message
+              toolMessages?: Message[]
+            }
+            const groups: MessageGroup[] = []
+            let pendingTools: Message[] = []
 
-              <div className={`
-                max-w-[80%] rounded-lg px-4 py-2
-                ${message.role === 'user'
-                  ? 'bg-cyan-500/20 text-white'
-                  : message.role === 'tool'
-                  ? 'bg-slate-800/50 border border-white/5'
-                  : 'bg-slate-800/50'
+            for (let i = 0; i < messages.length; i++) {
+              const msg = messages[i]
+              if (msg.role === 'tool') {
+                pendingTools.push(msg)
+              } else if (msg.role === 'assistant') {
+                groups.push({
+                  type: 'assistant-with-tools',
+                  message: msg,
+                  toolMessages: pendingTools.length > 0 ? [...pendingTools] : undefined
+                })
+                pendingTools = []
+              } else {
+                for (const tool of pendingTools) {
+                  groups.push({ type: 'user', message: tool })
                 }
-              `}>
-                {message.role === 'tool' ? (
-                  <div>
-                    <div
-                      className="flex items-center gap-2 cursor-pointer"
-                      onClick={() => toggleToolExpanded(message.id)}
-                    >
-                      {expandedTools.has(message.id) ? (
-                        <ChevronDown className="w-4 h-4 text-slate-400" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-slate-400" />
-                      )}
-                      <span className="text-sm text-violet-400 font-medium">{message.toolName}</span>
-                    </div>
-                    {expandedTools.has(message.id) && message.toolResult && (
-                      <pre className="mt-2 text-xs text-slate-400 overflow-x-auto max-h-48 overflow-y-auto">
-                        {message.toolResult}
-                      </pre>
-                    )}
-                  </div>
-                ) : (
-                  <div className="prose prose-invert prose-sm max-w-none">
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
+                pendingTools = []
+                groups.push({ type: 'user', message: msg })
+              }
+            }
+            for (const tool of pendingTools) {
+              groups.push({ type: 'user', message: tool })
+            }
 
-              {message.role === 'user' && (
-                <div className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-slate-300" />
+            return groups.map((group) => {
+              if (group.type === 'user' || group.message.role === 'user') {
+                const message = group.message
+                return (
+                  <div key={message.id} className="flex gap-3 justify-end">
+                    <div className="max-w-[80%] rounded-lg px-4 py-2 bg-cyan-500/20 text-white">
+                      <div className="prose prose-invert prose-sm max-w-none">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    </div>
+                    <div className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center flex-shrink-0">
+                      <User className="w-4 h-4 text-slate-300" />
+                    </div>
+                  </div>
+                )
+              }
+
+              const message = group.message
+              const toolMessages = group.toolMessages || []
+
+              return (
+                <div key={message.id}>
+                  {/* Tool blocks - rendered ABOVE assistant text, collapsed by default */}
+                  {toolMessages.length > 0 && (
+                    <div className="mb-2 space-y-1 ml-10">
+                      {toolMessages.map((toolMsg) => (
+                        <div
+                          key={toolMsg.id}
+                          className="rounded-lg text-xs font-mono cursor-pointer select-none bg-slate-800/50 border border-white/5"
+                          onClick={() => toggleToolExpanded(toolMsg.id)}
+                        >
+                          <div className="flex items-center gap-2 text-slate-400 px-3 py-1.5 hover:text-slate-300 transition-colors">
+                            {expandedTools.has(toolMsg.id) ? (
+                              <ChevronDown className="w-3 h-3" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3" />
+                            )}
+                            <Terminal className="w-3 h-3 text-violet-400" />
+                            <span className="text-violet-400">{toolMsg.toolName}</span>
+                            {toolMsg.toolResult && !expandedTools.has(toolMsg.id) && (
+                              <span className="text-slate-500 ml-1">
+                                {toolMsg.toolResult.split('\n').length > 1
+                                  ? `(${toolMsg.toolResult.split('\n').length} lines)`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
+                          {expandedTools.has(toolMsg.id) && toolMsg.toolResult && (
+                            <pre
+                              className="px-3 pb-2 text-slate-400 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto border-t border-white/5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {toolMsg.toolResult}
+                            </pre>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Assistant text response */}
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-cyan-500/20">
+                      <Bot className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div className="max-w-[80%] rounded-lg px-4 py-2 bg-slate-800/50">
+                      <div className="prose prose-invert prose-sm max-w-none">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))
+              )
+            })
+          })()
         )}
 
         {isLoading && (
@@ -594,7 +649,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       </div>
 
       {/* Settings Modal */}
-      {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} />}
+      {showSettingsModal && <SettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />}
     </div>
   )
 }

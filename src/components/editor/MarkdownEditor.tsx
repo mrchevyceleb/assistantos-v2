@@ -350,11 +350,31 @@ export function MarkdownEditor() {
             </button>
           </div>
         ) : (
-          <div
-            ref={containerRef}
-            className="milkdown-container h-full p-6"
-            style={{ fontSize: `${editorFontSize}px` }}
-          />
+          <>
+            {/* Dynamic font size style for Milkdown prose content */}
+            <style>{`
+              .milkdown-container .milkdown-editor {
+                font-size: ${editorFontSize}px !important;
+              }
+              .milkdown-container .milkdown-editor p,
+              .milkdown-container .milkdown-editor li,
+              .milkdown-container .milkdown-editor blockquote,
+              .milkdown-container .milkdown-editor td,
+              .milkdown-container .milkdown-editor th {
+                font-size: inherit !important;
+              }
+              .milkdown-container .milkdown-editor h1 { font-size: ${Math.round(editorFontSize * 2.25)}px !important; }
+              .milkdown-container .milkdown-editor h2 { font-size: ${Math.round(editorFontSize * 1.5)}px !important; }
+              .milkdown-container .milkdown-editor h3 { font-size: ${Math.round(editorFontSize * 1.25)}px !important; }
+              .milkdown-container .milkdown-editor h4 { font-size: ${Math.round(editorFontSize * 1.125)}px !important; }
+              .milkdown-container .milkdown-editor code { font-size: ${Math.round(editorFontSize * 0.875)}px !important; }
+              .milkdown-container .milkdown-editor pre code { font-size: ${Math.round(editorFontSize * 0.875)}px !important; }
+            `}</style>
+            <div
+              ref={containerRef}
+              className="milkdown-container h-full p-6"
+            />
+          </>
         )}
       </div>
     </div>

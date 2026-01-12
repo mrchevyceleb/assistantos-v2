@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { TaskSettings, DEFAULT_TASK_SETTINGS, KanbanSettings, DEFAULT_KANBAN_SETTINGS, CenterPanelView } from '@/types/task'
 import { PromptShortcut, DEFAULT_SHORTCUTS } from '@/types/shortcut'
+import { DashboardSettings, DEFAULT_DASHBOARD_SETTINGS } from '@/types/weather'
 
 // MCP Integration type (matching electron/mcp/registry.ts)
 export interface MCPIntegration {
@@ -34,7 +35,7 @@ export interface MCPIntegration {
 export const AVAILABLE_MODELS = [
   { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', tier: 'opus' },
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', tier: 'sonnet' },
-  { id: 'claude-haiku-3-5-20241022', name: 'Claude Haiku 3.5', tier: 'haiku' },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude Haiku 3.5', tier: 'haiku' },
 ] as const
 
 export type ModelId = typeof AVAILABLE_MODELS[number]['id']
@@ -185,6 +186,10 @@ interface AppState {
   openBrowser: (url: string) => void
   closeBrowser: () => void
   setBrowserUrl: (url: string) => void
+
+  // Dashboard Settings
+  dashboardSettings: DashboardSettings
+  setDashboardSettings: (settings: Partial<DashboardSettings>) => void
 
   // Hydration flag (for avoiding race conditions with persisted settings)
   _hasHydrated: boolean
@@ -409,6 +414,12 @@ export const useAppStore = create<AppState>()(
       closeBrowser: () => set({ browserOpen: false }),
       setBrowserUrl: (url) => set({ browserUrl: url }),
 
+      // Dashboard Settings
+      dashboardSettings: DEFAULT_DASHBOARD_SETTINGS,
+      setDashboardSettings: (settings) => set((state) => ({
+        dashboardSettings: { ...state.dashboardSettings, ...settings }
+      })),
+
       // Hydration flag
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
@@ -441,6 +452,7 @@ export const useAppStore = create<AppState>()(
         memoryOpenaiKey: state.memoryOpenaiKey,
         editorFontSize: state.editorFontSize,
         shortcuts: state.shortcuts,
+        dashboardSettings: state.dashboardSettings,
       }),
     }
   )

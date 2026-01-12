@@ -39,6 +39,7 @@ interface TabProps {
   onClick: () => void
   onClose: () => void
   onMouseDown: (e: React.MouseEvent) => void
+  onContextMenu?: (e: React.MouseEvent) => void
   draggable?: boolean
   onDragStart?: (e: React.DragEvent) => void
   onDragOver?: (e: React.DragEvent) => void
@@ -52,6 +53,7 @@ export function Tab({
   onClick,
   onClose,
   onMouseDown,
+  onContextMenu,
   draggable,
   onDragStart,
   onDragOver,
@@ -79,6 +81,7 @@ export function Tab({
       `}
       onClick={onClick}
       onMouseDown={onMouseDown}
+      onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}

@@ -55,7 +55,7 @@ const encoder = encoding_for_model('cl100k_base');
 export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'claude-opus-4-20250514': 200000,
   'claude-sonnet-4-20250514': 200000,
-  'claude-haiku-3-5-20241022': 200000,
+  'claude-3-5-haiku-20241022': 200000,
 };
 
 export interface TokenUsage {

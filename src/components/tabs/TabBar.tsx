@@ -1,22 +1,47 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTabStore, type Tab as TabType } from '../../stores/tabStore'
 import { useAgentStore } from '../../stores/agentStore'
 import { Tab } from './Tab'
 import { AddTabButton } from './AddTabButton'
+import { TabContextMenu } from './TabContextMenu'
+import { RenameDialog } from './RenameDialog'
+import { DeleteAgentDialog } from './DeleteAgentDialog'
+
+// Context menu state
+interface ContextMenuState {
+  x: number
+  y: number
+  tab: TabType
+}
+
+// Dialog state
+interface DialogState {
+  type: 'rename' | 'delete'
+  tab: TabType
+}
 
 export function TabBar() {
   const tabs = useTabStore(state => state.tabs)
   const activeTabId = useTabStore(state => state.activeTabId)
   const setActiveTab = useTabStore(state => state.setActiveTab)
   const closeTab = useTabStore(state => state.closeTab)
+  const closeAgentTab = useTabStore(state => state.closeAgentTab)
+  const updateTab = useTabStore(state => state.updateTab)
   const reorderTabs = useTabStore(state => state.reorderTabs)
   const selectNextTab = useTabStore(state => state.selectNextTab)
   const selectPreviousTab = useTabStore(state => state.selectPreviousTab)
   const selectTabByIndex = useTabStore(state => state.selectTabByIndex)
 
   const agents = useAgentStore(state => state.agents)
+  const updateAgentName = useAgentStore(state => state.updateAgentName)
+  const removeAgent = useAgentStore(state => state.removeAgent)
+  const getAgentCount = useAgentStore(state => state.getAgentCount)
 
   const tabsContainerRef = useRef<HTMLDivElement>(null)
+
+  // Context menu and dialog state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [dialog, setDialog] = useState<DialogState | null>(null)
 
   // Get agent status for tab indicators
   const getAgentStatus = (agentId?: string) => {
@@ -94,6 +119,39 @@ export function TabBar() {
     }
   }
 
+  // Handle right-click context menu (only for agent tabs)
+  const handleContextMenu = (e: React.MouseEvent, tab: TabType) => {
+    if (tab.type !== 'agent') return // Only show context menu for agent tabs
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, tab })
+  }
+
+  // Handle rename action
+  const handleRename = (newName: string) => {
+    if (!dialog || dialog.type !== 'rename' || !dialog.tab.agentId) return
+
+    // Update both agent name and tab title
+    updateAgentName(dialog.tab.agentId, newName)
+    updateTab(dialog.tab.id, { title: newName })
+    setDialog(null)
+  }
+
+  // Handle delete action
+  const handleDelete = () => {
+    if (!dialog || dialog.type !== 'delete' || !dialog.tab.agentId) return
+
+    // Don't allow deleting the last agent
+    if (getAgentCount() <= 1) {
+      setDialog(null)
+      return
+    }
+
+    // Remove agent and close tab
+    removeAgent(dialog.tab.agentId)
+    closeAgentTab(dialog.tab.agentId)
+    setDialog(null)
+  }
+
   return (
     <div className="
       flex items-center
@@ -120,6 +178,7 @@ export function TabBar() {
             onClick={() => setActiveTab(tab.id)}
             onClose={() => closeTab(tab.id)}
             onMouseDown={(e) => handleMouseDown(e, tab.id)}
+            onContextMenu={(e) => handleContextMenu(e, tab)}
             draggable
             onDragStart={(e) => handleDragStart(e, index)}
             onDragOver={handleDragOver}
@@ -130,6 +189,42 @@ export function TabBar() {
 
       {/* Add Tab Button */}
       <AddTabButton />
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <TabContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          tabName={contextMenu.tab.title}
+          onClose={() => setContextMenu(null)}
+          onRename={() => {
+            setDialog({ type: 'rename', tab: contextMenu.tab })
+            setContextMenu(null)
+          }}
+          onDelete={() => {
+            setDialog({ type: 'delete', tab: contextMenu.tab })
+            setContextMenu(null)
+          }}
+        />
+      )}
+
+      {/* Rename Dialog */}
+      {dialog?.type === 'rename' && (
+        <RenameDialog
+          currentName={dialog.tab.title}
+          onConfirm={handleRename}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {dialog?.type === 'delete' && (
+        <DeleteAgentDialog
+          agentName={dialog.tab.title}
+          onConfirm={handleDelete}
+          onCancel={() => setDialog(null)}
+        />
+      )}
     </div>
   )
 }

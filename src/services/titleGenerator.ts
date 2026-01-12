@@ -33,7 +33,7 @@ export async function generateChatTitle(
 
     // Use Haiku for speed and cost efficiency
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-3-5-20241022',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 20,
       messages: [{
         role: 'user',

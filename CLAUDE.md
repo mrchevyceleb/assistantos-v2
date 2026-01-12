@@ -120,7 +120,9 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 - `App.tsx` - Root component with TitleBar and AppLayout
 - `AppLayout.tsx` - Main layout with Sidebar + TabBar + TabContent
 - `Sidebar.tsx` - Fixed-width sidebar (220px) with:
+  - Dashboard button (opens dashboard tab)
   - Agents section (up to 5 parallel agents)
+  - Tasks button (opens Kanban board)
   - Collapsible Files section
   - Settings and MCP indicators
 - `TabBar.tsx` - Dynamic tab bar for agents, files, browser, dashboard, tasks, LUDICROUS MODE
@@ -131,12 +133,16 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 ┌─────────────┬──────────────────────────────────────────────────────┐
 │ Sidebar     │ [Tab1] [Tab2] [Tab3] [+]                             │
 ├─────────────┼──────────────────────────────────────────────────────┤
+│ Dashboard   │                                                      │
+├─────────────┤                                                      │
 │ AGENTS      │                                                      │
-│ ● Agent 1   │                                                      │
-│ ◐ Agent 2   │              Tab Content Area                        │
-│ [+ New]     │                                                      │
-├─────────────┤    (Agent Chat, File Editor, Browser, Dashboard,     │
-│ ▼ FILES     │     Tasks, or LUDICROUS MODE)                        │
+│ ● Agent 1   │              Tab Content Area                        │
+│ ◐ Agent 2   │                                                      │
+│ [+ New]     │    (Agent Chat, File Editor, Browser, Dashboard,     │
+├─────────────┤     Tasks, or LUDICROUS MODE)                        │
+│ Tasks       │                                                      │
+├─────────────┤                                                      │
+│ ▼ FILES     │                                                      │
 │ 📁 src/     │                                                      │
 ├─────────────┤                                                      │
 │ ⚙️ Settings │                                                      │
@@ -184,12 +190,18 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
     - `handleToolUseChunk()` - Insert tool execution message before assistant
     - `handleToolResultChunk()` - Update tool message with execution result
     - `handleErrorChunk()` - Append error messages to assistant content
+  - Message rendering with grouped tool display:
+    - Tool messages are grouped with their associated assistant response
+    - Tool blocks render ABOVE the assistant's text content
+    - Tools are collapsed by default (click to expand)
+    - Uses `MessageGroup` type to associate tools with assistant messages
   - State management:
     - `messages` - Chat message history with role, content, tool metadata
     - `input` - Current input text
     - `mentionSuggestions` - Autocomplete dropdown suggestions
     - `activeMentions` - Integration IDs from parsed message
     - `activeDocuments` - Document references from parsed message
+    - `expandedTools` - Set of tool IDs that are currently expanded
   - Keyboard shortcuts:
     - Arrow Up/Down - Navigate mention suggestions
     - Tab/Enter - Select suggestion
@@ -198,20 +210,60 @@ The assembled prompt is passed to Claude on every message, ensuring consistent i
 
 ### Dashboard Panel
 
-The Dashboard provides a configurable overview with widgets for quick information access.
+The Dashboard provides a command center with weather, live clock, and upcoming tasks/events.
 
 **Components** (`src/components/dashboard/`):
-- `Dashboard.tsx` - Main container with greeting, date display, and widget grid
+- `Dashboard.tsx` - Main container with greeting header and widget grid
+- `GreetingHeader.tsx` - Time-based greeting, date display, and live clock
+- `ClockWidget.tsx` - Ticking digital clock (12h/24h format)
+- `WeatherWidget.tsx` - Current conditions and 2-day forecast via wttr.in
+- `Next48HoursWidget.tsx` - Merged timeline of tasks and calendar events
 - `WidgetContainer.tsx` - Reusable wrapper with header, loading state, and refresh button
-- `CalendarWidget.tsx` - Upcoming calendar events via MCP @calendar integration
+- `CalendarWidget.tsx` - Today's calendar events via MCP @calendar integration
 - `TaskSummaryWidget.tsx` - Task statistics with progress bar (open, overdue, high priority)
 - `QuickLinksWidget.tsx` - Starred files for quick access
+- `OnboardingWidget.tsx` - AI-driven workspace setup for new users
+
+**Supporting Files**:
+- `src/types/weather.ts` - Weather data types and dashboard settings
+- `src/services/weatherService.ts` - wttr.in API integration
+- `src/hooks/useClock.ts` - Live clock hook with format helpers
+- `src/hooks/useWeather.ts` - Weather data fetching with auto-refresh
+
+**Dashboard Settings** (persisted in appStore):
+| Setting | Options | Default |
+|---------|---------|---------|
+| `weatherLocation` | City name or null (auto-detect) | null |
+| `temperatureUnit` | 'C' or 'F' | 'F' |
+| `clockFormat` | '12h' or '24h' | '12h' |
+| `showSeconds` | boolean | false |
 
 **Features**:
-- Dynamic greeting based on time of day
+- Live ticking digital clock (updates every second)
+- Weather via wttr.in (no API key required, auto-detects location)
+- Temperature toggle (C/F) with click
+- Editable weather location
+- Next 48 hours timeline merging tasks (with @due dates) and calendar events
+- Dynamic greeting based on time of day (Good morning/afternoon/evening)
 - Calendar integration with MCP (shows configure CTA if not set up)
 - Links to Task panel for detailed task management
 - Starred files quick access with click-to-open
+
+**Layout**:
+```
++------------------------------------------------------------------+
+| Good afternoon              Saturday, Jan 11, 2026     2:34 PM   |
++------------------------------------------------------------------+
++---------------------+  +----------------------------------------+
+| Weather             |  | Next 48 Hours                          |
+| 72F  Sunny          |  | TODAY                                  |
+| Tomorrow: 68-75F    |  | - 10:00 AM  Team standup               |
++---------------------+  | - 11:00 AM  Review PR    !high         |
+                         +----------------------------------------+
++---------------------+  +---------------------+  +--------------+
+| Today's Calendar    |  | Task Summary        |  | Quick Links  |
++---------------------+  +---------------------+  +--------------+
+```
 
 ### Kanban Board (Task Management)
 
@@ -375,6 +427,32 @@ Right-click context menu for file/folder operations in the FileTree.
 - `deleteTarget` - File entry pending deletion confirmation
 - `newItemState` - Type (file/folder) and parent path for creation dialog
 
+### Tab Context Menu
+
+Right-click context menu for agent chat tabs in the TabBar.
+
+**Components** (`src/components/tabs/`):
+- `TabContextMenu.tsx` - Portal-based context menu for agent tabs
+- `RenameDialog.tsx` - Dialog for renaming chat tabs
+- `DeleteAgentDialog.tsx` - Confirmation dialog for deleting agents
+
+**Context Menu Actions**:
+| Action | Description |
+|--------|-------------|
+| Rename | Opens dialog to rename the chat |
+| Delete | Delete agent and close tab (with confirmation) |
+
+**Features**:
+- Only available on agent tabs (not file, browser, dashboard, or tasks tabs)
+- Rename updates both agent name and tab title
+- Delete is disabled when only one agent exists
+- Portal-based rendering with auto-positioning
+- ESC to cancel dialogs
+
+**State Management** (in TabBar.tsx):
+- `contextMenu` - Position and target tab for context menu
+- `dialog` - Current dialog state (rename or delete)
+
 ### Multi-Agent Architecture
 
 AssistantOS supports up to 5 parallel AI agents, each with independent state and model selection.
@@ -483,7 +561,7 @@ The app uses the Anthropic SDK (`@anthropic-ai/sdk`) for Claude integration:
 |-------|-----|-------------|
 | Claude Opus 4 | `claude-opus-4-20250514` | Most capable, best for complex tasks |
 | Claude Sonnet 4 | `claude-sonnet-4-20250514` | Balanced performance (default) |
-| Claude Haiku 3.5 | `claude-haiku-3-5-20241022` | Fastest, best for quick tasks |
+| Claude Haiku 3.5 | `claude-3-5-haiku-20241022` | Fastest, best for quick tasks |
 
 ## Development Notes
 

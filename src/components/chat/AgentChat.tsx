@@ -1118,53 +1118,144 @@ export function AgentChat() {
             )}
           </div>
         ) : (
-          messages
-            .filter(m => m.role !== 'assistant' || m.content.trim() !== '')
-            .map((message) => (
-            <div key={message.id}>
-              {message.role === 'tool' ? (
-                // Collapsible tool execution display
-                <div
-                  className="mx-8 rounded-lg text-xs font-mono cursor-pointer select-none"
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.2)',
-                    border: '1px solid rgba(255, 255, 255, 0.03)'
-                  }}
-                  onClick={() => toggleToolExpanded(message.id)}
-                >
-                  <div className="flex items-center gap-2 text-slate-500 px-3 py-1.5 hover:text-slate-400 transition-colors">
-                    {expandedTools.has(message.id) ? (
-                      <ChevronDown className="w-3 h-3" />
-                    ) : (
-                      <ChevronRight className="w-3 h-3" />
-                    )}
-                    {message.toolName === 'bash' ? (
-                      <Terminal className="w-3 h-3" />
-                    ) : (
-                      <FileText className="w-3 h-3" />
-                    )}
-                    <span>{message.toolName}</span>
-                    {message.toolResult && !expandedTools.has(message.id) && (
-                      <span className="text-slate-600 ml-1">
-                        {message.toolResult.split('\n').length > 1
-                          ? `(${message.toolResult.split('\n').length} lines)`
-                          : ''}
-                      </span>
-                    )}
+          // Group messages: tool messages should appear above their associated assistant response
+          (() => {
+            // Build grouped messages: each assistant message includes preceding tool messages
+            type MessageGroup = {
+              type: 'user' | 'assistant-with-tools'
+              message: Message
+              toolMessages?: Message[]
+            }
+            const groups: MessageGroup[] = []
+            const filteredMessages = messages.filter(m => m.role !== 'assistant' || m.content.trim() !== '')
+            let pendingTools: Message[] = []
+
+            for (let i = 0; i < filteredMessages.length; i++) {
+              const msg = filteredMessages[i]
+              if (msg.role === 'tool') {
+                pendingTools.push(msg)
+              } else if (msg.role === 'assistant') {
+                // Associate pending tools with this assistant message
+                groups.push({
+                  type: 'assistant-with-tools',
+                  message: msg,
+                  toolMessages: pendingTools.length > 0 ? [...pendingTools] : undefined
+                })
+                pendingTools = []
+              } else {
+                // User message - flush any pending tools first (shouldn't happen normally)
+                for (const tool of pendingTools) {
+                  groups.push({ type: 'user', message: tool })
+                }
+                pendingTools = []
+                groups.push({ type: 'user', message: msg })
+              }
+            }
+            // Handle any trailing tool messages (during streaming)
+            for (const tool of pendingTools) {
+              groups.push({ type: 'user', message: tool })
+            }
+
+            return groups.map((group) => {
+              if (group.type === 'user' || group.message.role === 'user') {
+                // User message
+                const message = group.message
+                return (
+                  <div key={message.id}>
+                    <div className="flex gap-3 justify-end">
+                      <div
+                        className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden"
+                        style={{
+                          background: 'linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%)',
+                          color: '#0c0f1a',
+                          boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
+                        }}
+                      >
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-cyan-800/60">
+                          <span>{formatTimestamp(message.timestamp)}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleBookmark(message.id)
+                            }}
+                            className={`p-0.5 rounded transition-all ${
+                              message.bookmarked ? 'text-amber-600' : 'text-cyan-800/40 hover:text-amber-600'
+                            }`}
+                            title={message.bookmarked ? 'Remove bookmark' : 'Bookmark this message'}
+                          >
+                            <Star className="w-3 h-3" fill={message.bookmarked ? 'currentColor' : 'none'} />
+                          </button>
+                        </div>
+                      </div>
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{
+                          background: 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)'
+                        }}
+                      >
+                        <User className="w-4 h-4 text-slate-300" />
+                      </div>
+                    </div>
                   </div>
-                  {expandedTools.has(message.id) && message.toolResult && (
-                    <pre
-                      className="px-3 pb-2 text-slate-500 whitespace-pre-wrap overflow-hidden border-t border-white/5"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {message.toolResult}
-                    </pre>
+                )
+              }
+
+              // Assistant message with optional tool blocks above
+              const message = group.message
+              const toolMessages = group.toolMessages || []
+
+              return (
+                <div key={message.id}>
+                  {/* Tool blocks - rendered ABOVE assistant text, collapsed by default */}
+                  {toolMessages.length > 0 && (
+                    <div className="mb-2 space-y-1">
+                      {toolMessages.map((toolMsg) => (
+                        <div
+                          key={toolMsg.id}
+                          className="mx-8 rounded-lg text-xs font-mono cursor-pointer select-none"
+                          style={{
+                            background: 'rgba(0, 0, 0, 0.2)',
+                            border: '1px solid rgba(255, 255, 255, 0.03)'
+                          }}
+                          onClick={() => toggleToolExpanded(toolMsg.id)}
+                        >
+                          <div className="flex items-center gap-2 text-slate-500 px-3 py-1.5 hover:text-slate-400 transition-colors">
+                            {expandedTools.has(toolMsg.id) ? (
+                              <ChevronDown className="w-3 h-3" />
+                            ) : (
+                              <ChevronRight className="w-3 h-3" />
+                            )}
+                            {toolMsg.toolName === 'bash' ? (
+                              <Terminal className="w-3 h-3" />
+                            ) : (
+                              <FileText className="w-3 h-3" />
+                            )}
+                            <span>{toolMsg.toolName}</span>
+                            {toolMsg.toolResult && !expandedTools.has(toolMsg.id) && (
+                              <span className="text-slate-600 ml-1">
+                                {toolMsg.toolResult.split('\n').length > 1
+                                  ? `(${toolMsg.toolResult.split('\n').length} lines)`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
+                          {expandedTools.has(toolMsg.id) && toolMsg.toolResult && (
+                            <pre
+                              className="px-3 pb-2 text-slate-500 whitespace-pre-wrap overflow-hidden border-t border-white/5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {toolMsg.toolResult}
+                            </pre>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
-              ) : (
-                // User or assistant message
-                <div className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>
-                  {message.role === 'assistant' && (
+
+                  {/* Assistant text response */}
+                  <div className="flex gap-3">
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                       style={{
@@ -1174,28 +1265,20 @@ export function AgentChat() {
                     >
                       <Bot className="w-4 h-4 text-white" />
                     </div>
-                  )}
-                  <div
-                    className={`max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden`}
-                    style={message.role === 'user' ? {
-                      background: 'linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%)',
-                      color: '#0c0f1a',
-                      boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
-                    } : {
-                      background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 28, 45, 0.9) 100%)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      color: '#e2e8f0'
-                    }}
-                  >
-                    {message.role === 'assistant' && (
+                    <div
+                      className="max-w-[80%] px-4 py-3 rounded-2xl relative overflow-hidden"
+                      style={{
+                        background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 28, 45, 0.9) 100%)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        color: '#e2e8f0'
+                      }}
+                    >
                       <div
                         className="absolute top-0 left-[10%] right-[10%] h-px"
                         style={{
                           background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)'
                         }}
                       />
-                    )}
-                    {message.role === 'assistant' ? (
                       <div className="prose prose-sm prose-invert max-w-none">
                         <ReactMarkdown
                           components={{
@@ -1205,7 +1288,6 @@ export function AgentChat() {
                                 onClick={(e) => {
                                   if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('file://'))) {
                                     e.preventDefault()
-                                    // Ctrl+click opens in built-in browser
                                     if (!handleLinkClick(e as unknown as React.MouseEvent, href)) {
                                       window.electronAPI?.shell.openExternal(href)
                                     }
@@ -1220,52 +1302,27 @@ export function AgentChat() {
                           }}
                         >{message.content}</ReactMarkdown>
                       </div>
-                    ) : (
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    )}
-                    {/* Message footer: timestamp + bookmark */}
-                    <div className={`flex items-center gap-2 mt-1.5 text-[10px] ${
-                      message.role === 'user' ? 'text-cyan-800/60' : 'text-slate-500'
-                    }`}>
-                      <span>{formatTimestamp(message.timestamp)}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleBookmark(message.id)
-                        }}
-                        className={`p-0.5 rounded transition-all ${
-                          message.bookmarked
-                            ? message.role === 'user'
-                              ? 'text-amber-600'
-                              : 'text-amber-400'
-                            : message.role === 'user'
-                              ? 'text-cyan-800/40 hover:text-amber-600'
-                              : 'text-slate-600 hover:text-amber-400'
-                        }`}
-                        title={message.bookmarked ? 'Remove bookmark' : 'Bookmark this message'}
-                      >
-                        <Star
-                          className="w-3 h-3"
-                          fill={message.bookmarked ? 'currentColor' : 'none'}
-                        />
-                      </button>
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
+                        <span>{formatTimestamp(message.timestamp)}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleBookmark(message.id)
+                          }}
+                          className={`p-0.5 rounded transition-all ${
+                            message.bookmarked ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400'
+                          }`}
+                          title={message.bookmarked ? 'Remove bookmark' : 'Bookmark this message'}
+                        >
+                          <Star className="w-3 h-3" fill={message.bookmarked ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  {message.role === 'user' && (
-                    <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{
-                        background: 'linear-gradient(180deg, rgba(50, 60, 80, 0.8) 0%, rgba(35, 45, 65, 0.9) 100%)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)'
-                      }}
-                    >
-                      <User className="w-4 h-4 text-slate-300" />
-                    </div>
-                  )}
                 </div>
-              )}
-            </div>
-          ))
+              )
+            })
+          })()
         )}
         {isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content.trim() === '' && (
           <div className="flex gap-3">
@@ -1418,7 +1475,7 @@ export function AgentChat() {
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything... Use / for shortcuts or @ for documents"
+            placeholder="Message your assistant (use @ for mentions, / for shortcuts)"
             className="input-metallic flex-1 text-sm"
           />
           <button

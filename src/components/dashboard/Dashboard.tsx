@@ -1,17 +1,19 @@
-import { LayoutDashboard, RefreshCw } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { GreetingHeader } from './GreetingHeader'
+import { WeatherWidget } from './WeatherWidget'
+import { Next48HoursWidget } from './Next48HoursWidget'
 import { CalendarWidget } from './CalendarWidget'
 import { TaskSummaryWidget } from './TaskSummaryWidget'
 import { QuickLinksWidget } from './QuickLinksWidget'
 import { OnboardingWidget } from './OnboardingWidget'
 
 export function Dashboard() {
-  const today = new Date()
-  const greeting = today.getHours() < 12 ? 'Good morning' : today.getHours() < 18 ? 'Good afternoon' : 'Good evening'
-  const dateString = today.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric'
-  })
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const handleRefresh = useCallback(() => {
+    // Increment key to trigger re-mount of all widgets
+    setRefreshKey((k) => k + 1)
+  }, [])
 
   return (
     <div
@@ -20,39 +22,27 @@ export function Dashboard() {
         background: 'linear-gradient(180deg, rgba(16, 20, 32, 0.95) 0%, rgba(10, 13, 22, 0.98) 100%)'
       }}
     >
-      {/* Header */}
-      <div
-        className="px-6 py-4 relative"
-        style={{
-          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-          background: 'linear-gradient(180deg, rgba(25, 32, 50, 0.6) 0%, rgba(16, 20, 32, 0.7) 100%)'
-        }}
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-white flex items-center gap-2">
-              <LayoutDashboard className="w-5 h-5 text-cyan-400" />
-              {greeting}
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">{dateString}</p>
-          </div>
-          <button
-            className="p-2 rounded-lg hover:bg-white/5 transition-colors text-slate-400 hover:text-slate-300"
-            title="Refresh"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {/* Header with Greeting and Clock */}
+      <GreetingHeader onRefresh={handleRefresh} />
 
       {/* Widget Grid */}
-      <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-4xl space-y-4">
+      <div className="flex-1 overflow-auto p-6" key={refreshKey}>
+        <div className="max-w-5xl mx-auto space-y-4">
           {/* Onboarding Widget - spans full width */}
           <OnboardingWidget />
 
-          {/* Main widget grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Top row: Weather + Next 48 Hours */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-1">
+              <WeatherWidget />
+            </div>
+            <div className="md:col-span-2">
+              <Next48HoursWidget />
+            </div>
+          </div>
+
+          {/* Bottom row: Existing widgets */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <CalendarWidget />
             <TaskSummaryWidget />
             <QuickLinksWidget />
