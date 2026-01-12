@@ -1,3 +1,27 @@
+/**
+ * ⚠️ LEGACY CODE - NOT USED ⚠️
+ *
+ * This file contains the old 3-panel layout system from v1.0.0:
+ * ┌───────────┬──────────────┬──────────────┐
+ * │ FileTree  │ MarkdownEditor│ AgentChat   │
+ * │           │   (center)   │   (right)    │
+ * └───────────┴──────────────┴──────────────┘
+ *
+ * This architecture has been REPLACED by AppLayout.tsx (Sidebar + Tabs):
+ * ┌─────────────┬──────────────────────────────────────┐
+ * │ Sidebar     │ [Tab1] [Tab2] [Tab3] [+]             │
+ * │ (220px)     ├──────────────────────────────────────┤
+ * │ Dashboard   │ Tab Content (Agent/File/Dashboard    │
+ * │ AGENTS      │         /Tasks/Browser/Note)         │
+ * │ Tasks       │                                      │
+ * │ NOTES       │                                      │
+ * │ FILES       │                                      │
+ * └─────────────┴──────────────────────────────────────┘
+ *
+ * DO NOT IMPORT OR USE THIS FILE.
+ * Kept for reference only. See AppLayout.tsx for current implementation.
+ */
+
 import { useEffect } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { FileTree } from '../filetree/FileTree'

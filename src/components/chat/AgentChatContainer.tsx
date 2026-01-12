@@ -9,8 +9,9 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain } from 'lucide-react'
+import { Send, Square, X, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain, Mic, MicOff } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { LinkifiedText } from './LinkifiedText'
 
 // Stores
 import { useAppStore, AVAILABLE_MODELS, type ModelId } from '../../stores/appStore'
@@ -52,6 +53,107 @@ import { SettingsModal } from '../settings/SettingsModal'
 
 interface AgentChatContainerProps {
   agentId: string
+}
+
+/**
+ * AttachedImage type for image attachments
+ */
+interface AttachedImage {
+  id: string
+  data: string // base64 encoded (without data URL prefix)
+  mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+  preview: string // data URL for preview display
+  name: string
+}
+
+/**
+ * Convert a File to AttachedImage format
+ */
+async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
+  console.log('[fileToAttachedImage] Processing:', file.name, file.type, file.size)
+
+  // Validate file type (be lenient for Windows clipboard)
+  const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
+  const isValidMime = validTypes.includes(file.type)
+  const hasImageExtension = /\.(png|jpe?g|gif|webp)$/i.test(file.name)
+
+  if (!isValidMime && !hasImageExtension) {
+    console.warn('[fileToAttachedImage] Unsupported image type:', file.type, file.name)
+    return null
+  }
+
+  // Infer media type if mime type is missing (Windows clipboard edge case)
+  let mediaType = file.type as AttachedImage['mediaType']
+  if (!mediaType || mediaType === 'application/octet-stream') {
+    const ext = file.name.match(/\.(png|jpe?g|gif|webp)$/i)?.[1]?.toLowerCase()
+    if (ext === 'png') mediaType = 'image/png'
+    else if (ext === 'jpg' || ext === 'jpeg') mediaType = 'image/jpeg'
+    else if (ext === 'gif') mediaType = 'image/gif'
+    else if (ext === 'webp') mediaType = 'image/webp'
+    else mediaType = 'image/png' // default fallback
+    console.log('[fileToAttachedImage] Inferred media type:', mediaType)
+  }
+
+  // Size validation (max 10MB to prevent memory issues)
+  const maxSize = 10 * 1024 * 1024
+  if (file.size > maxSize) {
+    console.warn('[fileToAttachedImage] File too large:', file.size, 'bytes')
+    return null
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+
+    reader.onload = (e) => {
+      try {
+        const dataUrl = e.target?.result as string
+        if (!dataUrl) {
+          console.error('[fileToAttachedImage] No data URL generated')
+          resolve(null)
+          return
+        }
+
+        // Extract base64 data (remove "data:image/png;base64," prefix)
+        const base64Data = dataUrl.split(',')[1]
+
+        if (!base64Data) {
+          console.error('[fileToAttachedImage] Failed to extract base64 data')
+          resolve(null)
+          return
+        }
+
+        const image: AttachedImage = {
+          id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          data: base64Data,
+          mediaType,
+          preview: dataUrl,
+          name: file.name || 'pasted-image.png'
+        }
+
+        console.log('[fileToAttachedImage] Success:', image.name, 'size:', base64Data.length)
+        resolve(image)
+      } catch (err) {
+        console.error('[fileToAttachedImage] Error in onload:', err)
+        resolve(null)
+      }
+    }
+
+    reader.onerror = (err) => {
+      console.error('[fileToAttachedImage] FileReader error:', err)
+      resolve(null)
+    }
+
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * Convert clipboard data to AttachedImage
+ */
+async function clipboardToAttachedImage(item: DataTransferItem): Promise<AttachedImage | null> {
+  const file = item.getAsFile()
+  if (!file) return null
+  return fileToAttachedImage(file)
 }
 
 /**
@@ -165,6 +267,10 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   // Local UI state
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isInterrupting, setIsInterrupting] = useState(false)
+  const [isToolExecuting, setIsToolExecuting] = useState(false)
+  const partialResponseRef = useRef<string>('') // Track partial AI response for interrupts
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [mentionSuggestions, setMentionSuggestions] = useState<UnifiedSuggestion[]>([])
@@ -172,6 +278,16 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [activeMentions, setActiveMentions] = useState<string[]>([])
   const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
+
+  // Voice dictation state
+  const [isRecording, setIsRecording] = useState(false)
+  const [interimTranscript, setInterimTranscript] = useState('')
+  const recognitionRef = useRef<any>(null)
+  const recordingStartInputRef = useRef<string>('') // Store input when recording starts
+  const isRecordingRef = useRef<boolean>(false) // Ref for onend handler to avoid stale closure
+
+  // Esc+Esc tracking for stopping AI response
+  const lastEscPressRef = useRef<number>(0)
 
   // Context usage tracking
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
@@ -182,6 +298,13 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Helper function to show notifications
+  const addNotification = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error') => {
+    // Simple console notification for now (can be extended with a proper notification system)
+    console.log(`[${type.toUpperCase()}] ${title}: ${message}`)
+    // TODO: Integrate with app notification system if available
+  }
 
   // Get messages from agent
   const messages = agent?.messages || []
@@ -296,6 +419,218 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     setContextUsage(usage)
   }, [messages, lastSystemPrompt, lastTools, agentModel, showContextUsage])
 
+  // Initialize Web Speech API (ONCE - no dependencies to avoid recreation)
+  useEffect(() => {
+    console.log('[Bug-Hunter] Initializing Web Speech API')
+
+    // Check for browser support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      console.warn('[Bug-Hunter] Web Speech API not supported in this browser')
+      return
+    }
+
+    // Create recognition instance
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true // Keep listening until stopped
+    recognition.interimResults = true // Get partial results while speaking
+    recognition.lang = 'en-US' // Default to English
+
+    console.log('[Bug-Hunter] Recognition instance created:', {
+      continuous: recognition.continuous,
+      interimResults: recognition.interimResults,
+      lang: recognition.lang
+    })
+
+    // Handle start event
+    recognition.onstart = () => {
+      console.log('[Bug-Hunter] Recognition STARTED - now listening for speech')
+    }
+
+    // Handle results
+    recognition.onresult = (event: any) => {
+      console.log('[Bug-Hunter] onresult fired! Event:', {
+        resultIndex: event.resultIndex,
+        resultsLength: event.results.length,
+        results: Array.from(event.results).map((r: any) => ({
+          transcript: r[0].transcript,
+          isFinal: r.isFinal,
+          confidence: r[0].confidence
+        }))
+      })
+
+      let interimText = ''
+      let finalText = ''
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript
+        if (event.results[i].isFinal) {
+          finalText += transcript + ' '
+          console.log('[Bug-Hunter] Final text captured:', transcript)
+        } else {
+          interimText += transcript
+          console.log('[Bug-Hunter] Interim text captured:', transcript)
+        }
+      }
+
+      // Update interim transcript for visual feedback
+      setInterimTranscript(interimText)
+
+      // Append final results to input
+      if (finalText) {
+        console.log('[Bug-Hunter] Appending final text to input:', finalText)
+        setInput(prevInput => {
+          const baseInput = recordingStartInputRef.current
+          const currentFinalText = prevInput.slice(baseInput.length).trim()
+          const newFinalText = (currentFinalText + ' ' + finalText).trim()
+          const result = baseInput + (baseInput && newFinalText ? ' ' : '') + newFinalText
+          console.log('[Bug-Hunter] Input updated:', { prevInput, baseInput, newFinalText, result })
+          return result
+        })
+        setInterimTranscript('')
+      }
+    }
+
+    // Handle errors
+    recognition.onerror = (event: any) => {
+      console.error('[Bug-Hunter] Speech recognition error:', event.error, event)
+
+      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+        addNotification(
+          'Microphone Permission Denied',
+          'Please grant microphone access to use voice dictation',
+          'error'
+        )
+      } else if (event.error === 'no-speech') {
+        console.warn('[Bug-Hunter] No speech detected - but this is normal, not stopping recording')
+        // Don't stop recording on no-speech - let user decide when to stop
+        return
+      } else if (event.error === 'network') {
+        addNotification(
+          'Network Error',
+          'Voice recognition requires an internet connection',
+          'error'
+        )
+      } else {
+        addNotification(
+          'Voice Recognition Error',
+          `An error occurred: ${event.error}`,
+          'error'
+        )
+      }
+
+      setIsRecording(false)
+      isRecordingRef.current = false
+      setInterimTranscript('')
+    }
+
+    // Handle end of recognition
+    recognition.onend = () => {
+      console.log('[Bug-Hunter] Recognition ended. isRecordingRef.current:', isRecordingRef.current)
+
+      // Use ref instead of state to avoid stale closure
+      if (isRecordingRef.current) {
+        console.log('[Bug-Hunter] Still recording, restarting recognition...')
+        try {
+          recognition.start()
+          console.log('[Bug-Hunter] Recognition restarted successfully')
+        } catch (e) {
+          console.log('[Bug-Hunter] Recognition already started or error:', e)
+        }
+      } else {
+        console.log('[Bug-Hunter] Recording stopped, not restarting')
+      }
+    }
+
+    recognitionRef.current = recognition
+    console.log('[Bug-Hunter] Recognition instance stored in ref')
+
+    // Cleanup
+    return () => {
+      console.log('[Bug-Hunter] Cleanup: stopping recognition')
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+    }
+  }, []) // EMPTY DEPS - only initialize once
+
+  // Start voice recording
+  const startVoiceRecording = async () => {
+    console.log('[Bug-Hunter] startVoiceRecording called')
+
+    if (!recognitionRef.current) {
+      console.error('[Bug-Hunter] No recognition instance available')
+      addNotification(
+        'Voice Input Not Supported',
+        'Your browser does not support voice input. Try Chrome or Edge.',
+        'error'
+      )
+      return
+    }
+
+    try {
+      // Store current input so we can append to it
+      recordingStartInputRef.current = input
+      console.log('[Bug-Hunter] Stored base input:', input)
+
+      // Set BOTH state and ref (ref for onend handler)
+      setIsRecording(true)
+      isRecordingRef.current = true
+      setInterimTranscript('')
+
+      console.log('[Bug-Hunter] Calling recognition.start()...')
+      recognitionRef.current.start()
+      console.log('[Bug-Hunter] recognition.start() called successfully')
+
+      addNotification(
+        'Voice Recording Started',
+        'Speak your message. Click the microphone again to stop.',
+        'info'
+      )
+    } catch (error) {
+      console.error('[Bug-Hunter] Error starting recognition:', error)
+      addNotification(
+        'Recording Failed',
+        'Could not start voice recording. Please try again.',
+        'error'
+      )
+      setIsRecording(false)
+      isRecordingRef.current = false
+    }
+  }
+
+  // Stop voice recording
+  const stopVoiceRecording = () => {
+    console.log('[Bug-Hunter] stopVoiceRecording called')
+
+    if (recognitionRef.current) {
+      console.log('[Bug-Hunter] Calling recognition.stop()...')
+      recognitionRef.current.stop()
+    }
+
+    // Set BOTH state and ref
+    setIsRecording(false)
+    isRecordingRef.current = false
+    setInterimTranscript('')
+
+    console.log('[Bug-Hunter] Recording stopped')
+
+    addNotification(
+      'Voice Recording Stopped',
+      'Your message has been transcribed.',
+      'success'
+    )
+  }
+
+  // Toggle voice recording
+  const toggleVoiceRecording = () => {
+    if (isRecording) {
+      stopVoiceRecording()
+    } else {
+      startVoiceRecording()
+    }
+  }
+
   // Toggle tool expanded state
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
@@ -389,9 +724,196 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     textareaRef.current?.focus()
   }
 
+  // Handle clipboard paste for images
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    console.log('[Paste] Clipboard event triggered')
+    console.log('[Paste] Items:', Array.from(e.clipboardData.items).map(i => ({ type: i.type, kind: i.kind })))
+    console.log('[Paste] Files:', Array.from(e.clipboardData.files).map(f => ({ name: f.name, type: f.type, size: f.size })))
+
+    // Strategy 1: Check clipboard items (works for most browsers)
+    const items = Array.from(e.clipboardData.items)
+    const imageItems = items.filter(item => item.type.startsWith('image/'))
+
+    // Strategy 2: Check clipboard files (works for Windows Snipping Tool, Print Screen)
+    const files = Array.from(e.clipboardData.files)
+    const imageFiles = files.filter(file => file.type.startsWith('image/') || file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i))
+
+    const hasImages = imageItems.length > 0 || imageFiles.length > 0
+
+    if (!hasImages) {
+      console.log('[Paste] No images detected in clipboard')
+      return // Let default paste behavior handle text
+    }
+
+    e.preventDefault() // Prevent pasting image as text/filename
+    console.log('[Paste] Processing images:', { itemCount: imageItems.length, fileCount: imageFiles.length })
+
+    const newImages: AttachedImage[] = []
+    let failedCount = 0
+
+    try {
+      // Process clipboard items first (inline image data)
+      for (const item of imageItems) {
+        try {
+          console.log('[Paste] Processing item:', item.type)
+          const image = await clipboardToAttachedImage(item)
+          if (image) {
+            newImages.push(image)
+            console.log('[Paste] Item processed successfully:', image.name)
+          } else {
+            console.warn('[Paste] Item returned null:', item.type)
+            failedCount++
+          }
+        } catch (err) {
+          console.error('[Paste] Error processing clipboard item:', err)
+          failedCount++
+        }
+      }
+
+      // Process files if items didn't work (Windows fallback)
+      if (newImages.length === 0 && imageFiles.length > 0) {
+        console.log('[Paste] Falling back to file-based paste')
+        for (const file of imageFiles) {
+          try {
+            console.log('[Paste] Processing file:', file.name, file.type)
+            const image = await fileToAttachedImage(file)
+            if (image) {
+              newImages.push(image)
+              console.log('[Paste] File processed successfully:', image.name)
+            } else {
+              console.warn('[Paste] File returned null:', file.name)
+              failedCount++
+            }
+          } catch (err) {
+            console.error('[Paste] Error processing file:', err)
+            failedCount++
+          }
+        }
+      }
+
+      // Update state and notify user
+      if (newImages.length > 0) {
+        setAttachedImages(prev => [...prev, ...newImages])
+        console.log('[Paste] Successfully attached images:', newImages.length)
+
+        // Success notification
+        addNotification(
+          'Images Attached',
+          `${newImages.length} image${newImages.length > 1 ? 's' : ''} ready to send`,
+          'success'
+        )
+
+        // Focus input after paste
+        textareaRef.current?.focus()
+      }
+
+      // Warning notification if some failed
+      if (failedCount > 0) {
+        addNotification(
+          'Partial Paste Failure',
+          `${failedCount} image${failedCount > 1 ? 's' : ''} could not be processed. Check console for details.`,
+          'warning'
+        )
+      }
+
+      // Error notification if all failed
+      if (newImages.length === 0 && (imageItems.length > 0 || imageFiles.length > 0)) {
+        console.error('[Paste] All images failed to process')
+        addNotification(
+          'Paste Failed',
+          'Could not process clipboard images. Try drag & drop or the file picker instead.',
+          'error'
+        )
+      }
+    } catch (err) {
+      console.error('[Paste] Critical error in paste handler:', err)
+      addNotification(
+        'Paste Error',
+        'An unexpected error occurred while pasting images.',
+        'error'
+      )
+    }
+  }
+
+  // Stop AI response (Esc+Esc) - just stop, no new message
+  const stopResponse = () => {
+    if (!isLoading) return
+
+    console.log('[Stop] User stopped AI response with Esc+Esc')
+    setIsLoading(false)
+    setIsInterrupting(false)
+    partialResponseRef.current = ''
+
+    // The partial response remains visible as-is
+    addNotification(
+      'Response Stopped',
+      'AI response stopped.',
+      'info'
+    )
+  }
+
+  // Interrupt current AI response and restart with new user message (Claude Code style)
+  const interruptAndRestart = async (newMessage: string, imagesToSend: AttachedImage[]) => {
+    if (!isLoading || isInterrupting) return
+
+    console.log('[Interrupt] User sending new message during AI response')
+    setIsInterrupting(true)
+
+    try {
+      // Step 1: Salvage partial response (let it stand as-is, no interruption marker)
+      const partialResponse = partialResponseRef.current || ''
+      console.log('[Interrupt] Salvaged partial response:', partialResponse.substring(0, 100))
+
+      // Step 2: Just keep the partial response as-is (no "[Interrupted...]" marker)
+      // The partial response will remain visible and the new user message will follow naturally
+
+      // Step 3: Clear state and prepare for new message
+      setInput('')
+      setAttachedImages([])
+      setMentionSuggestions([])
+      setActiveMentions([])
+      setActiveDocuments([])
+      setIsLoading(false)
+      if (isToolExecuting) {
+        console.warn('[Interrupt] Redirecting during tool execution')
+        setIsToolExecuting(false)
+      }
+      partialResponseRef.current = ''
+
+      // Step 4: Brief delay for state to settle
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Step 5: Send new message (conversation naturally continues)
+      console.log('[Interrupt] Sending new message:', newMessage.substring(0, 50))
+      setInput(newMessage)
+      await new Promise(resolve => setTimeout(resolve, 30))
+      // Call handleSendMessage with skipInterruptCheck=true to avoid loop
+      await handleSendMessage(true)
+
+    } catch (err) {
+      console.error('[Interrupt] Error during redirect:', err)
+      addNotification(
+        'Redirect Failed',
+        'Could not send new message. Please try again.',
+        'error'
+      )
+      setIsLoading(false)
+    } finally {
+      setIsInterrupting(false)
+    }
+  }
+
   // Send message handler
-  const handleSendMessage = async () => {
-    if (!input.trim() || !claudeServiceRef.current || isLoading || !agent) return
+  const handleSendMessage = async (skipInterruptCheck = false) => {
+    if (!input.trim() && attachedImages.length === 0) return
+    if (!claudeServiceRef.current || !agent) return
+
+    // INTERRUPT LOGIC: If AI is currently responding, interrupt it and restart with new context
+    if (!skipInterruptCheck && isLoading && !isInterrupting) {
+      console.log('[Interrupt] User sent message during AI response - triggering interrupt')
+      await interruptAndRestart(input.trim(), attachedImages)
+      return
+    }
 
     // Expand slash commands before sending
     const expandedInput = expandSlashCommand(input.trim(), shortcuts)
@@ -505,6 +1027,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           updateMessage(agentId, assistantMessage.id, {
             content: newContent,
           })
+          // Track partial response for interrupt support
+          partialResponseRef.current = newContent
         } else if (chunk.type === 'iteration_boundary') {
           // Add paragraph break between agentic loop iterations
           const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''
@@ -556,11 +1080,30 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       addMessage(agentId, errorMessage)
     } finally {
       setIsLoading(false)
+      partialResponseRef.current = '' // Clear partial response tracking
     }
   }
 
   // Handle key press
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Esc+Esc: Stop AI response (no redirect, just stop)
+    if (e.key === 'Escape' && isLoading) {
+      const now = Date.now()
+      const timeSinceLastEsc = now - lastEscPressRef.current
+
+      if (timeSinceLastEsc < 500) {
+        // Double Esc detected (within 500ms)
+        e.preventDefault()
+        stopResponse()
+        lastEscPressRef.current = 0 // Reset
+        return
+      } else {
+        // First Esc - record time
+        lastEscPressRef.current = now
+        // Don't prevent default - let it close suggestions
+      }
+    }
+
     // Handle command suggestions navigation
     if (commandSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -892,7 +1435,18 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
                   <div key={message.id} className="flex gap-3 justify-end">
                     <div className="max-w-[80%] rounded-lg px-4 py-2 bg-cyan-500/20 text-white">
                       <div className="prose prose-invert prose-sm max-w-none">
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                        <ReactMarkdown
+                          components={{
+                            code: ({ children }) => {
+                              if (typeof children !== 'string') return <code>{children}</code>
+                              return <LinkifiedText text={children} />
+                            },
+                            text: ({ children }) => {
+                              if (typeof children !== 'string') return <>{children}</>
+                              return <LinkifiedText text={children} />
+                            }
+                          }}
+                        >{message.content}</ReactMarkdown>
                       </div>
                     </div>
                     <div className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center flex-shrink-0">
@@ -952,7 +1506,18 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
                     </div>
                     <div className="max-w-[80%] rounded-lg px-4 py-2 bg-slate-800/50">
                       <div className="prose prose-invert prose-sm max-w-none">
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                        <ReactMarkdown
+                          components={{
+                            code: ({ children }) => {
+                              if (typeof children !== 'string') return <code>{children}</code>
+                              return <LinkifiedText text={children} />
+                            },
+                            text: ({ children }) => {
+                              if (typeof children !== 'string') return <>{children}</>
+                              return <LinkifiedText text={children} />
+                            }
+                          }}
+                        >{message.content}</ReactMarkdown>
                       </div>
                     </div>
                   </div>
@@ -1024,6 +1589,60 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           </div>
         )}
 
+        {/* Image Previews */}
+        {attachedImages.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {attachedImages.map(image => (
+              <div
+                key={image.id}
+                className="relative group rounded-lg overflow-hidden border border-white/10 bg-slate-800/50"
+                style={{ width: '80px', height: '80px' }}
+              >
+                <img
+                  src={image.preview}
+                  alt={image.name}
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  onClick={() => setAttachedImages(prev => prev.filter(img => img.id !== image.id))}
+                  className="
+                    absolute top-1 right-1
+                    p-1 rounded-full
+                    bg-red-500/80 hover:bg-red-600
+                    opacity-0 group-hover:opacity-100
+                    transition-opacity
+                  "
+                  title="Remove image"
+                >
+                  <X className="w-3 h-3 text-white" />
+                </button>
+                <div className="
+                  absolute bottom-0 left-0 right-0
+                  px-1 py-0.5
+                  bg-black/60 text-white text-[10px] truncate
+                ">
+                  {image.name}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Voice Recording Indicator */}
+        {isRecording && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-red-400 text-sm font-medium">Recording...</span>
+            </div>
+            {interimTranscript && (
+              <span className="text-slate-400 text-sm italic flex-1 truncate">
+                "{interimTranscript}"
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Input */}
         <div className="flex gap-2">
           <textarea
@@ -1031,6 +1650,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Message your assistant... (use @ for mentions)"
             rows={1}
             className="
@@ -1041,15 +1661,39 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             "
             style={{ minHeight: '48px', maxHeight: '200px' }}
           />
+
+          {/* Microphone Button */}
+          <button
+            onClick={toggleVoiceRecording}
+            disabled={isLoading}
+            title={isRecording ? 'Stop recording' : 'Start voice dictation'}
+            className={`
+              px-4 py-3 rounded-lg
+              text-white transition-all
+              ${isRecording
+                ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+                : 'bg-slate-700 hover:bg-slate-600 border border-white/10'
+              }
+              disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed
+            `}
+          >
+            {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          </button>
+
+          {/* Send Button */}
           <button
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading}
-            className="
+            disabled={isLoading ? isInterrupting : (!input.trim() && attachedImages.length === 0)}
+            title={isLoading ? 'Send new message (or press Esc+Esc to stop)' : 'Send message'}
+            className={`
               px-4 py-3 rounded-lg
-              bg-cyan-500 hover:bg-cyan-600
-              disabled:bg-slate-700 disabled:text-slate-500
-              text-white transition-colors
-            "
+              text-white transition-all
+              ${isLoading
+                ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600'
+                : 'bg-cyan-500 hover:bg-cyan-600'
+              }
+              disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed
+            `}
           >
             <Send className="w-5 h-5" />
           </button>

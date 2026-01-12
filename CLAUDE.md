@@ -61,6 +61,13 @@ Zustand store with localStorage persistence (`assistantos-storage`):
 └─────────────┴──────────────────────────────────────┘
 ```
 
+**IMPORTANT - Current Architecture**: The diagram above shows the CURRENT architecture (Sidebar + Tabs). Do not confuse this with the old v1.0.0 architecture described in CHANGELOG.md.
+
+**Legacy Code (DO NOT USE)**:
+- `PanelLayout.tsx` - Old 3-panel layout from v1.0.0 (not imported, not used)
+- `centerPanelView` state in appStore - Orphaned from old system
+- Any references to "3-panel layout" or "third column" describe deprecated code
+
 **Key Components**:
 - `App.tsx` - Root with TitleBar + AppLayout
 - `AppLayout.tsx` - Sidebar + TabBar + TabContent

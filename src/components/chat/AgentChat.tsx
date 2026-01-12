@@ -450,6 +450,9 @@ export function AgentChat() {
   const [isToolExecuting, setIsToolExecuting] = useState(false)
   const partialResponseRef = useRef<string>('') // Track partial AI response for interrupts
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
+
+  // DEBUG: Verify new code is loaded
+  console.log('[AgentChat] Component loaded with interrupt support:', { isInterrupting, isToolExecuting })
   const [isImageDragOver, setIsImageDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -2158,7 +2161,7 @@ export function AgentChat() {
     } finally {
       setIsInterrupting(false)
     }
-  }, [isLoading, isInterrupting, isToolExecuting, useAgentSDK, claudeCodeInstalled, addNotification])
+  }, [isLoading, isInterrupting, isToolExecuting, useAgentSDK, claudeCodeInstalled, addNotification, sendMessageClassic, sendMessageAgentSDK])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Handle ESC-ESC double-tap to stop streaming (within 500ms)
@@ -3436,8 +3439,8 @@ export function AgentChat() {
 
           {/* Send/Interrupt Button - unified button for sending and interrupting */}
           <button
-            onClick={isLoading ? sendMessage : sendMessage}
-            disabled={(!input.trim() && attachedImages.length === 0) || isInterrupting}
+            onClick={sendMessage}
+            disabled={isLoading ? (isInterrupting || (!input.trim() && attachedImages.length === 0)) : (!input.trim() && attachedImages.length === 0)}
             className="px-4 py-3 rounded-xl transition-all border"
             data-send-button
             title={isLoading ? "Interrupt and redirect with new message" : "Send message"}
@@ -3448,8 +3451,8 @@ export function AgentChat() {
               color: 'white',
               borderColor: isLoading ? 'rgba(249, 115, 22, 0.3)' : 'rgba(139, 92, 246, 0.3)',
               boxShadow: isLoading ? '0 0 15px rgba(249, 115, 22, 0.3)' : '0 0 15px rgba(139, 92, 246, 0.3)',
-              opacity: (!input.trim() && attachedImages.length === 0) || isInterrupting ? 0.5 : 1,
-              cursor: (!input.trim() && attachedImages.length === 0) || isInterrupting ? 'not-allowed' : 'pointer'
+              opacity: (isLoading ? (isInterrupting || (!input.trim() && attachedImages.length === 0)) : (!input.trim() && attachedImages.length === 0)) ? 0.5 : 1,
+              cursor: (isLoading ? (isInterrupting || (!input.trim() && attachedImages.length === 0)) : (!input.trim() && attachedImages.length === 0)) ? 'not-allowed' : 'pointer'
             }}
           >
             {isLoading ? (

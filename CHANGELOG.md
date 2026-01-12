@@ -131,7 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Custom instructions (user-editable)
   - Dynamic context (runtime-gathered)
 - Model selection (Opus 4, Sonnet 4, Haiku 3.5)
-- Resizable 3-panel layout (FileTree, MarkdownEditor, AgentChat)
+- Resizable 3-panel layout (FileTree, MarkdownEditor, AgentChat) **[DEPRECATED - Replaced by Sidebar + Tab system in later versions]**
 - Dark mode UI with metallic theme
 - Conversation history management
 - Tool execution visualization
