@@ -499,7 +499,7 @@ export const useAppStore = create<AppState>()(
       setAgentPresetAvatar: (preset) => set({ agentPresetAvatar: preset }),
 
       // Context Token Tracking
-      showContextUsage: false,
+      showContextUsage: true,
       setShowContextUsage: (show) => set({ showContextUsage: show }),
 
       // Agent SDK Settings

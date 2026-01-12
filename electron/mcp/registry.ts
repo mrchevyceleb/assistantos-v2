@@ -3,6 +3,12 @@
  * Single source of truth for all integration definitions including @mentions
  */
 
+import {
+  GOOGLE_OAUTH_CREDENTIALS,
+  hasEmbeddedCredentials,
+  GOOGLE_OAUTH_SCOPES
+} from '../config/googleOAuth.js';
+
 export interface MCPIntegration {
   id: string;
   name: string;
@@ -62,6 +68,7 @@ export const MCP_INTEGRATIONS: MCPIntegration[] = [
   },
 
   // Google Integrations
+  // Note: These use embedded OAuth credentials when available
   {
     id: 'gmail',
     name: 'Gmail',
@@ -71,10 +78,15 @@ export const MCP_INTEGRATIONS: MCPIntegration[] = [
     category: 'google',
     command: 'npx',
     args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
-    requiredEnvVars: [
+    // Use embedded credentials if available, otherwise require user to configure
+    requiredEnvVars: hasEmbeddedCredentials() ? [] : [
       { key: 'GMAIL_CLIENT_ID', label: 'Google Client ID', type: 'text', description: 'OAuth client ID from Google Cloud Console' },
       { key: 'GMAIL_CLIENT_SECRET', label: 'Google Client Secret', type: 'apiKey', description: 'OAuth client secret' }
     ],
+    oauth: hasEmbeddedCredentials() ? {
+      provider: 'google',
+      scopes: GOOGLE_OAUTH_SCOPES.gmail
+    } : undefined,
     apiKeyUrl: 'https://console.cloud.google.com/apis/credentials',
     toolPrefix: 'gmail_'
   },
@@ -87,10 +99,15 @@ export const MCP_INTEGRATIONS: MCPIntegration[] = [
     category: 'google',
     command: 'npx',
     args: ['-y', '@cocal/google-calendar-mcp'],
-    requiredEnvVars: [
+    // Use embedded credentials if available, otherwise require user to configure
+    requiredEnvVars: hasEmbeddedCredentials() ? [] : [
       { key: 'GOOGLE_CLIENT_ID', label: 'Google Client ID', type: 'text', description: 'OAuth client ID from Google Cloud Console' },
       { key: 'GOOGLE_CLIENT_SECRET', label: 'Google Client Secret', type: 'apiKey', description: 'OAuth client secret' }
     ],
+    oauth: hasEmbeddedCredentials() ? {
+      provider: 'google',
+      scopes: GOOGLE_OAUTH_SCOPES.calendar
+    } : undefined,
     apiKeyUrl: 'https://console.cloud.google.com/apis/credentials',
     toolPrefix: 'calendar_'
   },

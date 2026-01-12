@@ -307,6 +307,28 @@ interface ElectronAPI {
     copyPath: (filePath: string) => Promise<{ success: boolean; error?: string }>
     showInExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>
     getInfo: (filePath: string) => Promise<{ success: boolean; info?: { size: number; isDirectory: boolean; isFile: boolean; created: string; modified: string }; error?: string }>
+    glob: (pattern: string, cwd: string, options?: { ignore?: string[]; maxResults?: number }) => Promise<string[]>
+    grep: (pattern: string, searchPath: string, options?: {
+      include?: string
+      exclude?: string
+      caseSensitive?: boolean
+      maxResults?: number
+    }) => Promise<Array<{
+      filePath: string
+      relativePath: string
+      fileName: string
+      lineNumber: number
+      lineContent: string
+      matchStart: number
+      matchEnd: number
+    }>>
+    edit: (filePath: string, oldText: string, newText: string) => Promise<{
+      success: boolean
+      error?: string
+      occurrences?: number
+      replaced?: number
+      charDiff?: number
+    }>
   }
   bash: {
     execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>

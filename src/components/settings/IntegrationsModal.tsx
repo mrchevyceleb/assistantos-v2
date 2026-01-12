@@ -227,8 +227,9 @@ function IntegrationCard({
   const isEnabled = config?.enabled || false
   const hasOAuth = !!integration.oauth
   // Check if all required env vars are configured (considering defaults)
+  // For OAuth integrations with embedded credentials, no config is needed
   const isConfigured = hasOAuth
-    ? false // OAuth needs separate handling
+    ? true // OAuth with embedded credentials is always ready
     : integration.requiredEnvVars.length === 0 ||
       integration.requiredEnvVars.every(v => envVars[v.key] || v.defaultValue)
 
@@ -332,15 +333,25 @@ function IntegrationCard({
           {hasOAuth ? (
             <div>
               <p className="text-sm text-slate-400 mb-3">
-                This integration uses OAuth authentication.
+                Click "Authorize" to connect your Google account. No additional configuration needed.
               </p>
               <button
-                disabled={true}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-400 rounded-lg text-sm cursor-not-allowed"
+                onClick={() => {
+                  // Trigger OAuth flow via IPC
+                  window.electronAPI.mcp.start(integration.id).then(result => {
+                    if (!result.success) {
+                      console.error('OAuth start failed:', result.error)
+                    }
+                  })
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm transition-colors"
               >
                 <ExternalLink className="w-4 h-4" />
-                Connect Account (Coming Soon)
+                Authorize with Google
               </button>
+              <p className="text-xs text-slate-500 mt-2">
+                Opens a browser window to sign in with your Google account.
+              </p>
             </div>
           ) : integration.requiredEnvVars.length > 0 ? (
             <>

@@ -24,6 +24,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     copyPath: (filePath: string) => ipcRenderer.invoke('fs:copyPath', filePath),
     showInExplorer: (filePath: string) => ipcRenderer.invoke('fs:showInExplorer', filePath),
     getInfo: (filePath: string) => ipcRenderer.invoke('fs:getInfo', filePath),
+    glob: (pattern: string, cwd: string, options?: { ignore?: string[]; maxResults?: number }) =>
+      ipcRenderer.invoke('fs:glob', pattern, cwd, options),
+    grep: (pattern: string, searchPath: string, options?: {
+      include?: string
+      exclude?: string
+      caseSensitive?: boolean
+      maxResults?: number
+    }) => ipcRenderer.invoke('fs:grep', pattern, searchPath, options),
+    edit: (filePath: string, oldText: string, newText: string) =>
+      ipcRenderer.invoke('fs:edit', filePath, oldText, newText),
   },
 
   // Bash command execution

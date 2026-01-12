@@ -1329,7 +1329,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   border: '1px solid rgba(255, 255, 255, 0.05)'
                 }}
               >
-                v1.2.0
+                v1.3.1
               </div>
             </div>
 

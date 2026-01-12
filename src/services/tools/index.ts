@@ -1,14 +1,16 @@
 import { executeFileTool } from './fileTools';
 import { executeBashTool } from './bashTool';
 import { executeCreateIntegration } from './integrationTool';
+import { executeEfficientTool } from './efficientTools';
 import { allTools } from './schemas';
 
 export { allTools } from './schemas';
 
 const FILE_TOOLS = ['read_file', 'write_file', 'list_directory', 'file_exists', 'create_directory'];
+const EFFICIENT_TOOLS = ['grep', 'glob', 'edit'];
 
 // Local tools that are always available
-const LOCAL_TOOLS = new Set([...FILE_TOOLS, 'bash', 'create_mcp_integration']);
+const LOCAL_TOOLS = new Set([...FILE_TOOLS, ...EFFICIENT_TOOLS, 'bash', 'create_mcp_integration']);
 
 /**
  * Execute a tool - routes to local handler or MCP server
@@ -23,6 +25,11 @@ export async function executeTool(
   // Handle local file tools
   if (FILE_TOOLS.includes(name)) {
     return executeFileTool(name, input, workspacePath, agentId, agentName);
+  }
+
+  // Handle efficient tools (grep, glob, edit)
+  if (EFFICIENT_TOOLS.includes(name)) {
+    return executeEfficientTool(name, input, workspacePath, agentId, agentName);
   }
 
   // Handle bash

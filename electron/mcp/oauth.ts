@@ -2,11 +2,19 @@
  * Google OAuth Handler
  * Handles OAuth flow for Google integrations (Gmail, Calendar)
  * Uses system browser with localhost callback
+ *
+ * Supports both embedded credentials (for easy setup) and user-configured credentials
  */
 
 import { shell, BrowserWindow } from 'electron';
 import * as http from 'http';
 import * as url from 'url';
+import {
+  GOOGLE_OAUTH_CREDENTIALS,
+  hasEmbeddedCredentials,
+  getOAuthRedirectUri,
+  GOOGLE_OAUTH_SCOPES
+} from '../config/googleOAuth.js';
 
 interface OAuthConfig {
   clientId: string;
@@ -249,3 +257,71 @@ export const GOOGLE_SCOPES = {
     'https://www.googleapis.com/auth/calendar.events',
   ],
 };
+
+/**
+ * Get OAuth configuration for a Google service
+ * Uses embedded credentials if available, otherwise requires user credentials
+ */
+export function getGoogleOAuthConfig(
+  service: 'gmail' | 'calendar',
+  userCredentials?: { clientId?: string; clientSecret?: string }
+): OAuthConfig | null {
+  // Prefer embedded credentials
+  if (hasEmbeddedCredentials()) {
+    return {
+      clientId: GOOGLE_OAUTH_CREDENTIALS.clientId,
+      clientSecret: GOOGLE_OAUTH_CREDENTIALS.clientSecret,
+      redirectUri: getOAuthRedirectUri(),
+      scopes: service === 'gmail' ? GOOGLE_OAUTH_SCOPES.gmail : GOOGLE_OAUTH_SCOPES.calendar
+    };
+  }
+
+  // Fall back to user-provided credentials
+  if (userCredentials?.clientId && userCredentials?.clientSecret) {
+    return {
+      clientId: userCredentials.clientId,
+      clientSecret: userCredentials.clientSecret,
+      redirectUri: getRedirectUri(),
+      scopes: service === 'gmail' ? GOOGLE_SCOPES.gmail : GOOGLE_SCOPES.calendar
+    };
+  }
+
+  // No credentials available
+  return null;
+}
+
+/**
+ * Check if OAuth is ready for a service
+ * Returns true if either embedded or user credentials are available
+ */
+export function isOAuthConfigured(
+  service: 'gmail' | 'calendar',
+  userCredentials?: { clientId?: string; clientSecret?: string }
+): boolean {
+  return getGoogleOAuthConfig(service, userCredentials) !== null;
+}
+
+/**
+ * Start OAuth flow using the best available credentials
+ */
+export async function startGoogleOAuthWithAutoConfig(
+  service: 'gmail' | 'calendar',
+  mainWindow: BrowserWindow | null,
+  userCredentials?: { clientId?: string; clientSecret?: string }
+): Promise<OAuthResult> {
+  const config = getGoogleOAuthConfig(service, userCredentials);
+
+  if (!config) {
+    return {
+      success: false,
+      error: 'No OAuth credentials configured. Please configure Google OAuth credentials in settings.'
+    };
+  }
+
+  return startGoogleOAuth(config, mainWindow);
+}
+
+/**
+ * Re-export embedded credentials info for UI
+ */
+export { hasEmbeddedCredentials };

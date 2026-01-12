@@ -155,4 +155,93 @@ export const createIntegrationTool: Tool = {
   }
 };
 
-export const allTools: Tool[] = [...fileTools, bashTool, createIntegrationTool];
+/**
+ * Efficient tools for searching and editing without loading entire files into context
+ */
+export const efficientTools: Tool[] = [
+  {
+    name: 'grep',
+    description: 'Search for a pattern in files. Returns matching lines with file paths and line numbers. Much more efficient than reading entire files when searching for specific content.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'The regex pattern to search for (e.g., "function handleSubmit", "TODO:", "import.*from")'
+        },
+        path: {
+          type: 'string',
+          description: 'Directory or file to search in. Defaults to workspace root if not specified.'
+        },
+        include: {
+          type: 'string',
+          description: 'Glob pattern to filter files (e.g., "*.ts", "*.tsx", "*.{js,jsx}")'
+        },
+        exclude: {
+          type: 'string',
+          description: 'Glob pattern to exclude files (e.g., "node_modules/**", "*.test.ts")'
+        },
+        caseSensitive: {
+          type: 'boolean',
+          description: 'Whether the search is case-sensitive. Defaults to false.'
+        },
+        maxResults: {
+          type: 'number',
+          description: 'Maximum number of results to return. Defaults to 50.'
+        }
+      },
+      required: ['pattern']
+    }
+  },
+  {
+    name: 'glob',
+    description: 'Find files matching a glob pattern. Returns file paths without reading contents. Use this to locate files before reading or editing them.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Glob pattern to match (e.g., "**/*.tsx", "src/**/*.test.ts", "*.md")'
+        },
+        cwd: {
+          type: 'string',
+          description: 'Directory to search from. Defaults to workspace root.'
+        },
+        ignore: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Patterns to ignore (e.g., ["node_modules/**", "dist/**"])'
+        },
+        maxResults: {
+          type: 'number',
+          description: 'Maximum number of results to return. Defaults to 100.'
+        }
+      },
+      required: ['pattern']
+    }
+  },
+  {
+    name: 'edit',
+    description: 'Edit a specific part of a file by replacing old text with new text. More efficient than read_file + write_file for targeted changes. The old_text must match exactly.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: {
+          type: 'string',
+          description: 'The file path to edit. Can be absolute or relative to workspace.'
+        },
+        old_text: {
+          type: 'string',
+          description: 'The exact text to find and replace. Must match exactly including whitespace.'
+        },
+        new_text: {
+          type: 'string',
+          description: 'The text to replace old_text with. Can be empty to delete the text.'
+        }
+      },
+      required: ['path', 'old_text', 'new_text']
+    }
+  }
+];
+
+export const allTools: Tool[] = [...fileTools, ...efficientTools, bashTool, createIntegrationTool];

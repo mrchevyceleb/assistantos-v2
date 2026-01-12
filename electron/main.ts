@@ -874,3 +874,311 @@ ipcMain.handle('fs:searchContent', async (_, workspacePath: string, query: strin
     contentMatches: contentMatches.slice(0, 20)
   }
 })
+
+// =============================================================================
+// Efficient Tools: Glob Pattern Matching
+// =============================================================================
+
+/**
+ * Match a glob pattern against a path
+ * Supports: * (any chars), ** (any path), ? (single char)
+ */
+function matchGlobPattern(pattern: string, filePath: string): boolean {
+  // Convert glob to regex
+  let regexPattern = pattern
+    // Escape special regex chars except * and ?
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    // ** matches any path including /
+    .replace(/\*\*/g, '{{GLOBSTAR}}')
+    // * matches anything except /
+    .replace(/\*/g, '[^/\\\\]*')
+    // ? matches single char except /
+    .replace(/\?/g, '[^/\\\\]')
+    // Restore globstar
+    .replace(/\{\{GLOBSTAR\}\}/g, '.*')
+
+  // Make sure pattern matches whole string or from start
+  if (!regexPattern.startsWith('.*')) {
+    regexPattern = '^' + regexPattern
+  }
+
+  try {
+    const regex = new RegExp(regexPattern, 'i')
+    return regex.test(filePath)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if a path should be ignored based on ignore patterns
+ */
+function shouldIgnore(relativePath: string, ignorePatterns: string[]): boolean {
+  return ignorePatterns.some(pattern => matchGlobPattern(pattern, relativePath))
+}
+
+/**
+ * Recursively find files matching a glob pattern
+ */
+async function findFilesRecursively(
+  dirPath: string,
+  basePath: string,
+  pattern: string,
+  ignorePatterns: string[],
+  results: string[],
+  maxResults: number,
+  depth: number = 0
+): Promise<void> {
+  if (results.length >= maxResults || depth > 10) return
+
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+
+    for (const entry of entries) {
+      if (results.length >= maxResults) break
+
+      const fullPath = path.join(dirPath, entry.name)
+      const relativePath = path.relative(basePath, fullPath).replace(/\\/g, '/')
+
+      // Skip if matches ignore pattern
+      if (shouldIgnore(relativePath, ignorePatterns)) continue
+
+      if (entry.isDirectory()) {
+        // Recurse into directory
+        await findFilesRecursively(fullPath, basePath, pattern, ignorePatterns, results, maxResults, depth + 1)
+      } else {
+        // Check if file matches pattern
+        if (matchGlobPattern(pattern, relativePath)) {
+          results.push(fullPath)
+        }
+      }
+    }
+  } catch {
+    // Ignore permission errors
+  }
+}
+
+// IPC Handler for glob pattern matching
+ipcMain.handle('fs:glob', async (
+  _,
+  pattern: string,
+  cwd: string,
+  options?: { ignore?: string[]; maxResults?: number }
+) => {
+  const ignorePatterns = options?.ignore || ['node_modules/**', 'dist/**', '.git/**', 'coverage/**', 'build/**']
+  const maxResults = options?.maxResults || 100
+  const results: string[] = []
+
+  try {
+    await findFilesRecursively(cwd, cwd, pattern, ignorePatterns, results, maxResults)
+    return results
+  } catch (error) {
+    console.error('Error in glob search:', error)
+    return []
+  }
+})
+
+// =============================================================================
+// Efficient Tools: Regex-based Content Search (Grep)
+// =============================================================================
+
+interface GrepResult {
+  filePath: string
+  relativePath: string
+  fileName: string
+  lineNumber: number
+  lineContent: string
+  matchStart: number
+  matchEnd: number
+}
+
+/**
+ * Search file contents with regex pattern support
+ */
+async function grepFileContents(
+  filePath: string,
+  pattern: RegExp,
+  caseSensitive: boolean
+): Promise<GrepResult[]> {
+  const results: GrepResult[] = []
+
+  try {
+    const stat = await fs.promises.stat(filePath)
+    if (stat.size > CONTENT_SEARCH_MAX_FILE_SIZE) return results
+
+    const content = await fs.promises.readFile(filePath, 'utf-8')
+    const lines = content.split('\n')
+    const fileName = path.basename(filePath)
+    const searchPattern = caseSensitive ? pattern : new RegExp(pattern.source, 'gi')
+
+    for (let i = 0; i < lines.length && results.length < 10; i++) {
+      const line = lines[i]
+      const match = searchPattern.exec(line)
+
+      if (match) {
+        results.push({
+          filePath,
+          relativePath: '', // Set by caller
+          fileName,
+          lineNumber: i + 1,
+          lineContent: line.slice(0, 200),
+          matchStart: match.index,
+          matchEnd: match.index + match[0].length
+        })
+        searchPattern.lastIndex = 0 // Reset for next line
+      }
+    }
+  } catch {
+    // Ignore read errors
+  }
+
+  return results
+}
+
+/**
+ * Recursively grep directory contents
+ */
+async function grepDirectoryContents(
+  dirPath: string,
+  basePath: string,
+  pattern: RegExp,
+  caseSensitive: boolean,
+  includePattern: RegExp | null,
+  excludePattern: RegExp | null,
+  results: GrepResult[],
+  maxResults: number,
+  depth: number = 0
+): Promise<void> {
+  if (depth > FILE_SEARCH_MAX_DEPTH || results.length >= maxResults) return
+
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+
+    for (const entry of entries) {
+      if (results.length >= maxResults) break
+
+      // Skip hidden and excluded directories
+      if (entry.name.startsWith('.') || EXCLUDED_DIRECTORIES.has(entry.name)) continue
+
+      const fullPath = path.join(dirPath, entry.name)
+      const relativePath = path.relative(basePath, fullPath)
+
+      if (entry.isDirectory()) {
+        await grepDirectoryContents(
+          fullPath, basePath, pattern, caseSensitive,
+          includePattern, excludePattern, results, maxResults, depth + 1
+        )
+      } else if (entry.isFile() && isSearchableFile(entry.name)) {
+        // Apply include/exclude filters
+        if (includePattern && !includePattern.test(entry.name)) continue
+        if (excludePattern && excludePattern.test(relativePath)) continue
+
+        const fileResults = await grepFileContents(fullPath, pattern, caseSensitive)
+        for (const result of fileResults) {
+          if (results.length >= maxResults) break
+          result.relativePath = relativePath
+          results.push(result)
+        }
+      }
+    }
+  } catch {
+    // Ignore permission errors
+  }
+}
+
+// IPC Handler for regex grep search
+ipcMain.handle('fs:grep', async (
+  _,
+  searchPattern: string,
+  searchPath: string,
+  options?: {
+    include?: string
+    exclude?: string
+    caseSensitive?: boolean
+    maxResults?: number
+  }
+) => {
+  const maxResults = options?.maxResults || 50
+  const caseSensitive = options?.caseSensitive || false
+  const results: GrepResult[] = []
+
+  try {
+    // Convert pattern string to regex
+    let pattern: RegExp
+    try {
+      pattern = new RegExp(searchPattern, caseSensitive ? 'g' : 'gi')
+    } catch {
+      // If invalid regex, escape it and treat as literal string
+      const escaped = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      pattern = new RegExp(escaped, caseSensitive ? 'g' : 'gi')
+    }
+
+    // Convert include/exclude glob to regex
+    const includePattern = options?.include
+      ? new RegExp(options.include.replace(/\*/g, '.*').replace(/\?/g, '.'))
+      : null
+    const excludePattern = options?.exclude
+      ? new RegExp(options.exclude.replace(/\*/g, '.*').replace(/\?/g, '.'))
+      : null
+
+    await grepDirectoryContents(
+      searchPath, searchPath, pattern, caseSensitive,
+      includePattern, excludePattern, results, maxResults
+    )
+
+    return results
+  } catch (error) {
+    console.error('Error in grep search:', error)
+    return []
+  }
+})
+
+// =============================================================================
+// Efficient Tools: Atomic File Edit
+// =============================================================================
+
+// IPC Handler for atomic text replacement in files
+ipcMain.handle('fs:edit', async (
+  _,
+  filePath: string,
+  oldText: string,
+  newText: string
+) => {
+  try {
+    // Validate inputs
+    if (!oldText) {
+      return { success: false, error: 'old_text is required and cannot be empty' }
+    }
+
+    // Read current content
+    const content = await fs.promises.readFile(filePath, 'utf-8')
+
+    // Check if old_text exists
+    if (!content.includes(oldText)) {
+      return {
+        success: false,
+        error: `Text not found in file. Make sure old_text matches exactly including whitespace.`
+      }
+    }
+
+    // Count occurrences
+    const escapedOldText = oldText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const occurrences = (content.match(new RegExp(escapedOldText, 'g')) || []).length
+
+    // Replace (first occurrence only for safety)
+    const newContent = content.replace(oldText, newText)
+
+    // Write back
+    await fs.promises.writeFile(filePath, newContent, 'utf-8')
+
+    return {
+      success: true,
+      occurrences,
+      replaced: 1,
+      charDiff: newText.length - oldText.length
+    }
+  } catch (error) {
+    console.error('Error editing file:', error)
+    return { success: false, error: String(error) }
+  }
+})

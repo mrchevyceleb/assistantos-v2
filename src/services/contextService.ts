@@ -14,6 +14,41 @@ export interface TaskSummary {
   overdue: ParsedTask[]   // Tasks past due date
 }
 
+/**
+ * Standard folder conventions for personal workspace organization
+ */
+export const WORKSPACE_FOLDER_CONVENTIONS: { [key: string]: string } = {
+  '00-Intake': 'New items to process and triage',
+  '00-Inbox': 'New items to process and triage',
+  '01-Active': 'Currently active work and projects',
+  '02-Completed': 'Finished work for reference',
+  '02-Someday': 'Items to revisit later',
+  '03-Templates': 'Reusable templates and boilerplates',
+  '03-Reference': 'Reference materials and documentation',
+  '04-Generated': 'AI-generated content and outputs',
+  '04-Archive': 'Archived items',
+  '05-Projects': 'Project folders and workspaces',
+  '06-Systems': 'System configurations and automations',
+  '07-Reference': 'Reference materials and documentation',
+  'TASKS': 'Task management folder',
+  'Tasks': 'Task management folder',
+  'tasks': 'Task management folder',
+}
+
+export interface WorkspaceStructureEntry {
+  name: string
+  isDirectory: boolean
+  description?: string  // From folder conventions
+  isKnownConvention: boolean
+}
+
+export interface EnhancedWorkspaceStructure {
+  entries: WorkspaceStructureEntry[]
+  hasTasksFolder: boolean
+  hasConventionalFolders: boolean
+  workspaceType: 'personal' | 'code' | 'mixed' | 'unknown'
+}
+
 export interface DynamicContext {
   platform: string
   currentDate: string
@@ -26,6 +61,7 @@ export interface DynamicContext {
   openFiles: string[]
   currentFile: string | null
   workspaceStructure?: string[]
+  enhancedWorkspaceStructure?: EnhancedWorkspaceStructure
   taskSummary?: TaskSummary
 }
 
@@ -38,6 +74,96 @@ function getPlatformInfo(): string {
   if (platform.includes('mac')) return 'macOS'
   if (platform.includes('linux')) return 'Linux'
   return platform
+}
+
+/**
+ * Indicators that suggest this is primarily a code project
+ */
+const CODE_PROJECT_INDICATORS = [
+  'package.json',
+  'Cargo.toml',
+  'go.mod',
+  'requirements.txt',
+  'pyproject.toml',
+  'Gemfile',
+  'pom.xml',
+  'build.gradle',
+  '.sln',
+  'Makefile',
+  'CMakeLists.txt',
+  'src/',
+  'lib/',
+  'test/',
+  'tests/',
+]
+
+/**
+ * Analyze workspace structure and detect type
+ */
+async function gatherEnhancedWorkspaceStructure(
+  workspacePath: string
+): Promise<EnhancedWorkspaceStructure | null> {
+  try {
+    const entries = await window.electronAPI.fs.readDir(workspacePath)
+
+    // Filter out hidden files and process entries
+    const processedEntries: WorkspaceStructureEntry[] = entries
+      .filter((e) => !e.name.startsWith('.'))
+      .slice(0, 30)
+      .map((e) => {
+        const displayName = e.isDirectory ? `${e.name}/` : e.name
+        const baseName = e.name
+        const isKnownConvention = baseName in WORKSPACE_FOLDER_CONVENTIONS
+
+        return {
+          name: displayName,
+          isDirectory: e.isDirectory,
+          description: isKnownConvention ? WORKSPACE_FOLDER_CONVENTIONS[baseName] : undefined,
+          isKnownConvention,
+        }
+      })
+
+    // Detect workspace characteristics
+    const hasTasksFolder = entries.some(
+      (e) => e.isDirectory && ['TASKS', 'Tasks', 'tasks'].includes(e.name)
+    )
+
+    const conventionalFolderCount = processedEntries.filter(
+      (e) => e.isKnownConvention
+    ).length
+
+    const hasConventionalFolders = conventionalFolderCount >= 2
+
+    // Detect if this is a code project
+    const codeIndicatorCount = entries.filter(
+      (e) => CODE_PROJECT_INDICATORS.includes(e.name) ||
+             CODE_PROJECT_INDICATORS.includes(`${e.name}/`)
+    ).length
+
+    // Determine workspace type
+    let workspaceType: 'personal' | 'code' | 'mixed' | 'unknown' = 'unknown'
+
+    if (hasConventionalFolders && codeIndicatorCount === 0) {
+      workspaceType = 'personal'
+    } else if (codeIndicatorCount >= 2 && !hasConventionalFolders) {
+      workspaceType = 'code'
+    } else if (hasConventionalFolders && codeIndicatorCount > 0) {
+      workspaceType = 'mixed'
+    } else if (codeIndicatorCount > 0) {
+      workspaceType = 'code'
+    } else if (hasTasksFolder) {
+      workspaceType = 'personal'
+    }
+
+    return {
+      entries: processedEntries,
+      hasTasksFolder,
+      hasConventionalFolders,
+      workspaceType,
+    }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -118,15 +244,23 @@ export async function gatherDynamicContext(
     // Git not available or not a repo - silently ignore
   }
 
-  // Get workspace structure (top-level, non-hidden files)
-  try {
-    const entries = await window.electronAPI.fs.readDir(workspacePath)
-    context.workspaceStructure = entries
-      .filter((e) => !e.name.startsWith('.'))
-      .slice(0, 20)
-      .map((e) => (e.isDirectory ? `${e.name}/` : e.name))
-  } catch {
-    // Ignore errors reading directory
+  // Get enhanced workspace structure with folder convention detection
+  const enhancedStructure = await gatherEnhancedWorkspaceStructure(workspacePath)
+  if (enhancedStructure) {
+    context.enhancedWorkspaceStructure = enhancedStructure
+    // Also maintain backward compatibility with simple structure
+    context.workspaceStructure = enhancedStructure.entries.map((e) => e.name)
+  } else {
+    // Fallback: Get workspace structure (top-level, non-hidden files)
+    try {
+      const entries = await window.electronAPI.fs.readDir(workspacePath)
+      context.workspaceStructure = entries
+        .filter((e) => !e.name.startsWith('.'))
+        .slice(0, 20)
+        .map((e) => (e.isDirectory ? `${e.name}/` : e.name))
+    } catch {
+      // Ignore errors reading directory
+    }
   }
 
   // Gather task information if TASKS folder exists
@@ -194,22 +328,76 @@ export function formatContextForPrompt(context: DynamicContext): string {
 - Date: ${context.currentDate}
 - Time: ${context.currentTime}`)
 
-  // Workspace section
-  sections.push(`## Workspace
-- Path: ${context.workspacePath || 'No workspace selected'}`)
+  // Workspace section with enhanced awareness
+  if (context.enhancedWorkspaceStructure) {
+    const ews = context.enhancedWorkspaceStructure
+    let workspaceSection = `## Workspace
+- Path: ${context.workspacePath || 'No workspace selected'}
+- Type: ${ews.workspaceType === 'personal' ? 'Personal/Productivity workspace' :
+         ews.workspaceType === 'code' ? 'Code project' :
+         ews.workspaceType === 'mixed' ? 'Mixed (personal + code)' : 'General workspace'}`
 
-  // Git section (if in a repo)
-  if (context.isGitRepo) {
-    let gitSection = `## Git Repository
-- Branch: ${context.gitBranch || 'unknown'}
-- Status: ${context.gitStatus || '(unknown)'}`
+    // Add folder structure with descriptions for conventional folders
+    if (ews.entries.length > 0) {
+      workspaceSection += `
 
-    if (context.recentCommits && context.recentCommits.length > 0) {
-      gitSection += `
-- Recent commits:
-${context.recentCommits.map((c) => `  - ${c}`).join('\n')}`
+### Folder Structure`
+
+      // Group entries: conventional folders first, then others
+      const conventionalEntries = ews.entries.filter(e => e.isKnownConvention)
+      const otherEntries = ews.entries.filter(e => !e.isKnownConvention)
+
+      if (conventionalEntries.length > 0) {
+        workspaceSection += `
+**Organized folders:**`
+        for (const entry of conventionalEntries) {
+          workspaceSection += `
+- ${entry.name}${entry.description ? ` - ${entry.description}` : ''}`
+        }
+      }
+
+      if (otherEntries.length > 0) {
+        workspaceSection += `
+**Other contents:** ${otherEntries.map(e => e.name).join(', ')}`
+      }
     }
-    sections.push(gitSection)
+
+    sections.push(workspaceSection)
+  } else {
+    sections.push(`## Workspace
+- Path: ${context.workspacePath || 'No workspace selected'}`)
+  }
+
+  // Tasks section (PRIORITY - show before git, as this is what users typically mean by "edits needed")
+  if (context.taskSummary) {
+    const { total, byStatus, upcoming, overdue } = context.taskSummary
+    let taskSection = `## Tasks (from TASKS folder) - CHECK HERE FOR "EDITS NEEDED"
+- Total tasks: ${total}`
+
+    // Status breakdown
+    const statusEntries = Object.entries(byStatus)
+    if (statusEntries.length > 0) {
+      taskSection += `
+- By status: ${statusEntries.map(([s, c]) => `${s}: ${c}`).join(', ')}`
+    }
+
+    // Overdue tasks (important!)
+    if (overdue.length > 0) {
+      taskSection += `
+
+**OVERDUE:**
+${overdue.map(t => `- [${t.projectName}] ${t.text} (due ${t.dueDate})`).join('\n')}`
+    }
+
+    // Upcoming tasks
+    if (upcoming.length > 0) {
+      taskSection += `
+
+**Upcoming (next 7 days):**
+${upcoming.map(t => `- [${t.projectName}] ${t.text} (due ${t.dueDate})`).join('\n')}`
+    }
+
+    sections.push(taskSection)
   }
 
   // Open files section
@@ -225,42 +413,25 @@ Currently editing: ${context.currentFile}`
     sections.push(filesSection)
   }
 
-  // Workspace structure
-  if (context.workspaceStructure && context.workspaceStructure.length > 0) {
+  // Note: Workspace structure is now included in the enhanced Workspace section above
+  // Only show simple list if enhanced structure wasn't available
+  if (!context.enhancedWorkspaceStructure && context.workspaceStructure && context.workspaceStructure.length > 0) {
     sections.push(`## Workspace Contents (top-level)
 ${context.workspaceStructure.join(', ')}`)
   }
 
-  // Tasks section
-  if (context.taskSummary) {
-    const { total, byStatus, upcoming, overdue } = context.taskSummary
-    let taskSection = `## Tasks (from TASKS folder)
-- Total tasks: ${total}`
+  // Git section (background info only - DO NOT use for "edits needed" questions unless user asks about git)
+  if (context.isGitRepo) {
+    let gitSection = `## Git Repository (background info - only reference when user asks about git/commits)
+- Branch: ${context.gitBranch || 'unknown'}
+- Status: ${context.gitStatus || '(unknown)'}`
 
-    // Status breakdown
-    const statusEntries = Object.entries(byStatus)
-    if (statusEntries.length > 0) {
-      taskSection += `
-- By status: ${statusEntries.map(([s, c]) => `${s}: ${c}`).join(', ')}`
+    if (context.recentCommits && context.recentCommits.length > 0) {
+      gitSection += `
+- Recent commits:
+${context.recentCommits.map((c) => `  - ${c}`).join('\n')}`
     }
-
-    // Overdue tasks (important!)
-    if (overdue.length > 0) {
-      taskSection += `
-
-**⚠️ OVERDUE:**
-${overdue.map(t => `- [${t.projectName}] ${t.text} (due ${t.dueDate})`).join('\n')}`
-    }
-
-    // Upcoming tasks
-    if (upcoming.length > 0) {
-      taskSection += `
-
-**Upcoming (next 7 days):**
-${upcoming.map(t => `- [${t.projectName}] ${t.text} (due ${t.dueDate})`).join('\n')}`
-    }
-
-    sections.push(taskSection)
+    sections.push(gitSection)
   }
 
   return sections.join('\n\n')

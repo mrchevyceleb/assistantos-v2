@@ -25,7 +25,10 @@ beforeAll(() => {
       delete: vi.fn().mockResolvedValue({ success: true }),
       copyPath: vi.fn().mockResolvedValue({ success: true }),
       showInExplorer: vi.fn().mockResolvedValue({ success: true }),
-      getInfo: vi.fn().mockResolvedValue({ success: false })
+      getInfo: vi.fn().mockResolvedValue({ success: false }),
+      glob: vi.fn().mockResolvedValue([]),
+      grep: vi.fn().mockResolvedValue([]),
+      edit: vi.fn().mockResolvedValue({ success: true })
     },
     bash: {
       execute: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
