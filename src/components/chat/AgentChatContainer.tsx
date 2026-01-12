@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain } from 'lucide-react'
+import { Send, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Stores
@@ -328,16 +328,18 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       // Create tool executor with agent context for file locking
       const toolExecutor = createToolExecutor(workspacePath || '', agentId, agent.name)
 
-      // Create assistant message placeholder
+      // Create assistant message placeholder with "Thinking..." content
+      // This will be replaced by actual streaming content as it arrives
       const assistantMessage: Message = {
         id: `msg-${Date.now()}-assistant`,
         role: 'assistant',
-        content: '',
+        content: 'Thinking...',
         timestamp: new Date(),
       }
       addMessage(agentId, assistantMessage)
 
       // Stream response
+      let firstChunkReceived = false
       for await (const chunk of claudeServiceRef.current.chat(
         messageWithContext,
         tools,
@@ -345,8 +347,16 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         toolExecutor
       )) {
         if (chunk.type === 'text') {
+          const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''
+
+          // Replace "Thinking..." with first actual content
+          const newContent = (!firstChunkReceived && currentContent === 'Thinking...')
+            ? (chunk.text || '')
+            : currentContent + (chunk.text || '')
+
+          firstChunkReceived = true
           updateMessage(agentId, assistantMessage.id, {
-            content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + (chunk.text || ''),
+            content: newContent,
           })
         } else if (chunk.type === 'iteration_boundary') {
           // Add paragraph break between agentic loop iterations
@@ -721,17 +731,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
               )
             })
           })()
-        )}
-
-        {isLoading && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-              <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
-            </div>
-            <div className="bg-slate-800/50 rounded-lg px-4 py-2">
-              <span className="text-slate-400 text-sm">Thinking...</span>
-            </div>
-          </div>
         )}
 
         <div ref={messagesEndRef} />

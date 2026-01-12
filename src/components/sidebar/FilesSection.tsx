@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw, Plus } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { useTabStore } from '../../stores/tabStore'
 // isMediaFile imported if needed for future media handling
@@ -139,6 +139,7 @@ export function FilesSection() {
   const searchRef = useRef<FileSearchHandle>(null)
 
   const workspacePath = useAppStore(state => state.workspacePath)
+  const setWorkspacePath = useAppStore(state => state.setWorkspacePath)
   const starredPaths = useAppStore(state => state.starredPaths)
   const toggleStarred = useAppStore(state => state.toggleStarred)
   const isStarred = useAppStore(state => state.isStarred)
@@ -258,6 +259,18 @@ export function FilesSection() {
     openOrFocusFile(path)
   }
 
+  const handleSelectFolder = async () => {
+    try {
+      const folderPath = await window.electronAPI.fs.selectFolder()
+      if (folderPath) {
+        setWorkspacePath(folderPath)
+        setIsCollapsed(false) // Expand to show the new workspace
+      }
+    } catch (error) {
+      console.error('Failed to select folder:', error)
+    }
+  }
+
   // Count starred files in current workspace
   const starredCount = starredPaths.filter(p =>
     workspacePath && p.startsWith(workspacePath)
@@ -288,18 +301,30 @@ export function FilesSection() {
           )}
         </div>
 
-        {!isCollapsed && (
+        <div className="flex items-center gap-1">
           <button
             onClick={(e) => {
               e.stopPropagation()
-              loadFiles()
+              handleSelectFolder()
             }}
             className="p-1 rounded hover:bg-white/10"
-            title="Refresh"
+            title="Select workspace folder"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <Plus className="w-3.5 h-3.5" />
           </button>
-        )}
+          {!isCollapsed && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                loadFiles()
+              }}
+              className="p-1 rounded hover:bg-white/10"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search and File Tree */}

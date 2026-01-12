@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe } from 'lucide-react'
+import { Send, Bot, User, Settings2, Sparkles, Terminal, FileText, ChevronDown, ChevronRight, RefreshCw, Puzzle, Clock, Trash2, Star, Brain, Zap, Mic, MicOff, Cpu, Wand2, Atom, Globe } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 // Store
@@ -956,12 +956,13 @@ export function AgentChat() {
     setActiveDocuments([])
     setIsLoading(true)
 
-    // Create assistant message for streaming content
+    // Create assistant message for streaming content with "Thinking..." placeholder
+    // This will be replaced by actual streaming content as it arrives
     const assistantMessageId = (Date.now() + 1).toString()
     setMessages(prev => [...prev, {
       id: assistantMessageId,
       role: 'assistant',
-      content: '',
+      content: 'Thinking...',
       timestamp: new Date(),
     }])
 
@@ -1156,11 +1157,12 @@ export function AgentChat() {
     setIsLoading(true)
 
     // Create assistant message that will be updated with streaming content
+    // Start with "Thinking..." placeholder that will be replaced by actual content
     const assistantMessageId = (Date.now() + 1).toString()
     setMessages(prev => [...prev, {
       id: assistantMessageId,
       role: 'assistant',
-      content: '',
+      content: 'Thinking...',
       timestamp: new Date(),
     }])
 
@@ -1288,9 +1290,15 @@ export function AgentChat() {
       const updated = [...prev]
       const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
       if (lastIndex !== -1) {
+        const currentContent = updated[lastIndex].content
+        // Replace "Thinking..." with first actual content, otherwise append
+        const newContent = currentContent === 'Thinking...'
+          ? (chunk.text || '')
+          : currentContent + (chunk.text || '')
+
         updated[lastIndex] = {
           ...updated[lastIndex],
-          content: updated[lastIndex].content + (chunk.text || '')
+          content: newContent
         }
       }
       return updated
@@ -1379,8 +1387,8 @@ export function AgentChat() {
         break
 
       case 'done':
-        // Clean up empty assistant messages
-        setMessages(prev => prev.filter(m => m.role !== 'assistant' || m.content.trim() !== ''))
+        // Clean up empty assistant messages or messages that still have "Thinking..." placeholder
+        setMessages(prev => prev.filter(m => m.role !== 'assistant' || (m.content.trim() !== '' && m.content.trim() !== 'Thinking...')))
         break
     }
   }
@@ -2190,25 +2198,6 @@ export function AgentChat() {
               return null
             })
           })()
-        )}
-        {isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content.trim() === '' && !messages.some(m => m.role === 'tool') && (
-          <div className="flex gap-3">
-            <AgentAvatar
-              avatarType={agentAvatarType}
-              customAvatar={agentCustomAvatar}
-              presetAvatar={agentPresetAvatar}
-              size="sm"
-            />
-            <div
-              className="px-4 py-3 rounded-2xl"
-              style={{
-                background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 28, 45, 0.9) 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.08)'
-              }}
-            >
-              <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-            </div>
-          </div>
         )}
         <div ref={messagesEndRef} />
       </div>

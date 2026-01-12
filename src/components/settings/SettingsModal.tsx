@@ -32,7 +32,8 @@ import {
   Wand2,
   Atom,
   Globe,
-  Star
+  Star,
+  FolderOpen
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS, type AgentAvatarType } from '../../stores/appStore'
 import { PromptShortcut } from '@/types/shortcut'
@@ -102,6 +103,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setCustomInstructions,
     resetCustomInstructions,
     workspacePath,
+    setWorkspacePath,
     memoryEnabled,
     setMemoryEnabled,
     memoryUserId,
@@ -1190,14 +1192,36 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {/* Workspace */}
             <div>
               <label className="block text-sm text-slate-400 mb-1.5">Current Workspace</label>
-              <div
-                className="px-3 py-2 rounded-lg text-sm text-slate-300 truncate"
-                style={{
-                  background: 'rgba(0, 0, 0, 0.2)',
-                  border: '1px solid rgba(255, 255, 255, 0.05)'
-                }}
-              >
-                {workspacePath || 'No workspace selected'}
+              <div className="flex gap-2">
+                <div
+                  className="flex-1 px-3 py-2 rounded-lg text-sm text-slate-300 truncate"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)'
+                  }}
+                >
+                  {workspacePath || 'No workspace selected'}
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const folderPath = await window.electronAPI.fs.selectFolder()
+                      if (folderPath) {
+                        setWorkspacePath(folderPath)
+                      }
+                    } catch (error) {
+                      console.error('Failed to select folder:', error)
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)'
+                  }}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Select
+                </button>
               </div>
             </div>
 
