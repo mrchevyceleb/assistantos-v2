@@ -348,7 +348,7 @@ export class ClaudeService {
           : 'Context limit exceeded';
         yield {
           type: 'context_overflow',
-          error: `${detailMessage}. Use /compact to summarize the conversation or start a new chat.`,
+          error: `${detailMessage}. You can increase the max tokens setting in Settings, use /compact to summarize the conversation, or start a new chat.`,
           recoveryPossible: true
         };
         return;
@@ -569,7 +569,7 @@ export class ClaudeService {
         } else if (finalMessage.stop_reason === 'max_tokens') {
           // Model hit token limit - warn user if there's no text
           if (currentText.trim() === '' && toolUseBlocks.length === 0) {
-            yield { type: 'error', error: 'Response was cut off due to token limits. Try reducing the context or starting a new conversation.' };
+            yield { type: 'error', error: 'Response was cut off due to max tokens limit. You can increase the max tokens setting in Settings, reduce the context, or start a new conversation.' };
           }
           continueLoop = false;
         }
@@ -590,7 +590,7 @@ export class ClaudeService {
           console.warn('[Claude Service] Context overflow detected:', error);
           yield {
             type: 'context_overflow',
-            error: `${detailMessage}. Use /compact to summarize the conversation or start a new chat.`,
+            error: `${detailMessage}. You can increase the max tokens setting in Settings, use /compact to summarize the conversation, or start a new chat.`,
             recoveryPossible: this.conversationHistory.length > 10 // Can compact if there's enough history
           };
           continueLoop = false;

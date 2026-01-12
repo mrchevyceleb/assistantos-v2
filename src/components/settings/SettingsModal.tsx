@@ -600,13 +600,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <input
                 type="number"
                 value={maxTokens}
-                onChange={(e) => setMaxTokens(parseInt(e.target.value) || 8192)}
+                onChange={(e) => setMaxTokens(parseInt(e.target.value) || 20000)}
                 min={1024}
                 max={200000}
                 className="input-metallic w-full text-sm"
               />
               <p className="text-xs text-slate-600 mt-1.5">
-                Maximum response length. Recommended: 8192-16384 for most tasks.
+                Maximum response length. Recommended: 20000+ for most tasks. Default: 20000.
               </p>
             </div>
 

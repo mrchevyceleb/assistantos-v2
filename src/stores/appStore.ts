@@ -289,7 +289,7 @@ export const useAppStore = create<AppState>()(
       setSelectedModel: (model) => set({ selectedModel: model }),
 
       // Max Tokens
-      maxTokens: 8192,
+      maxTokens: 20000,
       setMaxTokens: (tokens) => set({ maxTokens: tokens }),
 
       // UI State
