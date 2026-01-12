@@ -6,7 +6,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { registerMCPHandlers, cleanupMCPHandlers } from './mcp/ipcHandlers.js'
 import { registerMemoryHandlers, cleanupMemoryHandlers } from './memory/ipcHandlers.js'
-import { initAutoUpdater } from './services/autoUpdater.js'
+import { initAutoUpdater, checkForUpdates, getUpdateStatus, installUpdate } from './services/autoUpdater.js'
 
 const execAsync = promisify(exec)
 
@@ -227,6 +227,24 @@ ipcMain.handle('window:maximize', () => {
 
 ipcMain.handle('window:close', () => {
   mainWindow?.close()
+})
+
+// IPC Handlers for auto-updater
+ipcMain.handle('updater:checkForUpdates', async () => {
+  try {
+    await checkForUpdates()
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+ipcMain.handle('updater:getStatus', () => {
+  return getUpdateStatus()
+})
+
+ipcMain.handle('updater:installUpdate', () => {
+  installUpdate()
 })
 
 // IPC Handlers for file system

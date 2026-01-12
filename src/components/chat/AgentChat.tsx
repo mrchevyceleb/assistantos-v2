@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 
 // Store
 import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS } from '../../stores/appStore'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 // Types
 import { PromptShortcut } from '@/types/shortcut'
@@ -245,6 +246,7 @@ export function AgentChat() {
     agentPresetAvatar,
     showContextUsage,
     agentBypassPermissions} = useAppStore()
+  const addNotification = useNotificationStore(state => state.addNotification)
   const { handleLinkClick } = useLinkHandler()
 
   // Force reset shortcuts if empty (one-time migration fix)
@@ -1076,15 +1078,33 @@ export function AgentChat() {
               cost: message.total_cost_usd,
               result: message.result
             })
+
+            // Add success notification
+            addNotification(
+              'Task Complete',
+              `Agent finished in ${message.num_turns} turn${message.num_turns !== 1 ? 's' : ''}`,
+              'success',
+              { agentId: agentId }
+            )
           } else {
             console.error('Agent error:', message)
+
+            // Add error notification
+            const errorMsg = message.errors?.join(', ') || 'Agent execution failed'
+            addNotification(
+              'Agent Error',
+              errorMsg,
+              'error',
+              { agentId: agentId }
+            )
+
             setMessages(prev => {
               const updated = [...prev]
               const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
               if (lastIndex !== -1 && !updated[lastIndex].content) {
                 updated[lastIndex] = {
                   ...updated[lastIndex],
-                  content: `Error: ${message.errors?.join(', ') || 'Agent execution failed'}`
+                  content: `Error: ${errorMsg}`
                 }
               }
               return updated
@@ -1094,13 +1114,23 @@ export function AgentChat() {
       }
     } catch (error) {
       console.error('Agent SDK error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+
+      // Add error notification
+      addNotification(
+        'Agent Error',
+        errorMessage,
+        'error',
+        { agentId: agentId }
+      )
+
       setMessages(prev => {
         const updated = [...prev]
         const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
         if (lastIndex !== -1) {
           updated[lastIndex] = {
             ...updated[lastIndex],
-            content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+            content: `Error: ${errorMessage}`
           }
         }
         return updated
@@ -1246,13 +1276,22 @@ export function AgentChat() {
       }
     } catch (error) {
       console.error('Error sending message:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+
+      // Add error notification
+      addNotification(
+        'Agent Error',
+        errorMessage,
+        'error'
+      )
+
       setMessages(prev => {
         const updated = [...prev]
         const lastIndex = updated.findIndex(m => m.id === assistantMessageId)
         if (lastIndex !== -1) {
           updated[lastIndex] = {
             ...updated[lastIndex],
-            content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+            content: `Error: ${errorMessage}`
           }
         }
         return updated

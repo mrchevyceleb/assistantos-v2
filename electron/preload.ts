@@ -36,6 +36,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // Auto-updater
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
+    getStatus: () => ipcRenderer.invoke('updater:getStatus'),
+    installUpdate: () => ipcRenderer.invoke('updater:installUpdate'),
+    onUpdateEvent: (callback: (event: string, data?: unknown) => void) => {
+      const channels = [
+        'auto-update:update-checking',
+        'auto-update:update-available',
+        'auto-update:update-not-available',
+        'auto-update:update-progress',
+        'auto-update:update-downloaded',
+        'auto-update:update-error'
+      ]
+      channels.forEach(channel => {
+        ipcRenderer.on(channel, (_, data) => callback(channel.replace('auto-update:', ''), data))
+      })
+      return () => {
+        channels.forEach(channel => ipcRenderer.removeAllListeners(channel))
+      }
+    }
+  },
+
   // Workspace management (for security validation)
   workspace: {
     setPath: (workspacePath: string | null) => ipcRenderer.invoke('workspace:setPath', workspacePath),

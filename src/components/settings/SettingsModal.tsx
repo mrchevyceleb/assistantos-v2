@@ -33,7 +33,9 @@ import {
   Atom,
   Globe,
   Star,
-  FolderOpen
+  FolderOpen,
+  Download,
+  RefreshCcw
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS, type AgentAvatarType } from '../../stores/appStore'
 import { PromptShortcut } from '@/types/shortcut'
@@ -148,6 +150,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // Avatar state
   const [avatarTab, setAvatarTab] = useState<AgentAvatarType>(agentAvatarType)
 
+  // Update status
+  const [updateStatus, setUpdateStatus] = useState<{
+    checking: boolean
+    available: boolean
+    downloaded: boolean
+    error: string | null
+    version: string | null
+    progress: number | null
+  }>({
+    checking: false,
+    available: false,
+    downloaded: false,
+    error: null,
+    version: null,
+    progress: null
+  })
+
   // Validate API key format
   const validateApiKeyFormat = (key: string): { valid: boolean; message?: string } => {
     if (!key) return { valid: false, message: 'API key is required' }
@@ -203,6 +222,57 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setApiKeyStatus('idle')
     setApiKeyError(null)
   }, [apiKey])
+
+  // Set up update event listeners
+  useEffect(() => {
+    if (!isOpen) return
+
+    // Get initial status
+    window.electronAPI?.updater?.getStatus().then(setUpdateStatus)
+
+    // Listen for update events
+    const cleanup = window.electronAPI?.updater?.onUpdateEvent((event, data) => {
+      switch (event) {
+        case 'update-checking':
+          setUpdateStatus(prev => ({ ...prev, checking: true, error: null }))
+          break
+        case 'update-available':
+          setUpdateStatus(prev => ({
+            ...prev,
+            checking: false,
+            available: true,
+            version: (data as { version: string })?.version || null
+          }))
+          break
+        case 'update-not-available':
+          setUpdateStatus(prev => ({ ...prev, checking: false, available: false }))
+          break
+        case 'update-progress':
+          setUpdateStatus(prev => ({
+            ...prev,
+            progress: (data as { percent: number })?.percent || null
+          }))
+          break
+        case 'update-downloaded':
+          setUpdateStatus(prev => ({
+            ...prev,
+            downloaded: true,
+            progress: 100,
+            version: (data as { version: string })?.version || prev.version
+          }))
+          break
+        case 'update-error':
+          setUpdateStatus(prev => ({
+            ...prev,
+            checking: false,
+            error: (data as { error: string })?.error || 'Unknown error'
+          }))
+          break
+      }
+    })
+
+    return () => cleanup?.()
+  }, [isOpen])
 
   // Handle user profile picture upload
   const handleUserProfileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1241,6 +1311,104 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 Use the chat toolbar to save, load, and export conversations.
               </p>
             </div>
+          </SettingsCard>
+
+          {/* Updates */}
+          <SettingsCard
+            icon={<Download className="w-5 h-5 text-emerald-400" />}
+            title="Updates"
+            description="Check for app updates"
+          >
+            {/* Current Version */}
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">Current Version</label>
+              <div
+                className="px-3 py-2 rounded-lg text-sm text-slate-300"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                }}
+              >
+                v1.2.0
+              </div>
+            </div>
+
+            {/* Update Status */}
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">Status</label>
+              <div
+                className="px-3 py-2 rounded-lg text-sm"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                }}
+              >
+                {updateStatus.checking && (
+                  <span className="text-cyan-400 flex items-center gap-2">
+                    <RefreshCcw className="w-4 h-4 animate-spin" />
+                    Checking for updates...
+                  </span>
+                )}
+                {updateStatus.downloaded && (
+                  <span className="text-emerald-400">
+                    Update v{updateStatus.version} ready to install! Restart to apply.
+                  </span>
+                )}
+                {updateStatus.available && !updateStatus.downloaded && (
+                  <span className="text-amber-400">
+                    Update v{updateStatus.version} available
+                    {updateStatus.progress !== null && ` (${Math.round(updateStatus.progress)}%)`}
+                  </span>
+                )}
+                {updateStatus.error && (
+                  <span className="text-red-400">{updateStatus.error}</span>
+                )}
+                {!updateStatus.checking && !updateStatus.available && !updateStatus.downloaded && !updateStatus.error && (
+                  <span className="text-slate-500">You're on the latest version</span>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setUpdateStatus(prev => ({ ...prev, checking: true, error: null }))
+                  try {
+                    await window.electronAPI?.updater?.checkForUpdates()
+                  } catch (error) {
+                    setUpdateStatus(prev => ({
+                      ...prev,
+                      checking: false,
+                      error: (error as Error).message
+                    }))
+                  }
+                }}
+                disabled={updateStatus.checking}
+                className="px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2 disabled:opacity-50"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  border: '1px solid rgba(255, 255, 255, 0.05)'
+                }}
+              >
+                <RefreshCcw className={`w-4 h-4 ${updateStatus.checking ? 'animate-spin' : ''}`} />
+                Check for Updates
+              </button>
+
+              {updateStatus.downloaded && (
+                <button
+                  onClick={() => window.electronAPI?.updater?.installUpdate()}
+                  className="px-3 py-2 rounded-lg text-sm text-white bg-emerald-600 hover:bg-emerald-500 transition-colors flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Restart & Update
+                </button>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Updates are downloaded automatically and installed when you restart the app.
+            </p>
           </SettingsCard>
         </div>
       </div>

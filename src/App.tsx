@@ -4,15 +4,30 @@ import { TitleBar } from './components/layout/TitleBar'
 import { WebBrowser } from './components/browser/WebBrowser'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { useAppStore } from './stores/appStore'
+import { useNotificationStore } from './stores/notificationStore'
 
 function App() {
   const integrationConfigs = useAppStore((state) => state.integrationConfigs)
   const customIntegrations = useAppStore((state) => state.customIntegrations)
   const customIntegrationsLoaded = useRef(false)
+  const addNotification = useNotificationStore((state) => state.addNotification)
+  const welcomeShown = useRef(false)
 
   useEffect(() => {
     // Always use dark mode
     document.documentElement.classList.add('dark')
+
+    // Show welcome notification on first load (once per session)
+    if (!welcomeShown.current) {
+      welcomeShown.current = true
+      setTimeout(() => {
+        addNotification(
+          'Welcome to AssistantOS',
+          'Notifications are now enabled! You\'ll receive updates when agents complete tasks or encounter errors.',
+          'info'
+        )
+      }, 1000)
+    }
   }, [])
 
   // Load custom integrations into the registry on app startup (run once)

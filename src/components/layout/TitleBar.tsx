@@ -1,9 +1,20 @@
+import { useState, useRef } from 'react'
 import { Minus, Square, X, Bell } from 'lucide-react'
+import { NotificationPanel } from '../notifications/NotificationPanel'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 export function TitleBar() {
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const bellButtonRef = useRef<HTMLButtonElement>(null)
+  const unreadCount = useNotificationStore(state => state.unreadCount)
+
   const handleMinimize = () => window.electronAPI?.minimize()
   const handleMaximize = () => window.electronAPI?.maximize()
   const handleClose = () => window.electronAPI?.close()
+
+  const toggleNotificationPanel = () => {
+    setNotificationPanelOpen(prev => !prev)
+  }
 
   return (
     <div
@@ -51,14 +62,37 @@ export function TitleBar() {
       <div className="flex items-center gap-2" />
 
       {/* Right: Controls */}
-      <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <div className="flex items-center gap-2 relative" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {/* Notifications */}
         <button
-          className="p-2.5 rounded-xl transition-all hover:bg-white/5"
+          ref={bellButtonRef}
+          onClick={toggleNotificationPanel}
+          className={`p-2.5 rounded-xl transition-all hover:bg-white/5 relative ${
+            notificationPanelOpen ? 'bg-white/10' : ''
+          }`}
           style={{ border: '1px solid transparent' }}
         >
           <Bell className="w-5 h-5 text-slate-400" />
+          {unreadCount > 0 && (
+            <div
+              className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-full text-[10px] font-bold"
+              style={{
+                background: 'linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%)',
+                boxShadow: '0 0 12px rgba(0, 212, 255, 0.6), inset 0 1px 0 rgba(255,255,255,0.3)',
+                color: 'white'
+              }}
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </div>
+          )}
         </button>
+
+        {/* Notification Panel */}
+        <NotificationPanel
+          isOpen={notificationPanelOpen}
+          onClose={() => setNotificationPanelOpen(false)}
+          anchorRef={bellButtonRef}
+        />
 
         {/* Separator */}
         <div className="w-px h-6 mx-1 bg-white/10" />
