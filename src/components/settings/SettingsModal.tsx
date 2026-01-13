@@ -35,9 +35,15 @@ import {
   Star,
   FolderOpen,
   Download,
-  RefreshCcw
+  RefreshCcw,
+  Cloud,
+  Link,
+  Monitor,
+  Smartphone,
+  Laptop
 } from 'lucide-react'
 import { useAppStore, AVAILABLE_MODELS, type ModelId, PRESET_AVATARS, type AgentAvatarType } from '../../stores/appStore'
+import { useSyncStore } from '../../stores/syncStore'
 import { PromptShortcut } from '@/types/shortcut'
 import { isValidCommandName } from '@/services/shortcuts/parser'
 
@@ -89,6 +95,348 @@ function SettingsCard({ icon, title, description, children }: SettingsCardProps)
       <div className="space-y-4">
         {children}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Cloud Sync Card Component
+ * Handles device linking, sync status, and pairing
+ */
+function CloudSyncCard() {
+  const {
+    initialized,
+    config,
+    status,
+    devices,
+    pairingCode,
+    linkingCode,
+    linkingError,
+    initialize,
+    setEnabled,
+    updateDeviceName,
+    generatePairingCode,
+    linkWithCode,
+    setLinkingCode,
+    removeDevice,
+    refreshDevices
+  } = useSyncStore()
+
+  const [showPairingModal, setShowPairingModal] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [newDeviceName, setNewDeviceName] = useState('')
+
+  // Initialize sync on mount
+  useEffect(() => {
+    if (!initialized) {
+      initialize()
+    }
+  }, [initialized, initialize])
+
+  // Format relative time
+  const formatRelativeTime = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
+  }
+
+  // Get device icon based on type
+  const getDeviceIcon = (deviceType: string, platform: string | null) => {
+    if (deviceType === 'mobile') return <Smartphone className="w-4 h-4" />
+    if (platform === 'darwin') return <Laptop className="w-4 h-4" />
+    return <Monitor className="w-4 h-4" />
+  }
+
+  const handleGeneratePairingCode = async () => {
+    await generatePairingCode()
+    setShowPairingModal(true)
+  }
+
+  const handleLinkWithCode = async () => {
+    const success = await linkWithCode(linkingCode)
+    if (success) {
+      setShowLinkModal(false)
+    }
+  }
+
+  const handleSaveDeviceName = async () => {
+    if (newDeviceName.trim()) {
+      await updateDeviceName(newDeviceName.trim())
+      setEditingName(false)
+    }
+  }
+
+  return (
+    <div
+      className="rounded-xl p-5"
+      style={{
+        background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.6) 0%, rgba(20, 28, 45, 0.7) 100%)',
+        border: '1px solid rgba(255, 255, 255, 0.06)'
+      }}
+    >
+      <div className="flex items-start gap-3 mb-4">
+        <div
+          className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(124, 58, 237, 0.15) 100%)',
+            border: '1px solid rgba(0, 212, 255, 0.2)'
+          }}
+        >
+          <Cloud className="w-5 h-5 text-cyan-400" />
+        </div>
+        <div>
+          <h3 className="text-white font-medium">Cloud Sync</h3>
+          <p className="text-sm text-slate-500">Sync settings and conversations across devices</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {/* Enable Toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm text-slate-300">Enable sync</label>
+            <p className="text-xs text-slate-600">
+              Automatically sync settings and conversations
+            </p>
+          </div>
+          <button
+            onClick={() => setEnabled(!config?.enabled)}
+            className={`w-12 h-6 rounded-full transition-colors relative ${
+              config?.enabled ? 'bg-cyan-500' : 'bg-slate-600'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${
+                config?.enabled ? 'translate-x-6' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Sync Status */}
+        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                status.connected ? 'bg-emerald-400' : 'bg-slate-600'
+              }`}
+            />
+            <span className="text-sm text-slate-400">
+              {status.connected
+                ? `${status.deviceCount} device${status.deviceCount !== 1 ? 's' : ''} linked`
+                : 'Not connected'}
+            </span>
+          </div>
+          {status.lastSyncAt && (
+            <span className="text-xs text-slate-600">
+              Last sync: {formatRelativeTime(status.lastSyncAt)}
+            </span>
+          )}
+        </div>
+
+        {/* This Device */}
+        {config && (
+          <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {getDeviceIcon(config.deviceType, config.platform)}
+                {editingName ? (
+                  <input
+                    type="text"
+                    value={newDeviceName}
+                    onChange={(e) => setNewDeviceName(e.target.value)}
+                    onBlur={handleSaveDeviceName}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveDeviceName()}
+                    className="bg-slate-700 text-sm text-slate-200 px-2 py-1 rounded border border-cyan-500/50 focus:outline-none"
+                    autoFocus
+                  />
+                ) : (
+                  <span className="text-sm text-slate-300">{config.deviceName}</span>
+                )}
+                <span className="text-xs text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-500/10">
+                  This device
+                </span>
+              </div>
+              {!editingName && (
+                <button
+                  onClick={() => {
+                    setNewDeviceName(config.deviceName)
+                    setEditingName(true)
+                  }}
+                  className="text-slate-500 hover:text-slate-300 p-1"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Other Devices */}
+        {devices.filter(d => d.id !== config?.deviceId).length > 0 && (
+          <div className="space-y-2">
+            <label className="text-xs text-slate-500 uppercase tracking-wider">Other Devices</label>
+            {devices
+              .filter(d => d.id !== config?.deviceId)
+              .map(device => (
+                <div
+                  key={device.id}
+                  className="flex items-center justify-between p-2 rounded-lg bg-slate-800/30"
+                >
+                  <div className="flex items-center gap-2">
+                    {getDeviceIcon(device.device_type, device.platform)}
+                    <span className="text-sm text-slate-400">{device.device_name || 'Unknown device'}</span>
+                    <span className="text-xs text-slate-600">
+                      {formatRelativeTime(device.last_seen)}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => removeDevice(device.id)}
+                    className="text-slate-600 hover:text-red-400 p-1"
+                    title="Remove device"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* Link Device Buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleGeneratePairingCode}
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors border border-cyan-500/30"
+          >
+            <Link className="w-4 h-4" />
+            Link Another Device
+          </button>
+          <button
+            onClick={() => setShowLinkModal(true)}
+            className="px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors border border-white/10"
+          >
+            Enter Code
+          </button>
+        </div>
+      </div>
+
+      {/* Pairing Code Modal */}
+      {showPairingModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div
+            className="w-full max-w-sm rounded-2xl p-6"
+            style={{
+              background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.95) 0%, rgba(20, 28, 45, 0.98) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-white">Link New Device</h3>
+              <button
+                onClick={() => setShowPairingModal(false)}
+                className="text-slate-500 hover:text-slate-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-center py-6">
+              {pairingCode.generating ? (
+                <div className="flex items-center justify-center gap-2 text-slate-400">
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  Generating code...
+                </div>
+              ) : pairingCode.code ? (
+                <>
+                  <p className="text-sm text-slate-400 mb-4">
+                    Enter this code on the new device:
+                  </p>
+                  <div className="text-3xl font-mono font-bold text-cyan-400 tracking-wider mb-4">
+                    {pairingCode.code}
+                  </div>
+                  {pairingCode.expiresAt && (
+                    <p className="text-xs text-slate-600">
+                      Code expires in 5 minutes
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-slate-500">Failed to generate code</p>
+              )}
+            </div>
+
+            <button
+              onClick={handleGeneratePairingCode}
+              className="w-full px-4 py-2 rounded-lg text-sm text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors border border-cyan-500/30"
+            >
+              <RefreshCw className="w-4 h-4 inline mr-2" />
+              Generate New Code
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Link with Code Modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div
+            className="w-full max-w-sm rounded-2xl p-6"
+            style={{
+              background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.95) 0%, rgba(20, 28, 45, 0.98) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-white">Enter Pairing Code</h3>
+              <button
+                onClick={() => {
+                  setShowLinkModal(false)
+                  setLinkingCode('')
+                }}
+                className="text-slate-500 hover:text-slate-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-sm text-slate-400">
+                Enter the pairing code from your other device:
+              </p>
+
+              <input
+                type="text"
+                value={linkingCode}
+                onChange={(e) => setLinkingCode(e.target.value)}
+                placeholder="XXXX-XXXX"
+                className="w-full px-4 py-3 rounded-lg text-lg font-mono text-center text-white bg-slate-800/50 border border-slate-700 focus:border-cyan-500 focus:outline-none"
+                maxLength={9}
+              />
+
+              {linkingError && (
+                <p className="text-sm text-red-400">{linkingError}</p>
+              )}
+
+              <button
+                onClick={handleLinkWithCode}
+                disabled={linkingCode.length < 8}
+                className="w-full px-4 py-2 rounded-lg text-sm text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Link Device
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1266,6 +1614,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </>
             )}
           </SettingsCard>
+
+          {/* Cloud Sync */}
+          <CloudSyncCard />
 
           {/* Storage */}
           <SettingsCard

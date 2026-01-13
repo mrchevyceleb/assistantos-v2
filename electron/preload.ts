@@ -176,6 +176,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRelevantMemories: (query: string) =>
       ipcRenderer.invoke('memory:getRelevantMemories', query),
   },
+
+  // Cloud Sync
+  sync: {
+    initialize: () => ipcRenderer.invoke('sync:initialize'),
+    getStatus: () => ipcRenderer.invoke('sync:getStatus'),
+    getConfig: () => ipcRenderer.invoke('sync:getConfig'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('sync:setEnabled', enabled),
+    updateDeviceName: (name: string) => ipcRenderer.invoke('sync:updateDeviceName', name),
+    // Device linking
+    generatePairingCode: () => ipcRenderer.invoke('sync:generatePairingCode'),
+    linkWithCode: (code: string) => ipcRenderer.invoke('sync:linkWithCode', code),
+    getLinkedDevices: () => ipcRenderer.invoke('sync:getLinkedDevices'),
+    removeDevice: (deviceId: string) => ipcRenderer.invoke('sync:removeDevice', deviceId),
+    // Settings sync
+    pushSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke('sync:pushSettings', settings),
+    pullSettings: () => ipcRenderer.invoke('sync:pullSettings'),
+    // Conversation sync
+    pushConversation: (conversationId: string, data: Record<string, unknown>) =>
+      ipcRenderer.invoke('sync:pushConversation', conversationId, data),
+    pullConversations: () => ipcRenderer.invoke('sync:pullConversations'),
+    deleteConversation: (conversationId: string) => ipcRenderer.invoke('sync:deleteConversation', conversationId),
+    // Event listeners
+    onEvent: (callback: (event: SyncEvent) => void) => {
+      ipcRenderer.on('sync:event', (_, event) => callback(event))
+      return () => ipcRenderer.removeAllListeners('sync:event')
+    }
+  },
 })
 
 // Type definitions for the exposed API
@@ -494,6 +521,72 @@ declare global {
         searchSummaries: (query: string, limit?: number) => Promise<MemorySummary[]>
         getRelevantMemories: (query: string) => Promise<MemoryContext>
       }
+      sync: {
+        initialize: () => Promise<{ success: boolean; config?: SyncConfig; error?: string }>
+        getStatus: () => Promise<SyncStatus>
+        getConfig: () => Promise<SyncConfig | null>
+        setEnabled: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
+        updateDeviceName: (name: string) => Promise<{ success: boolean; error?: string }>
+        // Device linking
+        generatePairingCode: () => Promise<{ success: boolean; code?: string; expiresAt?: string; error?: string }>
+        linkWithCode: (code: string) => Promise<{ success: boolean; config?: SyncConfig; error?: string }>
+        getLinkedDevices: () => Promise<{ success: boolean; devices: SyncDevice[]; error?: string }>
+        removeDevice: (deviceId: string) => Promise<{ success: boolean; error?: string }>
+        // Settings sync
+        pushSettings: (settings: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
+        pullSettings: () => Promise<{ success: boolean; settings?: SyncSettings | null; error?: string }>
+        // Conversation sync
+        pushConversation: (conversationId: string, data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
+        pullConversations: () => Promise<{ success: boolean; conversations: Array<{ conversation_id: string; data: Record<string, unknown>; updated_at: string }>; error?: string }>
+        deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>
+        // Event listeners
+        onEvent: (callback: (event: SyncEvent) => void) => () => void
+      }
     }
   }
+}
+
+// Sync Types
+interface SyncConfig {
+  syncId: string
+  deviceId: string
+  secretKey: string
+  enabled: boolean
+  deviceName: string
+  deviceType: 'desktop' | 'mobile'
+  platform: string
+  lastSyncAt: string | null
+}
+
+interface SyncStatus {
+  connected: boolean
+  syncing: boolean
+  lastSyncAt: string | null
+  deviceCount: number
+  error: string | null
+}
+
+interface SyncDevice {
+  id: string
+  sync_id: string
+  device_name: string | null
+  device_type: string
+  platform: string | null
+  last_seen: string
+  created_at: string
+}
+
+interface SyncSettings {
+  sync_id: string
+  settings: Record<string, unknown>
+  version: number
+  updated_at: string
+  updated_by: string | null
+}
+
+interface SyncEvent {
+  type: string
+  payload: unknown
+  deviceId: string
+  timestamp: string
 }

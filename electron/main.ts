@@ -1,11 +1,13 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, session } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as os from 'os'
 import { fileURLToPath } from 'url'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { registerMCPHandlers, cleanupMCPHandlers } from './mcp/ipcHandlers.js'
 import { registerMemoryHandlers, cleanupMemoryHandlers } from './memory/ipcHandlers.js'
+import { registerSyncHandlers, cleanupSyncHandlers } from './services/sync/ipcHandlers.js'
 import { initAutoUpdater, checkForUpdates, getUpdateStatus, installUpdate } from './services/autoUpdater.js'
 
 const execAsync = promisify(exec)
@@ -151,6 +153,7 @@ app.whenReady().then(() => {
   // Register handlers with mainWindow reference (for OAuth flow)
   registerMCPHandlers(mainWindow)
   registerMemoryHandlers()
+  registerSyncHandlers(mainWindow)
 
   // Configure webview session for browser panel
   const browserSession = session.fromPartition('persist:browser')
@@ -211,6 +214,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   await cleanupMCPHandlers()
   cleanupMemoryHandlers()
+  await cleanupSyncHandlers()
 })
 
 // IPC Handlers for window controls
