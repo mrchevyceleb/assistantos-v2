@@ -178,6 +178,51 @@ async function readDocumentContext(documents: DocumentMention[]): Promise<string
 }
 
 /**
+ * Sanitize tool names to comply with Anthropic API requirements
+ * Pattern: ^[a-zA-Z0-9_-]{1,128}$
+ * Replaces @ and . with underscores for Gmail tools (e.g., gmail_user@gmail.com → gmail_user_gmail_com)
+ */
+function sanitizeToolName(toolName: string): string {
+  return toolName.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 128)
+}
+
+/**
+ * Sanitize MCP tools to ensure names comply with API requirements
+ * Handles both tool.name and tool.custom.name formats
+ * Returns both sanitized tools and a mapping for reverse lookup during execution
+ */
+function sanitizeMCPTools(tools: any[]): { tools: any[], nameMap: Map<string, string> } {
+  const nameMap = new Map<string, string>()
+
+  const sanitizedTools = tools.map(tool => {
+    // Check tool.name (standard format)
+    if (tool.name && !/^[a-zA-Z0-9_-]{1,128}$/.test(tool.name)) {
+      const originalName = tool.name
+      const sanitizedName = sanitizeToolName(tool.name)
+      nameMap.set(sanitizedName, originalName)
+      console.log(`[Tool Sanitizer] Renamed tool.name: ${originalName} → ${sanitizedName}`)
+      return { ...tool, name: sanitizedName }
+    }
+
+    // Check tool.custom.name (MCP custom tool format)
+    if (tool.custom?.name && !/^[a-zA-Z0-9_-]{1,128}$/.test(tool.custom.name)) {
+      const originalName = tool.custom.name
+      const sanitizedName = sanitizeToolName(tool.custom.name)
+      nameMap.set(sanitizedName, originalName)
+      console.log(`[Tool Sanitizer] Renamed tool.custom.name: ${originalName} → ${sanitizedName}`)
+      return {
+        ...tool,
+        custom: { ...tool.custom, name: sanitizedName }
+      }
+    }
+
+    return tool
+  })
+
+  return { tools: sanitizedTools, nameMap }
+}
+
+/**
  * Prepare tools for a message - SELECTIVE loading based on @mentions
  * Only loads MCP tools when that integration is @mentioned
  */
@@ -203,8 +248,9 @@ async function prepareToolsForMessage(
 
   try {
     const mcpTools = await getCachedMCPTools(enabledMentionedIds)
-    console.log(`[AgentChatContainer] Loaded tools for @mentioned integrations: ${enabledMentionedIds.join(', ')}`)
-    return [...tools, ...mcpTools]
+    const { tools: sanitizedTools } = sanitizeMCPTools(mcpTools)
+    console.log(`[AgentChatContainer] Loaded ${sanitizedTools.length} tools for @mentioned integrations: ${enabledMentionedIds.join(', ')}`)
+    return [...tools, ...sanitizedTools]
   } catch (e) {
     console.error('Failed to load MCP tools:', e)
     return tools
@@ -228,7 +274,8 @@ async function prepareAllEnabledTools(
   try {
     // Use cached tools for performance
     const mcpTools = await getCachedMCPTools(enabledIds)
-    return [...allTools, ...mcpTools]
+    const { tools: sanitizedTools } = sanitizeMCPTools(mcpTools)
+    return [...allTools, ...sanitizedTools]
   } catch (e) {
     console.error('[AgentChatContainer] Failed to load MCP tools for context calculation:', e)
     return allTools
@@ -244,6 +291,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const customInstructions = useAppStore(state => state.customInstructions)
   const maxTokens = useAppStore(state => state.maxTokens)
   const integrationConfigs = useAppStore(state => state.integrationConfigs)
+  const gmailAccounts = useAppStore(state => state.gmailAccounts)
   const memoryEnabled = useAppStore(state => state.memoryEnabled)
   const shortcuts = useAppStore(state => state.shortcuts)
   const kanbanSettings = useAppStore(state => state.kanbanSettings)  // [Bug Fix] Added for custom tasks folder
@@ -948,15 +996,27 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       const documentContext = await readDocumentContext(activeDocuments)
       const messageWithContext = userInput + documentContext
 
+      // Merge Gmail accounts into integration configs for tool loading
+      // Gmail accounts are stored separately but need to be included in enabledIds
+      const mergedConfigs = { ...integrationConfigs }
+      for (const account of gmailAccounts) {
+        if (account.enabled) {
+          mergedConfigs[account.integrationId] = { enabled: true, envVars: {} }
+        }
+      }
+
       // Intelligent tool loading: detect intent and load tools dynamically
-      const { tools, loadedIntegrations: loadedIntegrationIds } = await getToolsForMessage(
+      const { tools: rawTools, loadedIntegrations: loadedIntegrationIds } = await getToolsForMessage(
         agent.id,
         userInput,
         messages,
-        integrationConfigs,
+        mergedConfigs,
         apiKey,
         allTools
       )
+
+      // Sanitize tool names to comply with Anthropic API requirements
+      const { tools, nameMap } = sanitizeMCPTools(rawTools)
 
       // Fetch metadata for loaded integrations (for system prompt)
       let loadedIntegrations: EnabledIntegration[] = []
@@ -988,13 +1048,38 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       )
 
       // Create tool executor with agent context and usage tracking
+      // Translate sanitized names back to original names for MCP execution
       const baseToolExecutor = createToolExecutor(workspacePath || '', agentId, agent.name)
       const toolExecutor = async (name: string, input: Record<string, unknown>) => {
-        const integrationId = extractIntegrationId(name)
-        if (integrationId) {
-          markToolUsed(agent.id, integrationId)
+        // Check if this is a sanitized name that needs translation
+        const originalName = nameMap.get(name) || name
+        if (originalName !== name) {
+          console.log(`[Tool Executor] Translating: ${name} → ${originalName}`)
         }
-        return baseToolExecutor(name, input)
+
+        console.log(`[Tool Executor] Executing tool: ${originalName}`, {
+          sanitizedName: name,
+          originalName,
+          input,
+          wasTranslated: originalName !== name
+        })
+
+        const integrationId = extractIntegrationId(originalName)
+        if (integrationId) {
+          console.log(`[Tool Executor] Extracted integrationId: ${integrationId}`)
+          markToolUsed(agent.id, integrationId)
+        } else {
+          console.log(`[Tool Executor] No integrationId extracted from: ${originalName}`)
+        }
+
+        try {
+          const result = await baseToolExecutor(originalName, input)
+          console.log(`[Tool Executor] SUCCESS for ${originalName}`, result)
+          return result
+        } catch (error) {
+          console.error(`[Tool Executor] FAILED for ${originalName}`, error)
+          throw error
+        }
       }
 
       // Create assistant message placeholder with "Thinking..." content

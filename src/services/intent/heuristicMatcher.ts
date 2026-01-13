@@ -56,6 +56,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
     integrationId: 'calendar',
     keywords: ['calendar', 'meeting', 'schedule', 'event', 'appointment', 'remind'],
     patterns: [
+      /check\s+(my\s+)?calendar/i,
       /what('?s| is)\s+(on\s+)?my\s+calendar/i,
       /schedule\s+(a\s+)?(meeting|call|appointment)/i,
       /create\s+(an?\s+)?(event|meeting)/i,
@@ -218,7 +219,11 @@ export function detectIntent(
   // Check each pattern in priority order
   for (const pattern of INTENT_PATTERNS.sort((a, b) => b.priority - a.priority)) {
     // Skip if integration not enabled
-    if (!enabledIntegrations.includes(pattern.integrationId)) {
+    // For base integrations like 'gmail' or 'calendar', also check multi-account variants (e.g., 'gmail-xxx')
+    const isEnabled = enabledIntegrations.includes(pattern.integrationId) ||
+                      enabledIntegrations.some(id => id.startsWith(`${pattern.integrationId}-`))
+
+    if (!isEnabled) {
       continue
     }
 

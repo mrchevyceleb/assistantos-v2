@@ -141,17 +141,6 @@ export function IntegrationsModal({ isOpen, onClose }: IntegrationsModalProps) {
           </button>
         </div>
 
-        {/* Gmail Accounts Section */}
-        <div className="px-6 pt-6">
-          <GmailAccountsSection
-            gmailAccounts={gmailAccounts}
-            status={status}
-            addGmailAccount={addGmailAccount}
-            removeGmailAccount={removeGmailAccount}
-            setGmailAccountEnabled={setGmailAccountEnabled}
-          />
-        </div>
-
         {/* Category Tabs */}
         <div className="flex gap-2 px-6 py-3 border-b border-white/5 overflow-x-auto">
           {categories.map(cat => (
@@ -172,20 +161,34 @@ export function IntegrationsModal({ isOpen, onClose }: IntegrationsModalProps) {
 
         {/* Integration List */}
         <div className="p-6 overflow-y-auto max-h-[calc(85vh-160px)] space-y-4">
-          {filteredIntegrations.map(integration => (
-            <IntegrationCard
-              key={integration.id}
-              integration={integration}
-              config={integrationConfigs[integration.id]}
-              status={status[integration.id]}
-              isExpanded={expandedCards[integration.id]}
-              onToggleExpanded={() => toggleCardExpanded(integration.id)}
-              onSaveConfig={(envVars) => handleSaveConfig(integration.id, envVars)}
-              onToggle={(enabled) => handleToggleEnabled(integration.id, enabled)}
+          {/* Gmail Accounts Section - show in Google category */}
+          {activeCategory === 'google' && (
+            <GmailAccountsSection
+              gmailAccounts={gmailAccounts}
+              status={status}
+              addGmailAccount={addGmailAccount}
+              removeGmailAccount={removeGmailAccount}
+              setGmailAccountEnabled={setGmailAccountEnabled}
             />
-          ))}
+          )}
 
-          {filteredIntegrations.length === 0 && (
+          {/* Regular integration cards - exclude all gmail-* in Google category since they're handled by GmailAccountsSection */}
+          {filteredIntegrations
+            .filter(i => !(activeCategory === 'google' && (i.id === 'gmail' || i.id.startsWith('gmail-'))))
+            .map(integration => (
+              <IntegrationCard
+                key={integration.id}
+                integration={integration}
+                config={integrationConfigs[integration.id]}
+                status={status[integration.id]}
+                isExpanded={expandedCards[integration.id]}
+                onToggleExpanded={() => toggleCardExpanded(integration.id)}
+                onSaveConfig={(envVars) => handleSaveConfig(integration.id, envVars)}
+                onToggle={(enabled) => handleToggleEnabled(integration.id, enabled)}
+              />
+            ))}
+
+          {filteredIntegrations.length === 0 && activeCategory !== 'google' && (
             <div className="text-center py-12 text-slate-500">
               No integrations in this category
             </div>

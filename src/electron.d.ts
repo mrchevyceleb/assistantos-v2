@@ -370,6 +370,8 @@ interface ElectronAPI {
     // Gmail Account Management
     addGmailAccount: (label: string) => Promise<{ success: boolean; account?: any; error?: string }>
     removeGmailAccount: (accountId: string, integrationId: string) => Promise<{ success: boolean; error?: string }>
+    initializeGmailAccountCredentials: (accountId: string, tokens: { accessToken: string; refreshToken: string; expiresAt: number }) => Promise<{ success: boolean; envVars?: Record<string, string>; error?: string }>
+    registerVirtualGmailAccount: (accountId: string, label: string, email: string) => Promise<{ success: boolean; error?: string }>
   }
   app: {
     getVersion: () => Promise<string>

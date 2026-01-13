@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppLayout } from './components/layout/AppLayout'
 import { TitleBar } from './components/layout/TitleBar'
 import { WebBrowser } from './components/browser/WebBrowser'
@@ -15,6 +15,7 @@ function App() {
   const gmailAccountsInitialized = useRef(false)
   const addNotification = useNotificationStore((state) => state.addNotification)
   const welcomeShown = useRef(false)
+  const [gmailInitComplete, setGmailInitComplete] = useState(false)
 
   useEffect(() => {
     // Always use dark mode
@@ -57,40 +58,98 @@ function App() {
       if (gmailAccountsInitialized.current) return
       gmailAccountsInitialized.current = true
 
-      if (gmailAccounts.length === 0) return
+      if (gmailAccounts.length === 0) {
+        setGmailInitComplete(true) // No Gmail accounts, mark as complete
+        return
+      }
 
       console.log(`[App] Initializing ${gmailAccounts.length} Gmail accounts`)
 
       for (const account of gmailAccounts) {
         try {
-          // Set env vars from tokens
-          if (account.tokens.accessToken && window.electronAPI?.mcp?.configure) {
-            await window.electronAPI.mcp.configure(account.integrationId, {
-              GOOGLE_ACCESS_TOKEN: account.tokens.accessToken,
-              GOOGLE_REFRESH_TOKEN: account.tokens.refreshToken,
-              GOOGLE_TOKEN_EXPIRES_AT: account.tokens.expiresAt.toString()
-            })
+          // CRITICAL: Re-register virtual integration FIRST (before writing credentials)
+          // Virtual integrations exist in frontend appStore but need to be re-registered with backend
+          if (window.electronAPI?.mcp?.registerVirtualGmailAccount) {
+            await window.electronAPI.mcp.registerVirtualGmailAccount(
+              account.id,
+              account.label,
+              account.email
+            )
+            console.log(`[App] Re-registered virtual integration: ${account.integrationId}`)
           }
 
-          // Note: Virtual integrations are auto-registered in the backend when accounts are added
-          // The preStartEnabled effect below will handle auto-starting enabled accounts
+          // Write credential files for this account
+          // CRITICAL FIX: Each Gmail account needs credential files written on app startup
+          if (account.tokens.accessToken && window.electronAPI?.mcp?.initializeGmailAccountCredentials) {
+            const result = await window.electronAPI.mcp.initializeGmailAccountCredentials(
+              account.id,
+              account.tokens
+            )
+
+            if (result.success && result.envVars) {
+              // Merge credential file paths with token env vars
+              await window.electronAPI.mcp.configure(account.integrationId, {
+                ...result.envVars, // GMAIL_OAUTH_PATH and GMAIL_CREDENTIALS_PATH
+                GOOGLE_ACCESS_TOKEN: account.tokens.accessToken,
+                GOOGLE_REFRESH_TOKEN: account.tokens.refreshToken,
+                GOOGLE_TOKEN_EXPIRES_AT: account.tokens.expiresAt.toString()
+              })
+            }
+          }
 
           console.log(`[App] Initialized Gmail account: ${account.label} (${account.integrationId})`)
         } catch (error) {
           console.warn(`[App] Failed to initialize Gmail account ${account.label}:`, error)
         }
       }
+
+      // Mark initialization as complete
+      setGmailInitComplete(true)
+      console.log('[App] Gmail account initialization complete')
     }
     initializeGmailAccounts()
   }, [gmailAccounts])
 
   // Pre-start enabled MCP integrations on app load (Claude Code-like behavior)
+  // MUST wait for Gmail initialization to complete first
   useEffect(() => {
+    // Don't run until Gmail accounts are initialized
+    if (!gmailInitComplete) return
+
     const preStartMCPServers = async () => {
-      const hasEnabled = Object.values(integrationConfigs).some(c => c.enabled)
+      // Merge base integrationConfigs with Gmail accounts
+      const mergedConfigs = { ...integrationConfigs }
+      for (const account of gmailAccounts) {
+        if (account.enabled) {
+          // Get credential file paths from backend (already written by initialization effect)
+          let credentialEnvVars = {}
+          try {
+            const envVars = await window.electronAPI.mcp.getConfig(account.integrationId)
+            credentialEnvVars = {
+              GMAIL_OAUTH_PATH: envVars.GMAIL_OAUTH_PATH,
+              GMAIL_CREDENTIALS_PATH: envVars.GMAIL_CREDENTIALS_PATH
+            }
+          } catch (error) {
+            console.warn(`[App] Failed to get credential paths for ${account.integrationId}:`, error)
+          }
+
+          mergedConfigs[account.integrationId] = {
+            enabled: true,
+            envVars: {
+              ...credentialEnvVars, // GMAIL_OAUTH_PATH and GMAIL_CREDENTIALS_PATH
+              GOOGLE_ACCESS_TOKEN: account.tokens.accessToken,
+              GOOGLE_REFRESH_TOKEN: account.tokens.refreshToken,
+              GOOGLE_TOKEN_EXPIRES_AT: account.tokens.expiresAt.toString()
+            }
+          }
+        }
+      }
+
+      const hasEnabled = Object.values(mergedConfigs).some(c => c.enabled)
+      console.log('[App] Pre-start mergedConfigs keys:', Object.keys(mergedConfigs).filter(k => mergedConfigs[k].enabled))
       if (hasEnabled && window.electronAPI?.mcp?.preStartEnabled) {
         try {
-          await window.electronAPI.mcp.preStartEnabled(integrationConfigs)
+          await window.electronAPI.mcp.preStartEnabled(mergedConfigs)
           console.log('[App] MCP servers pre-started')
         } catch (error) {
           console.warn('[App] Failed to pre-start MCP servers:', error)
@@ -98,7 +157,7 @@ function App() {
       }
     }
     preStartMCPServers()
-  }, [integrationConfigs])
+  }, [integrationConfigs, gmailAccounts, gmailInitComplete])
 
   return (
     <ErrorBoundary>

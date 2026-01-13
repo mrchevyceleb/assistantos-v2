@@ -124,6 +124,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addGmailAccount: (label: string) => ipcRenderer.invoke('mcp:addGmailAccount', label),
     removeGmailAccount: (accountId: string, integrationId: string) =>
       ipcRenderer.invoke('mcp:removeGmailAccount', accountId, integrationId),
+    initializeGmailAccountCredentials: (accountId: string, tokens: { accessToken: string; refreshToken: string; expiresAt: number }) =>
+      ipcRenderer.invoke('mcp:initializeGmailAccountCredentials', accountId, tokens),
+    registerVirtualGmailAccount: (accountId: string, label: string, email: string) =>
+      ipcRenderer.invoke('mcp:registerVirtualGmailAccount', accountId, label, email),
   },
 
   // Conversation persistence

@@ -72,6 +72,9 @@ export async function getToolsForMessage(
     .filter(([_, config]) => config.enabled)
     .map(([id]) => id)
 
+  // DEBUG: Log enabled integrations to verify Gmail accounts are included
+  console.log('[Tool Manager] Enabled integrations:', enabledIds)
+
   // Always start with core tools
   const tools: Tool[] = [...coreTools]
 
@@ -117,8 +120,44 @@ export async function getToolsForMessage(
     intentsToLoad.push(...Array.from(currentState.pinnedIntegrations))
   }
 
+  // Step 2.5: Map base integration IDs to multi-account equivalents
+  // E.g., if heuristic detects 'gmail' but gmail-work and gmail-personal are enabled, load ALL of them
+  const mappedIntents: string[] = []
+  for (const id of intentsToLoad) {
+    // For Gmail: ALWAYS prefer multi-accounts over base 'gmail' when available
+    // Check this FIRST before the general enabled check
+    if (id === 'gmail') {
+      const gmailAccounts = enabledIds.filter(eid => eid.startsWith('gmail-'))
+      if (gmailAccounts.length > 0) {
+        console.log(`[Tool Manager] Mapping 'gmail' to ALL multi-accounts:`, gmailAccounts)
+        mappedIntents.push(...gmailAccounts)
+        continue
+      }
+      // No multi-accounts, fall through to use base 'gmail' if enabled
+    }
+
+    // For Calendar: prefer multi-accounts over base 'calendar' when available
+    if (id === 'calendar') {
+      const calendarAccounts = enabledIds.filter(eid => eid.startsWith('calendar-'))
+      if (calendarAccounts.length > 0) {
+        console.log(`[Tool Manager] Mapping 'calendar' to ALL multi-accounts:`, calendarAccounts)
+        mappedIntents.push(...calendarAccounts)
+        continue
+      }
+      // No multi-accounts, fall through to use base 'calendar' if enabled
+    }
+
+    // If the ID is directly enabled, use it
+    if (enabledIds.includes(id)) {
+      mappedIntents.push(id)
+      continue
+    }
+
+    mappedIntents.push(id)
+  }
+
   // Remove duplicates and ensure enabled
-  const uniqueIntents = Array.from(new Set(intentsToLoad))
+  const uniqueIntents = Array.from(new Set(mappedIntents))
     .filter(id => enabledIds.includes(id))
 
   // Step 3: Enforce max loaded tools limit (LRU eviction)

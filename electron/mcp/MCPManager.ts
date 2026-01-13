@@ -3,11 +3,20 @@
  * Manages spawning, lifecycle, and communication with MCP servers
  */
 
-import { spawn, ChildProcess } from 'child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MCPIntegration, getAllIntegrations, getIntegration } from './registry.js';
 import type { BrowserWindow } from 'electron';
+import {
+  getGmailEnvVars,
+  updateCredentialsFile,
+  cleanupCredentialFiles,
+  credentialFilesExist,
+  type GmailOAuthTokens
+} from './gmailCredentialManager.js';
+import {
+  credentialFilesExist as calendarCredentialsExist
+} from './calendarCredentialManager.js';
 
 export interface MCPTool {
   name: string;
@@ -17,7 +26,6 @@ export interface MCPTool {
 
 export interface MCPServerInstance {
   integration: MCPIntegration;
-  process: ChildProcess;
   client: Client;
   transport: StdioClientTransport;
   tools: MCPTool[];
@@ -73,20 +81,39 @@ export class MCPManager {
 
     // Get configured env vars and apply defaults
     const configuredVars = this.envVars.get(integrationId) || {};
-    const envVars: Record<string, string> = {};
+    let envVars: Record<string, string> = {};
 
-    // Apply defaults first, then override with configured values
-    for (const envDef of integration.requiredEnvVars) {
-      if (envDef.defaultValue) {
-        envVars[envDef.key] = envDef.defaultValue;
+    // Special handling for Gmail integrations (multi-account)
+    if (integration.isGmailAccount && integration.gmailAccountId) {
+      // Gmail MCP server expects credential files, not direct env vars
+      const tokens = configuredVars as any;
+      if (tokens.GOOGLE_ACCESS_TOKEN && tokens.GOOGLE_REFRESH_TOKEN && tokens.GOOGLE_TOKEN_EXPIRES_AT) {
+        const gmailTokens: GmailOAuthTokens = {
+          accessToken: tokens.GOOGLE_ACCESS_TOKEN,
+          refreshToken: tokens.GOOGLE_REFRESH_TOKEN,
+          expiresAt: parseInt(tokens.GOOGLE_TOKEN_EXPIRES_AT, 10)
+        };
+
+        // Write credential files and get file paths as env vars
+        envVars = getGmailEnvVars(integration.gmailAccountId, gmailTokens);
+        console.log(`[MCPManager] Gmail credential files prepared for ${integrationId}`);
+      } else {
+        throw new Error(`Gmail account ${integrationId} missing OAuth tokens`);
       }
-    }
-    Object.assign(envVars, configuredVars);
+    } else {
+      // Standard integration: Apply defaults first, then override with configured values
+      for (const envDef of integration.requiredEnvVars) {
+        if (envDef.defaultValue) {
+          envVars[envDef.key] = envDef.defaultValue;
+        }
+      }
+      Object.assign(envVars, configuredVars);
 
-    // Validate required env vars (skip OAuth ones and those with defaults)
-    for (const required of integration.requiredEnvVars) {
-      if (required.type !== 'oauth' && !envVars[required.key]) {
-        throw new Error(`Missing required configuration: ${required.label}`);
+      // Validate required env vars (skip OAuth ones and those with defaults)
+      for (const required of integration.requiredEnvVars) {
+        if (required.type !== 'oauth' && !envVars[required.key]) {
+          throw new Error(`Missing required configuration: ${required.label}`);
+        }
       }
     }
 
@@ -99,14 +126,7 @@ export class MCPManager {
     }
     Object.assign(envWithVars, envVars);
 
-    // Spawn the process
-    const serverProcess = spawn(integration.command, integration.args, {
-      env: envWithVars,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: process.platform === 'win32'
-    });
-
-    // Create transport and client
+    // Create transport - StdioClientTransport handles process spawning internally
     const transport = new StdioClientTransport({
       command: integration.command,
       args: integration.args,
@@ -122,7 +142,6 @@ export class MCPManager {
 
     const instance: MCPServerInstance = {
       integration,
-      process: serverProcess,
       client,
       transport,
       tools: [],
@@ -152,27 +171,27 @@ export class MCPManager {
       throw error;
     }
 
-    // Handle process exit
-    serverProcess.on('exit', (code) => {
+    // Handle transport close (process exit)
+    transport.onclose = () => {
       if (instance.status !== 'stopped') {
         instance.status = 'error';
-        instance.error = `Process exited with code ${code}`;
-        console.log(`[MCPManager] ${integrationId} exited with code ${code}`);
+        instance.error = 'MCP server connection closed unexpectedly';
+        console.log(`[MCPManager] ${integrationId} connection closed`);
 
         // Notify renderer of crash
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
           this.mainWindow.webContents.send('mcp:server-crashed', {
             integrationId,
-            exitCode: code,
+            exitCode: null,
             error: instance.error
           });
         }
       }
-    });
+    };
 
-    serverProcess.stderr?.on('data', (data) => {
-      console.error(`[MCPManager] ${integrationId} stderr:`, data.toString());
-    });
+    transport.onerror = (error) => {
+      console.error(`[MCPManager] ${integrationId} transport error:`, error);
+    };
   }
 
   /**
@@ -190,8 +209,16 @@ export class MCPManager {
       // Ignore close errors
     }
 
-    if (instance.process && !instance.process.killed) {
-      instance.process.kill();
+    // Close transport (this terminates the underlying process)
+    try {
+      await instance.transport.close();
+    } catch {
+      // Ignore close errors
+    }
+
+    // Clean up Gmail credential files if this is a Gmail account integration
+    if (instance.integration.isGmailAccount && instance.integration.gmailAccountId) {
+      cleanupCredentialFiles(instance.integration.gmailAccountId);
     }
 
     this.servers.delete(integrationId);
@@ -384,6 +411,18 @@ export class MCPManager {
         req => req.type === 'oauth' || config.envVars[req.key]
       );
 
+      // For Gmail, also check if credential files exist (required by the MCP server)
+      if (id === 'gmail' && !credentialFilesExist('gmail')) {
+        console.log('[MCPManager] Skipping Gmail pre-start: credential files not found (OAuth required)');
+        continue;
+      }
+
+      // For Calendar, also check if credential files exist (required by the MCP server)
+      if (id === 'calendar' && !calendarCredentialsExist()) {
+        console.log('[MCPManager] Skipping Calendar pre-start: credential files not found (OAuth required)');
+        continue;
+      }
+
       if (hasRequiredConfig) {
         // Set env vars first
         this.setEnvVars(id, config.envVars);
@@ -414,9 +453,16 @@ export class MCPManager {
 
   /**
    * Find which integration a prefixed tool belongs to
+   * Sorts by prefix length (longest first) to ensure specific matches beat generic ones
+   * e.g., gmail_user@example.com_ matches before gmail_
    */
   findIntegrationForTool(prefixedToolName: string): string | undefined {
-    for (const int of getAllIntegrations()) {
+    // Sort integrations by toolPrefix length (longest first)
+    const sortedIntegrations = getAllIntegrations().sort(
+      (a, b) => b.toolPrefix.length - a.toolPrefix.length
+    );
+
+    for (const int of sortedIntegrations) {
       if (prefixedToolName.startsWith(int.toolPrefix)) {
         return int.id;
       }

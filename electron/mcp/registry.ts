@@ -421,7 +421,10 @@ export function createGmailAccountIntegration(
       provider: 'google',
       scopes: GOOGLE_OAUTH_SCOPES.gmail
     } : undefined,
-    toolPrefix: `gmail_${sanitizedLabel.replace(/-/g, '_')}_`,
+    // IMPORTANT: Gmail MCP server generates tool names using the email address
+    // e.g., gmail_user@example.com_search_emails
+    // So we must use the email (not the user label) as the prefix
+    toolPrefix: `gmail_${email}_`,
     isCustom: false,
     isGmailAccount: true,
     gmailAccountId: accountId

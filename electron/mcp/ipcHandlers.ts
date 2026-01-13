@@ -21,6 +21,8 @@ import {
 import { startGoogleOAuthWithAutoConfig, refreshGoogleToken } from './oauth.js';
 import { GOOGLE_OAUTH_CREDENTIALS } from '../config/googleOAuth.js';
 import type { MCPManager } from './MCPManager.js';
+import { updateCredentialsFile, type GmailOAuthTokens } from './gmailCredentialManager.js';
+import { getCalendarEnvVars, updateTokensFile as updateCalendarTokens, type CalendarOAuthTokens } from './calendarCredentialManager.js';
 
 /**
  * Fetch Gmail email address using access token
@@ -77,6 +79,29 @@ async function refreshOAuthTokenIfNeeded(integrationId: string, manager: MCPMana
     envVars['GOOGLE_ACCESS_TOKEN'] = refreshed.accessToken;
     envVars['GOOGLE_TOKEN_EXPIRES_AT'] = refreshed.expiresAt.toString();
     manager.setEnvVars(integrationId, envVars);
+
+    // Update credential files for Gmail accounts
+    const integration = getIntegration(integrationId);
+    if (integration?.isGmailAccount && integration.gmailAccountId) {
+      const gmailTokens: GmailOAuthTokens = {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshToken,
+        expiresAt: refreshed.expiresAt
+      };
+      updateCredentialsFile(integration.gmailAccountId, gmailTokens);
+      console.log(`[OAuth] Updated credential files for ${integrationId}`);
+    }
+
+    // Update tokens file for Calendar
+    if (integrationId === 'calendar') {
+      const calendarTokens: CalendarOAuthTokens = {
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshToken,
+        expiresAt: refreshed.expiresAt
+      };
+      updateCalendarTokens(calendarTokens);
+      console.log(`[OAuth] Updated tokens file for calendar`);
+    }
 
     console.log(`[OAuth] Token refreshed for ${integrationId}`);
 
@@ -287,6 +312,57 @@ export function registerMCPHandlers(mainWindow: BrowserWindow | null = null): vo
         const existingVars = manager.getEnvVars(integrationId) || {};
         manager.setEnvVars(integrationId, { ...existingVars, ...tokenEnvVars });
 
+        // If this is Gmail, write credential files AND set env vars for the MCP server
+        if (integrationId === 'gmail') {
+          const gmailTokens: GmailOAuthTokens = {
+            accessToken: result.tokens.accessToken,
+            refreshToken: result.tokens.refreshToken,
+            expiresAt: result.tokens.expiresAt
+          };
+          // Write BOTH credential files and get the paths as env vars
+          const { getGmailEnvVars } = await import('./gmailCredentialManager.js');
+          const credentialEnvVars = getGmailEnvVars('gmail', gmailTokens);
+
+          // Merge credential paths with existing env vars
+          const currentVars = manager.getEnvVars(integrationId) || {};
+          manager.setEnvVars(integrationId, { ...currentVars, ...credentialEnvVars });
+          console.log('[OAuth] Wrote Gmail credential files and set env vars:', credentialEnvVars);
+
+          // Auto-start the Gmail MCP server now that credentials exist
+          try {
+            await manager.startServer(integrationId);
+            console.log('[OAuth] Started Gmail MCP server');
+          } catch (startError) {
+            console.error('[OAuth] Failed to auto-start Gmail MCP server:', startError);
+            // Don't fail the OAuth - just log the error
+          }
+        }
+
+        // If this is Calendar, write credential files AND set env vars for the MCP server
+        if (integrationId === 'calendar') {
+          const calendarTokens: CalendarOAuthTokens = {
+            accessToken: result.tokens.accessToken,
+            refreshToken: result.tokens.refreshToken,
+            expiresAt: result.tokens.expiresAt
+          };
+          // Write credential files and get the env vars
+          const credentialEnvVars = getCalendarEnvVars(calendarTokens);
+
+          // Merge credential paths with existing env vars
+          const currentVars = manager.getEnvVars(integrationId) || {};
+          manager.setEnvVars(integrationId, { ...currentVars, ...credentialEnvVars });
+          console.log('[OAuth] Wrote Calendar credential files and set env vars:', credentialEnvVars);
+
+          // Auto-start the Calendar MCP server now that credentials exist
+          try {
+            await manager.startServer(integrationId);
+            console.log('[OAuth] Started Calendar MCP server');
+          } catch (startError) {
+            console.error('[OAuth] Failed to auto-start Calendar MCP server:', startError);
+            // Don't fail the OAuth - just log the error
+          }
+        }
+
         console.log(`[OAuth] Successfully authenticated ${integrationId}`);
         return { success: true, tokens: result.tokens };
       }
@@ -360,12 +436,27 @@ export function registerMCPHandlers(mainWindow: BrowserWindow | null = null): vo
       // Register integration as custom
       registerCustomIntegration(integration);
 
-      // Store tokens as envVars
+      // Write credential files for this account AND set env vars
+      // CRITICAL FIX: Each Gmail account needs its own credential files
+      const gmailTokens: GmailOAuthTokens = {
+        accessToken: oauthResult.tokens.accessToken,
+        refreshToken: oauthResult.tokens.refreshToken,
+        expiresAt: oauthResult.tokens.expiresAt
+      };
+
+      // Write credential files and get env vars pointing to them
+      const { getGmailEnvVars } = await import('./gmailCredentialManager.js');
+      const credentialEnvVars = getGmailEnvVars(accountId, gmailTokens);
+
+      // Merge credential paths with token data
       manager.setEnvVars(integrationId, {
+        ...credentialEnvVars, // GMAIL_OAUTH_PATH and GMAIL_CREDENTIALS_PATH
         GOOGLE_ACCESS_TOKEN: oauthResult.tokens.accessToken,
         GOOGLE_REFRESH_TOKEN: oauthResult.tokens.refreshToken,
         GOOGLE_TOKEN_EXPIRES_AT: oauthResult.tokens.expiresAt.toString()
       });
+
+      console.log(`[Gmail] Wrote credential files for ${integrationId}:`, credentialEnvVars);
 
       // Return account object
       const account = {
@@ -382,6 +473,30 @@ export function registerMCPHandlers(mainWindow: BrowserWindow | null = null): vo
       return { success: true, account };
     } catch (error) {
       console.error('[Gmail] Failed to add account:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Initialize Gmail account credentials (write credential files on app startup)
+  ipcMain.handle('mcp:initializeGmailAccountCredentials', async (_event, accountId: string, tokens: { accessToken: string; refreshToken: string; expiresAt: number }) => {
+    try {
+      const gmailTokens: GmailOAuthTokens = {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt
+      };
+
+      // Write credential files and get env vars
+      const { getGmailEnvVars } = await import('./gmailCredentialManager.js');
+      const credentialEnvVars = getGmailEnvVars(accountId, gmailTokens);
+
+      console.log(`[Gmail] Initialized credential files for ${accountId}:`, credentialEnvVars);
+      return { success: true, envVars: credentialEnvVars };
+    } catch (error) {
+      console.error('[Gmail] Failed to initialize credentials:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -408,6 +523,26 @@ export function registerMCPHandlers(mainWindow: BrowserWindow | null = null): vo
       return { success: true };
     } catch (error) {
       console.error('[Gmail] Failed to remove account:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Re-register virtual Gmail account integration (for app startup)
+  ipcMain.handle('mcp:registerVirtualGmailAccount', async (_event, accountId: string, label: string, email: string) => {
+    try {
+      // Create virtual integration
+      const integration = createGmailAccountIntegration(accountId, label, email);
+
+      // Register integration as custom
+      registerCustomIntegration(integration);
+
+      console.log(`[Gmail] Re-registered virtual integration: ${integration.id} (${label})`);
+      return { success: true };
+    } catch (error) {
+      console.error('[Gmail] Failed to register virtual integration:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
