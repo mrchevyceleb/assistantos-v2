@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef } from 'react'
 import { Plus } from 'lucide-react'
-import { ParsedTask, TaskStatus, KANBAN_COLUMN_ORDER, KanbanSettings } from '../../types/task'
+import { ParsedTask, TaskStatus, KANBAN_COLUMN_ORDER, KanbanSettings, TASK_STATUS_CONFIG } from '../../types/task'
 import { updateTaskStatus, getTasksFolder } from '../../services/taskParser'
 import { KanbanColumn } from './KanbanColumn'
 import { NewTaskDialog } from './NewTaskDialog'
 import { useAppStore } from '../../stores/appStore'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 interface KanbanBoardProps {
   tasks: ParsedTask[]
@@ -14,6 +15,7 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps) {
   const { workspacePath } = useAppStore()
+  const addNotification = useNotificationStore(state => state.addNotification)
   const [updating, setUpdating] = useState(false)
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false)
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('todo')
@@ -50,20 +52,38 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
       return
     }
 
+    const oldStatus = task.status
+    const statusLabel = TASK_STATUS_CONFIG[newStatus].label
+    console.log(`[Kanban] Moving task "${task.text}" from ${oldStatus} to ${newStatus}`)
+    console.log(`[Kanban] Task file: ${task.filePath}, line: ${task.lineNumber}`)
+
     setUpdating(true)
     try {
       const success = await updateTaskStatus(task.filePath, task.lineNumber, newStatus)
       if (success) {
+        console.log(`[Kanban] Task status updated successfully`)
         // Refresh the task list
         onTaskUpdate()
+      } else {
+        console.error(`[Kanban] updateTaskStatus returned false`)
+        addNotification(
+          'Task Update Failed',
+          `Could not move "${task.text}" to ${statusLabel}. Check the console for details.`,
+          'error'
+        )
       }
     } catch (err) {
       console.error('Failed to update task status:', err)
+      addNotification(
+        'Task Update Error',
+        `Error moving task: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error'
+      )
     } finally {
       setUpdating(false)
       draggedTaskRef.current = null
     }
-  }, [onTaskUpdate])
+  }, [onTaskUpdate, addNotification])
 
   // Handle new task creation
   const handleCreateTask = useCallback(async (projectName: string, taskTitle: string, dueDate: string, status: TaskStatus) => {

@@ -417,7 +417,11 @@ export async function updateTaskStatus(
       }
 
       // Rename the file to update the status marker
-      await window.electronAPI.fs.rename(filePath, newPath)
+      const renameResult = await window.electronAPI.fs.rename(filePath, newPath)
+      if (!renameResult.success) {
+        console.error('[taskParser] Failed to rename task file:', renameResult.error)
+        return false
+      }
       console.log('[taskParser] File-level task status updated via rename:', newFilename)
       return true
     }

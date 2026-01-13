@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 // Types of tabs supported
-export type TabType = 'agent' | 'file' | 'browser' | 'dashboard' | 'tasks' | 'ludicrous' | 'note'
+export type TabType = 'agent' | 'file' | 'browser' | 'dashboard' | 'tasks' | 'ludicrous' | 'note' | 'files'
 
 // Tab interface
 export interface Tab {
@@ -53,6 +53,7 @@ interface TabStore {
   openOrFocusTasks: () => string
   openOrFocusLudicrous: () => string
   openOrFocusNote: (noteId: string | null, title?: string) => string  // null for new note
+  openOrFocusFiles: () => string  // File browser tab
 
   // Close agent tab (called when agent is removed)
   closeAgentTab: (agentId: string) => void
@@ -295,6 +296,20 @@ export const useTabStore = create<TabStore>((set, get) => ({
     return get().openTab({
       type: 'ludicrous',
       title: 'LUDICROUS MODE',
+    })
+  },
+
+  // Open or focus file browser tab
+  openOrFocusFiles: () => {
+    const existing = get().findTabByType('files')
+    if (existing) {
+      set({ activeTabId: existing.id })
+      return existing.id
+    }
+
+    return get().openTab({
+      type: 'files',
+      title: 'File Browser',
     })
   },
 

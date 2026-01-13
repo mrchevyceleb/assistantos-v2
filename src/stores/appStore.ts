@@ -214,8 +214,13 @@ interface AppState {
   increaseEditorFontSize: () => void
   decreaseEditorFontSize: () => void
 
-  // Prompt Shortcuts
+  // Prompt Shortcuts (user-defined and built-in)
   shortcuts: PromptShortcut[]
+  // File-loaded skills (from ~/.claude/skills and ~/.claude/commands)
+  loadedSkills: PromptShortcut[]
+  setLoadedSkills: (skills: PromptShortcut[]) => void
+  // Combined shortcuts (user shortcuts + loaded skills, skills override built-ins)
+  getAllShortcuts: () => PromptShortcut[]
   addShortcut: (shortcut: Omit<PromptShortcut, 'id'>) => void
   removeShortcut: (id: string) => void
   updateShortcut: (id: string, updates: Partial<PromptShortcut>) => void
@@ -476,6 +481,21 @@ export const useAppStore = create<AppState>()(
 
       // Prompt Shortcuts
       shortcuts: DEFAULT_SHORTCUTS,
+      loadedSkills: [],
+      setLoadedSkills: (skills) => set({ loadedSkills: skills }),
+      getAllShortcuts: () => {
+        const state = get()
+        // Create a map with user shortcuts
+        const shortcutMap = new Map<string, PromptShortcut>()
+        for (const shortcut of state.shortcuts) {
+          shortcutMap.set(shortcut.name.toLowerCase(), shortcut)
+        }
+        // Loaded skills override user shortcuts with the same name
+        for (const skill of state.loadedSkills) {
+          shortcutMap.set(skill.name.toLowerCase(), skill)
+        }
+        return Array.from(shortcutMap.values())
+      },
       addShortcut: (shortcut) => set((state) => ({
         shortcuts: [...state.shortcuts, { ...shortcut, id: `custom-${Date.now()}` }]
       })),

@@ -375,6 +375,7 @@ interface ElectronAPI {
   }
   app: {
     getVersion: () => Promise<string>
+    getHomeDir: () => Promise<string>
   }
   conversation: {
     save: (conversation: ConversationData) => Promise<{ success: boolean; id?: string; error?: string }>
@@ -406,7 +407,7 @@ interface ElectronAPI {
   }
   updater?: {
     getStatus: () => Promise<UpdateStatus>
-    checkForUpdates: () => Promise<void>
+    checkForUpdates: () => Promise<{ success: boolean; error?: string }>
     installUpdate: () => Promise<void>
     onUpdateEvent: (callback: (event: UpdateEventType, data: unknown) => void) => (() => void)
   }

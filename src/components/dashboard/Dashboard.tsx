@@ -6,6 +6,7 @@ import { CalendarWidget } from './CalendarWidget'
 import { TaskSummaryWidget } from './TaskSummaryWidget'
 import { QuickLinksWidget } from './QuickLinksWidget'
 import { OnboardingWidget } from './OnboardingWidget'
+import { EmailWidget } from './EmailWidget'
 
 export function Dashboard() {
   const [refreshKey, setRefreshKey] = useState(0)
@@ -41,10 +42,15 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* Bottom row: Existing widgets */}
+          {/* Middle row: Email and Tasks */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <EmailWidget />
+            <TaskSummaryWidget />
+          </div>
+
+          {/* Bottom row: Calendar and Quick Links */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <CalendarWidget />
-            <TaskSummaryWidget />
             <QuickLinksWidget />
           </div>
         </div>

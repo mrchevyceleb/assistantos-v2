@@ -1389,12 +1389,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 onClick={async () => {
                   setUpdateStatus(prev => ({ ...prev, checking: true, error: null }))
                   try {
-                    await window.electronAPI?.updater?.checkForUpdates()
+                    // [Bug Fix] Check the return value for errors
+                    const result = await window.electronAPI?.updater?.checkForUpdates()
+                    if (result && !result.success) {
+                      // IPC handler returned an error
+                      setUpdateStatus(prev => ({
+                        ...prev,
+                        checking: false,
+                        error: result.error || 'Update check failed'
+                      }))
+                    }
                   } catch (error) {
+                    // [Bug Fix] Also handle exceptions
+                    console.error('[Settings] Update check error:', error)
                     setUpdateStatus(prev => ({
                       ...prev,
                       checking: false,
-                      error: (error as Error).message
+                      error: (error as Error).message || 'Update check failed'
                     }))
                   }
                 }}

@@ -14,6 +14,9 @@
  *
  * For private repositories, set the GH_TOKEN environment variable
  * or the app will fall back to checking if the repo is public.
+ *
+ * [Bug Fix] All update errors are now reported to users - no silent failures.
+ * Error messages provide actionable guidance (check connection, verify releases exist, etc.)
  */
 
 import { BrowserWindow, app } from 'electron'
@@ -27,7 +30,8 @@ const { autoUpdater } = pkg
 const logger = createLogger('AutoUpdater')
 
 // Flag to track if auto-updater should run (disable in dev)
-const UPDATER_ENABLED = process.env.NODE_ENV !== 'development'
+// Use app.isPackaged for reliable detection - NODE_ENV is not always set correctly
+const UPDATER_ENABLED = app.isPackaged
 
 /**
  * Get GitHub token from environment or config file
@@ -84,8 +88,14 @@ let hasGitHubToken = false
  * Call this from main.ts after app is ready
  */
 export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> {
+  logger.info('Initializing auto-updater...', {
+    isPackaged: app.isPackaged,
+    version: app.getVersion(),
+    updaterEnabled: UPDATER_ENABLED
+  })
+
   if (!UPDATER_ENABLED) {
-    logger.info('Auto-updater disabled in development mode')
+    logger.info('Auto-updater disabled - running in development mode (app not packaged)')
     return
   }
 
@@ -102,7 +112,9 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
     releaseType: 'release'
   })
 
-  logger.info('Auto-updater feed URL configured for GitHub releases')
+  logger.info('Auto-updater feed URL configured for GitHub releases', {
+    currentVersion: app.getVersion()
+  })
 
   // Configure GitHub token for private repository access
   const ghToken = getGitHubToken()
@@ -158,51 +170,52 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
 
     // Provide helpful error message for common issues
     let errorMessage = error.message
-    let isSilentError = false
 
+    // [Bug Fix] Always show errors to users - no more silent failures
     if (error.message.includes('404') || error.message.includes('Not Found')) {
-      // 404 errors are common when no releases exist yet - treat as "no updates available"
+      // 404 errors are common when no releases exist yet
       if (!hasGitHubToken) {
         // For public repos without releases, show a friendly message
-        errorMessage = 'No updates available yet. Check back later!'
-        isSilentError = true
+        errorMessage = 'No releases published yet. You\'re running the latest available version. Check GitHub for future releases.'
       } else {
         // With token but still 404 - likely no releases published
-        errorMessage = 'No releases found. The app will notify you when updates are available.'
-        isSilentError = true
+        errorMessage = 'No releases found in the repository. You may be running an unreleased development version.'
       }
-      // Don't show as error - treat as "up to date"
-      updateStatus.error = null
-      notifyRenderer(mainWindow, 'update-not-available')
-      logger.info('No releases found on GitHub - treating as up to date')
-      return
-    } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-      errorMessage = 'Update check failed: GitHub token is invalid or expired. Please update your GH_TOKEN.'
-    } else if (error.message.includes('ENOTFOUND') || error.message.includes('ETIMEDOUT') || error.message.includes('network')) {
-      errorMessage = 'Unable to check for updates - please check your internet connection.'
-      isSilentError = true
-    } else if (error.message.includes('Cannot find latest') || error.message.includes('no published releases')) {
-      // Another variant of "no releases" error
-      updateStatus.error = null
-      notifyRenderer(mainWindow, 'update-not-available')
-      logger.info('No published releases - treating as up to date')
-      return
-    }
-
-    if (!isSilentError) {
+      // Treat as "no updates available" but SHOW the message
       updateStatus.error = errorMessage
       notifyRenderer(mainWindow, 'update-error', { error: errorMessage })
-      logger.error('Auto-update error:', { error: error.message, friendlyMessage: errorMessage })
+      logger.info('No releases found on GitHub:', { error: error.message, userMessage: errorMessage })
+      return
+    } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+      errorMessage = 'Update check failed: GitHub token is invalid or expired. Please update your GH_TOKEN environment variable.'
+    } else if (error.message.includes('ENOTFOUND') || error.message.includes('ETIMEDOUT') || error.message.includes('network')) {
+      errorMessage = 'Unable to check for updates - please check your internet connection and try again.'
+    } else if (error.message.includes('Cannot find latest') || error.message.includes('no published releases')) {
+      // Another variant of "no releases" error
+      errorMessage = 'No published releases found. You may be running the latest development version.'
     } else {
-      // For silent errors, just log but don't show to user
-      updateStatus.error = null
-      logger.warn('Auto-update check skipped:', { error: error.message, reason: errorMessage })
+      // Generic error - provide actionable guidance
+      errorMessage = `Update check failed: ${error.message}. Please check the logs or try again later.`
     }
+
+    // [Bug Fix] Always notify users of errors - no silent failures
+    updateStatus.error = errorMessage
+    notifyRenderer(mainWindow, 'update-error', { error: errorMessage })
+    logger.error('Auto-update error:', {
+      error: error.message,
+      userMessage: errorMessage,
+      hasGitHubToken
+    })
   })
 
   // Check for updates on startup (after a delay)
-  setTimeout(() => {
-    checkForUpdates()
+  setTimeout(async () => {
+    try {
+      await checkForUpdates()
+    } catch (error) {
+      // Error is already logged and handled via error event
+      logger.debug('Startup update check failed (error already handled):', { error: (error as Error).message })
+    }
   }, 10000)  // Wait 10 seconds after app start
 }
 
@@ -211,11 +224,22 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
  */
 export async function checkForUpdates(): Promise<void> {
   if (!UPDATER_ENABLED) {
-    logger.warn('Auto-updater disabled in development mode')
+    logger.warn('Auto-updater disabled - app is not packaged (development mode)')
     return
   }
 
-  await autoUpdater.checkForUpdates()
+  logger.info('Initiating update check...')
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    logger.info('Update check completed', {
+      updateInfo: result?.updateInfo?.version,
+      cancellationToken: !!result?.cancellationToken
+    })
+  } catch (error) {
+    // Log but don't throw - error event will handle notification
+    logger.error('checkForUpdates threw an error:', { error: (error as Error).message })
+    throw error // Re-throw so IPC handler can catch it
+  }
 }
 
 /**

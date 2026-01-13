@@ -236,6 +236,8 @@ ipcMain.handle('updater:checkForUpdates', async () => {
     await checkForUpdates()
     return { success: true }
   } catch (error) {
+    // [Bug Fix] Log the error for debugging
+    console.error('[AutoUpdater] Check failed:', error)
     return { success: false, error: (error as Error).message }
   }
 })
@@ -251,6 +253,11 @@ ipcMain.handle('updater:installUpdate', () => {
 // IPC Handler for getting app version
 ipcMain.handle('app:getVersion', () => {
   return app.getVersion()
+})
+
+// IPC Handler for getting home directory
+ipcMain.handle('app:getHomeDir', () => {
+  return os.homedir()
 })
 
 // IPC Handlers for file system

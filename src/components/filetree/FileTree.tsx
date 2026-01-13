@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronRight, ChevronDown, Folder, FileText, FolderOpen, Plus, RefreshCw, Star, GripVertical, Image, Film, Music } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FileText, FolderOpen, Plus, RefreshCw, Star, GripVertical, Image, Film, Music, Maximize2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { useTabStore } from '../../stores/tabStore'
 import { StarredSection } from './StarredSection'
 import { FileContextMenu } from './FileContextMenu'
 import { DeleteConfirmDialog } from './DeleteConfirmDialog'
@@ -39,6 +40,7 @@ type NewItemState = NewItemStateData | null
 
 export function FileTree() {
   const { workspacePath, setWorkspacePath, openFile, currentFile, toggleStarred, isStarred, setCenterPanelView, setPendingChatInput } = useAppStore()
+  const openOrFocusFiles = useTabStore(state => state.openOrFocusFiles)
   const { openLocalFile } = useLinkHandler()
   const [files, setFiles] = useState<FileEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
@@ -499,6 +501,13 @@ export function FileTree() {
         />
         <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files</span>
         <div className="flex items-center gap-1">
+          <button
+            onClick={openOrFocusFiles}
+            className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+            title="Open in Tab"
+          >
+            <Maximize2 className="w-4 h-4 text-slate-500" />
+          </button>
           <button
             onClick={loadWorkspace}
             className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"

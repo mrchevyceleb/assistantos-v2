@@ -111,4 +111,4 @@ export const DEFAULT_TASK_SETTINGS: TaskSettings = {
   scanEntireWorkspace: true,
 }
 
-export type CenterPanelView = 'editor' | 'dashboard' | 'tasks'
+export type CenterPanelView = 'editor' | 'dashboard' | 'tasks' | 'files'

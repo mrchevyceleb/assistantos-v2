@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    getHomeDir: () => ipcRenderer.invoke('app:getHomeDir'),
   },
 
   // Workspace management (for security validation)

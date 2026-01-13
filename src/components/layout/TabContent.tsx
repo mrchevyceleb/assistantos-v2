@@ -9,6 +9,7 @@ import { TaskPanel } from '../tasks/TaskPanel'
 import { WebBrowserPanel } from '../browser/WebBrowserPanel'
 import { LudicrousMode } from '../ludicrous/LudicrousMode'
 import { NoteEditor } from '../notes/NoteEditor'
+import { FileBrowserPanel } from '../filetree/FileBrowserPanel'
 import { isMediaFile } from '../../utils/fileTypes'
 
 export function TabContent() {
@@ -72,6 +73,9 @@ export function TabContent() {
 
     case 'note':
       return <NoteEditor noteId={activeTab.noteId} tabId={activeTab.id} />
+
+    case 'files':
+      return <FileBrowserPanel />
 
     default:
       return (

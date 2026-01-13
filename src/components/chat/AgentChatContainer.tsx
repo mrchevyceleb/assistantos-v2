@@ -23,11 +23,11 @@ import { useChatAutosave } from '../../hooks/useChatAutosave'
 import { ChatMessage, setAgentConversationId } from '../../services/chatHistory/chatHistoryService'
 
 // Services
-import { ClaudeService } from '../../services/claude'
+import { ClaudeService, ImageContent } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
 import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
 import { getCachedMCPTools } from '../../services/toolCache'
-import { getToolsForMessage, markToolUsed } from '../../services/intent/toolLoadingManager'
+import { getToolsForMessage, markToolUsed, clearAgentTools } from '../../services/intent/toolLoadingManager'
 import { extractIntegrationId } from '../../services/intent/heuristicMatcher'
 import {
   parseMessage,
@@ -38,6 +38,7 @@ import {
   type DocumentMention
 } from '../../services/mentions/parser'
 import { getPartialCommand, getCommandSuggestions, completeCommand, expandSlashCommand } from '../../services/shortcuts/parser'
+import { loadAllSkills } from '../../services/shortcuts/skillLoader'
 import { PromptShortcut } from '../../types/shortcut'
 import { generateChatTitle } from '../../services/titleGenerator'
 import {
@@ -293,7 +294,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const integrationConfigs = useAppStore(state => state.integrationConfigs)
   const gmailAccounts = useAppStore(state => state.gmailAccounts)
   const memoryEnabled = useAppStore(state => state.memoryEnabled)
-  const shortcuts = useAppStore(state => state.shortcuts)
+  const getAllShortcuts = useAppStore(state => state.getAllShortcuts)
+  const setLoadedSkills = useAppStore(state => state.setLoadedSkills)
   const kanbanSettings = useAppStore(state => state.kanbanSettings)  // [Bug Fix] Added for custom tasks folder
   const showContextUsage = useAppStore(state => state.showContextUsage)
 
@@ -403,6 +405,19 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       claudeServiceRef.current = null
     }
   }, [apiKey, agent?.model, maxTokens])
+
+  // Load skills from ~/.claude/skills and ~/.claude/commands on mount
+  useEffect(() => {
+    loadAllSkills().then(skills => {
+      console.log(`[AgentChatContainer] Loaded ${skills.length} skills from disk`)
+      setLoadedSkills(skills)
+    }).catch(err => {
+      console.error('[AgentChatContainer] Error loading skills:', err)
+    })
+  }, [setLoadedSkills])
+
+  // Get combined shortcuts (user shortcuts + loaded skills)
+  const shortcuts = getAllShortcuts()
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -712,6 +727,11 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     }
     // Reset autosave state for new conversation
     resetConversation()
+    // Clear loaded tools to reset context
+    clearAgentTools(agentId)
+    // Reset active mentions and documents
+    setActiveMentions([])
+    setActiveDocuments([])
   }
 
   // Handle input change with mention and slash command detection
@@ -965,19 +985,36 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
     // Expand slash commands before sending
     const expandedInput = expandSlashCommand(input.trim(), shortcuts)
-    const userInput = expandedInput
+
+    // Handle image-only messages: provide default prompt if no text
+    const hasImages = attachedImages.length > 0
+    const userInput = expandedInput || (hasImages ? 'Please analyze this image.' : '')
+
+    // Convert AttachedImage[] to ImageContent[] for Claude API
+    const imagesToSend: ImageContent[] = hasImages
+      ? attachedImages.map(img => ({
+          type: 'base64' as const,
+          mediaType: img.mediaType,
+          data: img.data,
+        }))
+      : []
+
     const isFirstMessage = messages.length === 0
 
-    // Create user message
+    // Create user message (include image count in display)
+    const displayContent = hasImages && !expandedInput.trim()
+      ? `[${attachedImages.length} image${attachedImages.length > 1 ? 's' : ''} attached]`
+      : userInput
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
-      content: userInput,
+      content: displayContent,
       timestamp: new Date(),
     }
 
     addMessage(agentId, userMessage)
     setInput('')
+    setAttachedImages([]) // Clear attached images after sending
     setIsLoading(true)
     updateAgentStatus(agentId, 'working')
 
@@ -1092,13 +1129,15 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       }
       addMessage(agentId, assistantMessage)
 
-      // Stream response
+      // Stream response with optional images
       let firstChunkReceived = false
       for await (const chunk of claudeServiceRef.current.chat(
         messageWithContext,
         tools,
         systemPrompt,
-        toolExecutor
+        toolExecutor,
+        undefined, // abortSignal
+        imagesToSend.length > 0 ? imagesToSend : undefined
       )) {
         if (chunk.type === 'text') {
           const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''

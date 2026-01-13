@@ -52,13 +52,41 @@ export function CalendarWidget() {
       )
 
       if (result?.success && result.result) {
-        // Parse the response - MCP returns result data
-        // Simple parsing - adjust based on actual MCP response format
-        setEvents([]) // Will be populated when MCP is properly configured
+        // Parse the response - format may vary based on MCP implementation
+        const resultData = result.result as { content?: Array<{ text?: string }> }
+        const content = resultData?.content?.[0]?.text || ''
+        try {
+          // Try to parse as JSON array of events
+          const parsedEvents: CalendarEvent[] = JSON.parse(content)
+          setEvents(parsedEvents.map(event => ({
+            id: event.id,
+            summary: event.summary,
+            start: event.start,
+            end: event.end,
+            htmlLink: event.htmlLink,
+          })))
+        } catch {
+          // If result.result is already an array, use it directly
+          if (Array.isArray(result.result)) {
+            setEvents(result.result.map((event: any) => ({
+              id: event.id,
+              summary: event.summary,
+              start: event.start,
+              end: event.end,
+              htmlLink: event.htmlLink,
+            })))
+          } else {
+            console.log('[CalendarWidget] Calendar response format:', typeof result.result, content?.slice(0, 200))
+            setEvents([])
+          }
+        }
+      } else {
+        console.log('[CalendarWidget] No result or unsuccessful:', result)
+        setEvents([])
       }
     } catch (err) {
       setError('Failed to fetch calendar events')
-      console.error('Calendar fetch error:', err)
+      console.error('[CalendarWidget] Fetch error:', err)
     } finally {
       setLoading(false)
     }

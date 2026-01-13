@@ -289,6 +289,71 @@ export class ClaudeService {
   }
 
   /**
+   * Validate and clean conversation history to ensure tool_use/tool_result pairs are matched.
+   * This prevents API errors like "tool_use ids were found without tool_result blocks".
+   */
+  private validateConversationHistory(): void {
+    // Collect all tool_use IDs from assistant messages
+    const toolUseIds = new Set<string>();
+    const toolResultIds = new Set<string>();
+
+    for (const msg of this.conversationHistory) {
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if ('type' in block) {
+            if (block.type === 'tool_use' && 'id' in block) {
+              toolUseIds.add(block.id as string);
+            } else if (block.type === 'tool_result' && 'tool_use_id' in block) {
+              toolResultIds.add(block.tool_use_id as string);
+            }
+          }
+        }
+      }
+    }
+
+    // Find unmatched tool_use IDs (tool_use without corresponding tool_result)
+    const unmatchedIds = [...toolUseIds].filter(id => !toolResultIds.has(id));
+
+    if (unmatchedIds.length > 0) {
+      console.warn('[Claude Service] Found unmatched tool_use blocks, cleaning history:', unmatchedIds);
+
+      // Remove messages with unmatched tool_use blocks to prevent API errors
+      // This is a recovery mechanism - ideally this shouldn't happen
+      this.conversationHistory = this.conversationHistory.filter(msg => {
+        if (Array.isArray(msg.content)) {
+          // Check if this message contains any unmatched tool_use blocks
+          const hasUnmatchedToolUse = msg.content.some(block =>
+            'type' in block &&
+            block.type === 'tool_use' &&
+            'id' in block &&
+            unmatchedIds.includes(block.id as string)
+          );
+          if (hasUnmatchedToolUse) {
+            console.log('[Claude Service] Removing message with unmatched tool_use');
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    // Also ensure the history doesn't end with an assistant message containing tool_use
+    // (it should be followed by tool_result)
+    if (this.conversationHistory.length > 0) {
+      const lastMsg = this.conversationHistory[this.conversationHistory.length - 1];
+      if (lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
+        const hasToolUse = lastMsg.content.some(block =>
+          'type' in block && block.type === 'tool_use'
+        );
+        if (hasToolUse) {
+          console.warn('[Claude Service] History ends with tool_use without tool_result, removing last message');
+          this.conversationHistory.pop();
+        }
+      }
+    }
+  }
+
+  /**
    * Simple streaming message without tools (used for compaction, summaries)
    */
   async *streamMessage(
@@ -372,6 +437,10 @@ export class ClaudeService {
       yield { type: 'aborted' };
       return;
     }
+
+    // Validate and clean conversation history before adding new message
+    // This prevents API errors from malformed tool_use/tool_result pairs
+    this.validateConversationHistory();
 
     // Build message content (text + optional images)
     const messageContent = images && images.length > 0

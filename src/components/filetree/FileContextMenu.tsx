@@ -5,13 +5,15 @@ import {
   FolderOpen,
   MessageSquare,
   FilePlus,
-  FolderPlus
+  FolderPlus,
+  Star
 } from 'lucide-react'
 import {
   ContextMenuContainer,
   MenuItem,
   MenuDivider
 } from '../shared/ContextMenu'
+import { useAppStore } from '../../stores/appStore'
 
 interface FileContextMenuProps {
   x: number
@@ -40,6 +42,14 @@ export function FileContextMenu({
   onNewFile,
   onNewFolder
 }: FileContextMenuProps) {
+  const toggleStarred = useAppStore(state => state.toggleStarred)
+  const isStarred = useAppStore(state => state.isStarred)
+  const starred = isStarred(path)
+
+  const handleToggleStar = () => {
+    toggleStarred(path)
+    onClose()
+  }
 
   const handleCopyPath = async () => {
     if (window.electronAPI) {
@@ -104,6 +114,11 @@ export function FileContextMenu({
         icon={<MessageSquare className="w-4 h-4" />}
         label="Send to Chat"
         onClick={handleSendToChat}
+      />
+      <MenuItem
+        icon={<Star className={`w-4 h-4 ${starred ? 'fill-amber-400 text-amber-400' : ''}`} />}
+        label={starred ? "Remove from Quick Links" : "Add to Quick Links"}
+        onClick={handleToggleStar}
       />
       <MenuItem
         icon={<Copy className="w-4 h-4" />}

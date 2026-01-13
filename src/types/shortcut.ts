@@ -18,8 +18,12 @@ export interface PromptShortcut {
 
   // Enhanced properties (Claude Code style)
   argumentHint?: string           // Shows what arguments are expected (e.g., "TOPIC", "URL [--option]")
-  allowedTools?: string[]         // Optional: restrict which tools can be used (future use)
-  triggers?: string[]             // Optional: keywords that can auto-activate this command (future use)
+  allowedTools?: string[]         // Optional: restrict which tools can be used
+  triggers?: string[]             // Optional: keywords that can auto-activate this command
+
+  // Skill-specific properties (for file-loaded skills)
+  skillPath?: string              // Path to the SKILL.md file
+  fullContent?: string            // Full markdown content including frontmatter
 }
 
 /**
