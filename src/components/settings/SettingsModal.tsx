@@ -118,8 +118,7 @@ function CloudSyncCard() {
     generatePairingCode,
     linkWithCode,
     setLinkingCode,
-    removeDevice,
-    refreshDevices
+    removeDevice
   } = useSyncStore()
 
   const [showPairingModal, setShowPairingModal] = useState(false)

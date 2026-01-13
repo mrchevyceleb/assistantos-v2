@@ -18,7 +18,6 @@ import type {
   SyncDevice,
   SyncSettings,
   PairingCodeResult,
-  ConsumePairingResult,
   SyncEvent
 } from './types.js'
 
@@ -189,13 +188,13 @@ export class SyncService {
       return false
     }
 
-    const result = data as ConsumePairingResult[]
+    const result = data as Array<{ sync_id: string; secret_encrypted: string; success: boolean; error: string | null }>
     if (!result || result.length === 0 || !result[0].success) {
       logger.error('Invalid or expired pairing code')
       return false
     }
 
-    const { syncId, secretEncrypted } = result[0] as { syncId: string; secretEncrypted: string }
+    const { sync_id: syncId, secret_encrypted: secretEncrypted } = result[0]
 
     // Decrypt the secret
     const secretKey = this.decryptSecret(secretEncrypted)

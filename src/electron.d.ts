@@ -411,6 +411,71 @@ interface ElectronAPI {
     installUpdate: () => Promise<void>
     onUpdateEvent: (callback: (event: UpdateEventType, data: unknown) => void) => (() => void)
   }
+  sync?: {
+    initialize: () => Promise<{ success: boolean; config?: SyncConfig; error?: string }>
+    getStatus: () => Promise<SyncStatus>
+    getConfig: () => Promise<SyncConfig | null>
+    setEnabled: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
+    updateDeviceName: (name: string) => Promise<{ success: boolean; error?: string }>
+    // Device linking
+    generatePairingCode: () => Promise<{ success: boolean; code?: string; expiresAt?: string; error?: string }>
+    linkWithCode: (code: string) => Promise<{ success: boolean; config?: SyncConfig; error?: string }>
+    getLinkedDevices: () => Promise<{ success: boolean; devices: SyncDevice[]; error?: string }>
+    removeDevice: (deviceId: string) => Promise<{ success: boolean; error?: string }>
+    // Settings sync
+    pushSettings: (settings: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
+    pullSettings: () => Promise<{ success: boolean; settings?: SyncSettings | null; error?: string }>
+    // Conversation sync
+    pushConversation: (conversationId: string, data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
+    pullConversations: () => Promise<{ success: boolean; conversations: Array<{ conversation_id: string; data: Record<string, unknown>; updated_at: string }>; error?: string }>
+    deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>
+    // Event listeners
+    onEvent: (callback: (event: SyncEvent) => void) => () => void
+  }
+}
+
+// Sync types
+interface SyncConfig {
+  syncId: string
+  deviceId: string
+  enabled: boolean
+  deviceName: string
+  deviceType: 'desktop' | 'mobile'
+  platform: string
+  lastSyncAt: string | null
+}
+
+interface SyncStatus {
+  connected: boolean
+  syncing: boolean
+  lastSyncAt: string | null
+  deviceCount: number
+  error: string | null
+}
+
+interface SyncDevice {
+  id: string
+  sync_id: string
+  device_name: string | null
+  device_type: string
+  platform: string | null
+  last_seen: string
+  created_at: string
+}
+
+interface SyncSettings {
+  sync_id: string
+  settings: Record<string, unknown>
+  version: number
+  updated_at: string
+  updated_by: string | null
+}
+
+interface SyncEvent {
+  type: string
+  payload: unknown
+  deviceId: string
+  timestamp: string
 }
 
 // Update types
