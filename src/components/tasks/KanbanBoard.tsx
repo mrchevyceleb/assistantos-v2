@@ -1,14 +1,25 @@
 import { useState, useCallback, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { ParsedTask, TaskStatus, KANBAN_COLUMN_ORDER, KanbanSettings, TASK_STATUS_CONFIG } from '../../types/task'
-import { updateTaskStatus, deleteTask, getTasksFolder } from '../../services/taskParser'
+import { SyncTask } from '../../types/syncTask'
+import { updateTaskStatus as updateFileTaskStatus, deleteTask as deleteFileTask, getTasksFolder } from '../../services/taskParser'
 import { KanbanColumn } from './KanbanColumn'
 import { NewTaskDialog } from './NewTaskDialog'
 import { useAppStore } from '../../stores/appStore'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTaskStore } from '../../stores/taskStore'
+import { useSyncStore } from '../../stores/syncStore'
+
+// Union type for tasks that can be displayed in the Kanban board
+export type KanbanTask = ParsedTask | SyncTask
+
+// Type guard to check if task is a SyncTask (cloud-based)
+export function isSyncTask(task: KanbanTask): task is SyncTask {
+  return 'syncId' in task && 'sortOrder' in task
+}
 
 interface KanbanBoardProps {
-  tasks: ParsedTask[]
+  tasks: KanbanTask[]
   settings: KanbanSettings
   onTaskUpdate: () => void
 }
@@ -16,10 +27,15 @@ interface KanbanBoardProps {
 export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps) {
   const { workspacePath } = useAppStore()
   const addNotification = useNotificationStore(state => state.addNotification)
+  const taskStore = useTaskStore()
+  const { config: syncConfig, initialized: syncInitialized } = useSyncStore()
   const [updating, setUpdating] = useState(false)
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false)
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('todo')
-  const draggedTaskRef = useRef<ParsedTask | null>(null)
+  const draggedTaskRef = useRef<KanbanTask | null>(null)
+
+  // Determine if we're in cloud mode
+  const isCloudEnabled = settings.cloudSyncEnabled && syncInitialized && !!syncConfig?.syncId
 
   // Group tasks by status
   const tasksByStatus = KANBAN_COLUMN_ORDER.reduce((acc, status) => {
@@ -31,13 +47,13 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
       return task.status === status
     })
     return acc
-  }, {} as Record<TaskStatus, ParsedTask[]>)
+  }, {} as Record<TaskStatus, KanbanTask[]>)
 
   // Determine if we should show project names on cards
   const showProject = settings.selectedProject === null
 
   // Handle drag start
-  const handleDragStart = useCallback((e: React.DragEvent, task: ParsedTask) => {
+  const handleDragStart = useCallback((e: React.DragEvent, task: KanbanTask) => {
     draggedTaskRef.current = task
     e.dataTransfer.effectAllowed = 'move'
     // Add data for accessibility
@@ -54,21 +70,43 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
 
     const oldStatus = task.status
     const statusLabel = TASK_STATUS_CONFIG[newStatus].label
-    console.log(`[Kanban] Moving task "${task.text}" from ${oldStatus} to ${newStatus}`)
-    console.log(`[Kanban] Task file: ${task.filePath}, line: ${task.lineNumber}`)
+    const taskTitle = isSyncTask(task) ? task.title : task.text
+
+    console.log(`[Kanban] Moving task "${taskTitle}" from ${oldStatus} to ${newStatus}`)
 
     setUpdating(true)
     try {
-      const success = await updateTaskStatus(task.filePath, task.lineNumber, newStatus)
+      let success: boolean
+
+      if (isSyncTask(task)) {
+        // Cloud mode: update via taskStore
+        console.log(`[Kanban] Updating cloud task ${task.id}`)
+
+        // Calculate new sort order (put at end of target column)
+        const tasksInTargetColumn = tasks.filter(t => t.status === newStatus)
+        const maxSortOrder = tasksInTargetColumn.length > 0
+          ? Math.max(...tasksInTargetColumn.map(t => isSyncTask(t) ? t.sortOrder : 0))
+          : -1
+        const newSortOrder = maxSortOrder + 1
+
+        success = await taskStore.updateTaskStatus(task.id, newStatus, newSortOrder)
+      } else {
+        // File mode: update via taskParser
+        console.log(`[Kanban] Task file: ${task.filePath}, line: ${task.lineNumber}`)
+        success = await updateFileTaskStatus(task.filePath, task.lineNumber, newStatus)
+      }
+
       if (success) {
         console.log(`[Kanban] Task status updated successfully`)
-        // Refresh the task list
-        onTaskUpdate()
+        // Refresh the task list (for file mode; cloud mode updates optimistically)
+        if (!isSyncTask(task)) {
+          onTaskUpdate()
+        }
       } else {
         console.error(`[Kanban] updateTaskStatus returned false`)
         addNotification(
           'Task Update Failed',
-          `Could not move "${task.text}" to ${statusLabel}. Check the console for details.`,
+          `Could not move "${taskTitle}" to ${statusLabel}. Check the console for details.`,
           'error'
         )
       }
@@ -83,25 +121,38 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
       setUpdating(false)
       draggedTaskRef.current = null
     }
-  }, [onTaskUpdate, addNotification])
+  }, [tasks, taskStore, onTaskUpdate, addNotification])
 
   // Handle task deletion
-  const handleDelete = useCallback(async (task: ParsedTask) => {
+  const handleDelete = useCallback(async (task: KanbanTask) => {
+    const taskTitle = isSyncTask(task) ? task.title : task.text
+
     setUpdating(true)
     try {
-      const success = await deleteTask(task.filePath, task.lineNumber)
+      let success: boolean
+
+      if (isSyncTask(task)) {
+        // Cloud mode: delete via taskStore
+        success = await taskStore.deleteTask(task.id)
+      } else {
+        // File mode: delete via taskParser
+        success = await deleteFileTask(task.filePath, task.lineNumber)
+      }
+
       if (success) {
         addNotification(
           'Task Deleted',
-          `"${task.text}" has been deleted`,
+          `"${taskTitle}" has been deleted`,
           'success'
         )
-        // Refresh the task list
-        onTaskUpdate()
+        // Refresh the task list (for file mode; cloud mode updates optimistically)
+        if (!isSyncTask(task)) {
+          onTaskUpdate()
+        }
       } else {
         addNotification(
           'Delete Failed',
-          `Could not delete "${task.text}". Check the console for details.`,
+          `Could not delete "${taskTitle}". Check the console for details.`,
           'error'
         )
       }
@@ -115,32 +166,57 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
     } finally {
       setUpdating(false)
     }
-  }, [onTaskUpdate, addNotification])
+  }, [taskStore, onTaskUpdate, addNotification])
 
   // Handle new task creation
   const handleCreateTask = useCallback(async (projectName: string, taskTitle: string, dueDate: string, status: TaskStatus) => {
-    if (!workspacePath || !window.electronAPI) return
-
     setUpdating(true)
     try {
-      // Get tasks folder path
-      const tasksFolder = getTasksFolder(settings.customTasksFolder)
-      const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${tasksFolder}`
+      if (isCloudEnabled) {
+        // Cloud mode: create via taskStore
+        const newTask = await taskStore.createTask({
+          title: taskTitle,
+          projectName,
+          status,
+          dueDate: dueDate || undefined,
+        })
 
-      // Create project folder if it doesn't exist
-      const projectPath = `${tasksPath}/${projectName}`
-      const projectExists = await window.electronAPI.fs.exists(projectPath)
-      if (!projectExists) {
-        await window.electronAPI.fs.createDir(projectPath)
-      }
+        if (newTask) {
+          addNotification(
+            'Task Created',
+            `"${taskTitle}" has been created`,
+            'success'
+          )
+          setShowNewTaskDialog(false)
+        } else {
+          addNotification(
+            'Create Failed',
+            `Could not create "${taskTitle}". Check the console for details.`,
+            'error'
+          )
+        }
+      } else {
+        // File mode: create task file
+        if (!workspacePath || !window.electronAPI) return
 
-      // Create task file with filename convention: "ProjectName - Task Title - Due YYYY-MM-DD.md"
-      const filename = `${projectName} - ${taskTitle} - Due ${dueDate}.md`
-      const filePath = `${tasksPath}/${filename}`
+        // Get tasks folder path
+        const tasksFolder = getTasksFolder(settings.customTasksFolder)
+        const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${tasksFolder}`
 
-      // Create initial file content with a checkbox based on status
-      const statusChar = status === 'backlog' ? ' ' : status === 'todo' ? 'o' : status === 'in_progress' ? '>' : status === 'review' ? '?' : 'x'
-      const content = `# ${taskTitle}
+        // Create project folder if it doesn't exist
+        const projectPath = `${tasksPath}/${projectName}`
+        const projectExists = await window.electronAPI.fs.exists(projectPath)
+        if (!projectExists) {
+          await window.electronAPI.fs.createDir(projectPath)
+        }
+
+        // Create task file with filename convention: "ProjectName - Task Title - Due YYYY-MM-DD.md"
+        const filename = `${projectName} - ${taskTitle} - Due ${dueDate}.md`
+        const filePath = `${tasksPath}/${filename}`
+
+        // Create initial file content with a checkbox based on status
+        const statusChar = status === 'backlog' ? ' ' : status === 'todo' ? 'o' : status === 'in_progress' ? '>' : status === 'review' ? '?' : 'x'
+        const content = `# ${taskTitle}
 
 ## Description
 
@@ -154,20 +230,26 @@ Add task description here...
 
 `
 
-      const success = await window.electronAPI.fs.writeFile(filePath, content)
-      if (success) {
-        // Refresh the task list
-        onTaskUpdate()
-        setShowNewTaskDialog(false)
-      } else {
-        console.error('Failed to create task file')
+        const success = await window.electronAPI.fs.writeFile(filePath, content)
+        if (success) {
+          // Refresh the task list
+          onTaskUpdate()
+          setShowNewTaskDialog(false)
+        } else {
+          console.error('Failed to create task file')
+        }
       }
     } catch (err) {
       console.error('Failed to create new task:', err)
+      addNotification(
+        'Create Error',
+        `Error creating task: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error'
+      )
     } finally {
       setUpdating(false)
     }
-  }, [workspacePath, settings.customTasksFolder, onTaskUpdate])
+  }, [isCloudEnabled, taskStore, workspacePath, settings.customTasksFolder, onTaskUpdate, addNotification])
 
   // Get columns to display (optionally hide empty)
   const visibleColumns = settings.hideEmptyColumns

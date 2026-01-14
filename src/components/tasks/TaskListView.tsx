@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
-import { ParsedTask, KanbanSettings, ListSortBy, KANBAN_COLUMN_ORDER } from '../../types/task'
+import { KanbanSettings, ListSortBy, KANBAN_COLUMN_ORDER } from '../../types/task'
 import { TaskListRow } from './TaskListRow'
+import { KanbanTask } from './KanbanBoard'
 
 interface TaskListViewProps {
-  tasks: ParsedTask[]
+  tasks: KanbanTask[]
   settings: KanbanSettings
   onTaskUpdate: () => void
   onSortChange: (sortBy: ListSortBy, sortOrder: 'asc' | 'desc') => void
@@ -89,7 +90,7 @@ export function TaskListView({
       return { '': sortedTasks }
     }
 
-    const groups: Record<string, ParsedTask[]> = {}
+    const groups: Record<string, KanbanTask[]> = {}
     for (const task of sortedTasks) {
       const key = task.projectName
       if (!groups[key]) groups[key] = []

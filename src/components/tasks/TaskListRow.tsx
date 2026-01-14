@@ -1,22 +1,32 @@
 import { useState } from 'react'
-import { Calendar, AlertTriangle, Folder, FileText } from 'lucide-react'
-import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG, KANBAN_COLUMN_ORDER } from '../../types/task'
+import { Calendar, AlertTriangle, Folder, FileText, Cloud } from 'lucide-react'
+import { TaskStatus, TASK_STATUS_CONFIG, KANBAN_COLUMN_ORDER } from '../../types/task'
 import { useAppStore } from '../../stores/appStore'
-import { updateTaskStatus } from '../../services/taskParser'
+import { updateTaskStatus as updateFileTaskStatus } from '../../services/taskParser'
+import { useTaskStore } from '../../stores/taskStore'
+import { KanbanTask, isSyncTask } from './KanbanBoard'
 
 interface TaskListRowProps {
-  task: ParsedTask
+  task: KanbanTask
   showProject?: boolean
   onTaskUpdate: () => void
 }
 
 export function TaskListRow({ task, showProject = true, onTaskUpdate }: TaskListRowProps) {
   const { openFile } = useAppStore()
+  const taskStore = useTaskStore()
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   const [updating, setUpdating] = useState(false)
 
+  // Get task properties based on type
+  const isCloud = isSyncTask(task)
+  const taskText = isCloud ? task.title : task.text
+  const taskDueDate = task.dueDate
+  const taskPriority = task.priority
+  const documentPath = isCloud ? task.documentPath : task.filePath
+
   // Check if task is overdue
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'done'
+  const isOverdue = taskDueDate && new Date(taskDueDate) < new Date() && task.status !== 'done'
 
   // Priority colors
   const priorityColors = {
@@ -28,7 +38,9 @@ export function TaskListRow({ task, showProject = true, onTaskUpdate }: TaskList
   const statusConfig = TASK_STATUS_CONFIG[task.status]
 
   const handleClick = () => {
-    openFile(task.filePath)
+    if (documentPath) {
+      openFile(documentPath)
+    }
   }
 
   const handleStatusChange = async (newStatus: TaskStatus) => {
@@ -40,8 +52,18 @@ export function TaskListRow({ task, showProject = true, onTaskUpdate }: TaskList
     setUpdating(true)
     setShowStatusDropdown(false)
     try {
-      const success = await updateTaskStatus(task.filePath, task.lineNumber, newStatus)
-      if (success) {
+      let success: boolean
+
+      if (isCloud) {
+        // Cloud mode: update via taskStore
+        success = await taskStore.updateTaskStatus(task.id, newStatus)
+      } else {
+        // File mode: update via taskParser
+        success = await updateFileTaskStatus(task.filePath, task.lineNumber, newStatus)
+      }
+
+      if (success && !isCloud) {
+        // Only call onTaskUpdate for file mode; cloud mode updates optimistically
         onTaskUpdate()
       }
     } catch (err) {
@@ -127,27 +149,38 @@ export function TaskListRow({ task, showProject = true, onTaskUpdate }: TaskList
             ${task.status === 'done' ? 'line-through text-slate-400' : ''}
           `}
         >
-          {task.text}
+          {taskText}
         </p>
       </div>
 
       {/* Metadata badges */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Cloud indicator */}
+        {isCloud && (
+          <span
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-xs
+                       bg-sky-500/20 text-sky-400 border border-sky-500/30"
+            title="Cloud-synced task"
+          >
+            <Cloud className="w-3 h-3" />
+          </span>
+        )}
+
         {/* Priority badge */}
-        {task.priority && (
+        {taskPriority && (
           <span
             className={`
               inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium
-              border ${priorityColors[task.priority]}
+              border ${priorityColors[taskPriority]}
             `}
           >
-            {task.priority === 'high' && <AlertTriangle className="w-3 h-3" />}
-            {task.priority.charAt(0).toUpperCase()}
+            {taskPriority === 'high' && <AlertTriangle className="w-3 h-3" />}
+            {taskPriority.charAt(0).toUpperCase()}
           </span>
         )}
 
         {/* Due date */}
-        {task.dueDate && (
+        {taskDueDate && (
           <span
             className={`
               inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs
@@ -158,7 +191,7 @@ export function TaskListRow({ task, showProject = true, onTaskUpdate }: TaskList
             `}
           >
             <Calendar className="w-3 h-3" />
-            {task.dueDate}
+            {taskDueDate}
           </span>
         )}
 
@@ -174,9 +207,11 @@ export function TaskListRow({ task, showProject = true, onTaskUpdate }: TaskList
         )}
 
         {/* Open file indicator */}
-        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-          <FileText className="w-4 h-4 text-slate-500" />
-        </span>
+        {documentPath && (
+          <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <FileText className="w-4 h-4 text-slate-500" />
+          </span>
+        )}
       </div>
     </div>
   )

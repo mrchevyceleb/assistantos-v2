@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
-import { ParsedTask, TaskStatus, TASK_STATUS_CONFIG } from '../../types/task'
+import { TaskStatus, TASK_STATUS_CONFIG } from '../../types/task'
 import { KanbanCard } from './KanbanCard'
+import { KanbanTask } from './KanbanBoard'
 
 interface KanbanColumnProps {
   status: TaskStatus
-  tasks: ParsedTask[]
+  tasks: KanbanTask[]
   showProject?: boolean
-  onDragStart: (e: React.DragEvent, task: ParsedTask) => void
+  onDragStart: (e: React.DragEvent, task: KanbanTask) => void
   onDrop: (status: TaskStatus) => void
   onAddTask?: (status: TaskStatus) => void
-  onDelete?: (task: ParsedTask) => void
+  onDelete?: (task: KanbanTask) => void
 }
 
 export function KanbanColumn({

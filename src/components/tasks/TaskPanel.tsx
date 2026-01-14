@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog, Folder, ChevronDown, FolderOpen, LayoutGrid, List } from 'lucide-react'
+import { Kanban, RefreshCw, Eye, EyeOff, FolderPlus, FolderCog, Folder, ChevronDown, FolderOpen, LayoutGrid, List, Cloud, CloudOff, Upload } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { useSyncStore } from '../../stores/syncStore'
+import { useTaskStore } from '../../stores/taskStore'
 import { parseTasksFromWorkspace, getProjectList, getTasksFolder } from '../../services/taskParser'
 import { ParsedTask, DEFAULT_KANBAN_SETTINGS, KanbanSettings } from '../../types/task'
 import { KanbanBoard } from './KanbanBoard'
@@ -9,21 +11,36 @@ import { ProjectSelector } from './ProjectSelector'
 
 export function TaskPanel() {
   const { workspacePath, _hasHydrated, kanbanSettings, setKanbanSettings } = useAppStore()
-  const [tasks, setTasks] = useState<ParsedTask[]>([])
-  const [projects, setProjects] = useState<string[]>([])
+
+  // Cloud sync stores
+  const { config: syncConfig, initialized: syncInitialized } = useSyncStore()
+  const taskStore = useTaskStore()
+
+  // Local file-based state
+  const [fileTasks, setFileTasks] = useState<ParsedTask[]>([])
+  const [fileProjects, setFileProjects] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [tasksFolderExists, setTasksFolderExists] = useState(true)
   const [showFolderDialog, setShowFolderDialog] = useState(false)
   const [folderInput, setFolderInput] = useState('')
   const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([])
   const [showFolderDropdown, setShowFolderDropdown] = useState(false)
+  const [showMigrationDialog, setShowMigrationDialog] = useState(false)
+  const [migrationResult, setMigrationResult] = useState<{ imported: number; failed: number } | null>(null)
 
   // Use store settings or defaults
   const settings: KanbanSettings = kanbanSettings || DEFAULT_KANBAN_SETTINGS
   const effectiveTasksFolder = getTasksFolder(settings.customTasksFolder)
 
-  // Load projects list and check if tasks folder exists
-  const loadProjects = useCallback(async () => {
+  // Determine if cloud sync is available and enabled
+  const isCloudEnabled = settings.cloudSyncEnabled && syncInitialized && !!syncConfig?.syncId
+
+  // Get tasks and projects from appropriate source
+  const tasks = isCloudEnabled ? taskStore.tasks : fileTasks
+  const projects = isCloudEnabled ? taskStore.projects : fileProjects
+
+  // Load projects list and check if tasks folder exists (file-based mode)
+  const loadFileProjects = useCallback(async () => {
     if (!workspacePath || !window.electronAPI) return
 
     // Check if tasks folder exists (using custom or default)
@@ -33,11 +50,11 @@ export function TaskPanel() {
 
     // Get project list
     const projectList = await getProjectList(workspacePath, settings.customTasksFolder)
-    setProjects(projectList)
+    setFileProjects(projectList)
   }, [workspacePath, effectiveTasksFolder, settings.customTasksFolder])
 
-  // Load tasks
-  const loadTasks = useCallback(async () => {
+  // Load tasks (file-based mode)
+  const loadFileTasks = useCallback(async () => {
     if (!_hasHydrated || !workspacePath) return
 
     setLoading(true)
@@ -47,16 +64,39 @@ export function TaskPanel() {
         settings.selectedProject,
         settings.customTasksFolder
       )
-      setTasks(parsedTasks)
+      setFileTasks(parsedTasks)
 
       // Also refresh projects list
-      await loadProjects()
+      await loadFileProjects()
     } catch (err) {
       console.error('Failed to parse tasks:', err)
     } finally {
       setLoading(false)
     }
-  }, [workspacePath, settings.selectedProject, settings.customTasksFolder, _hasHydrated, loadProjects])
+  }, [workspacePath, settings.selectedProject, settings.customTasksFolder, _hasHydrated, loadFileProjects])
+
+  // Load tasks (unified - handles both cloud and file modes)
+  const loadTasks = useCallback(async () => {
+    if (isCloudEnabled && syncConfig?.syncId) {
+      // Cloud mode: load from Supabase
+      await taskStore.loadTasks(settings.selectedProject)
+    } else {
+      // File mode: load from workspace
+      await loadFileTasks()
+    }
+  }, [isCloudEnabled, syncConfig?.syncId, taskStore, settings.selectedProject, loadFileTasks])
+
+  // Initialize cloud task store when sync becomes available
+  useEffect(() => {
+    if (isCloudEnabled && syncConfig?.syncId && !taskStore.syncId) {
+      taskStore.initialize(syncConfig.syncId)
+    }
+  }, [isCloudEnabled, syncConfig?.syncId, taskStore])
+
+  // Update taskStore.isCloudEnabled when settings change
+  useEffect(() => {
+    taskStore.setCloudEnabled(isCloudEnabled)
+  }, [isCloudEnabled, taskStore])
 
   // Load on mount and when dependencies change
   useEffect(() => {
@@ -104,7 +144,7 @@ Add any project notes here.
       await window.electronAPI.fs.writeFile(`${defaultProjectPath}/tasks.md`, initialContent)
 
       // Reload projects and tasks
-      await loadProjects()
+      await loadFileProjects()
       await loadTasks()
     } catch (err) {
       console.error('Failed to create tasks folder:', err)
@@ -195,6 +235,44 @@ Add any project notes here.
     }
   }
 
+  // Migrate file-based tasks to cloud
+  const handleMigrateTasks = async () => {
+    if (!isCloudEnabled) return
+
+    setLoading(true)
+    try {
+      // Load file tasks if not already loaded
+      let tasksToMigrate = fileTasks
+      if (fileTasks.length === 0) {
+        const parsed = await parseTasksFromWorkspace(workspacePath || '', null, settings.customTasksFolder)
+        tasksToMigrate = parsed
+        setFileTasks(parsed)
+      }
+
+      // Convert ParsedTask to FileTask format for import
+      const fileTasksToImport = tasksToMigrate.map(t => ({
+        title: t.text,
+        status: t.status,
+        projectName: t.projectName,
+        priority: t.priority,
+        dueDate: t.dueDate,
+        filePath: t.filePath,
+      }))
+
+      const result = await taskStore.importFromFiles(fileTasksToImport)
+      setMigrationResult({ imported: result.imported, failed: result.failed })
+
+      if (result.imported > 0) {
+        setKanbanSettings({ cloudSyncMigrated: true })
+      }
+    } catch (err) {
+      console.error('Failed to migrate tasks:', err)
+      setMigrationResult({ imported: 0, failed: fileTasks.length })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div
       className="w-full h-full flex flex-col overflow-hidden relative"
@@ -271,20 +349,56 @@ Add any project notes here.
               </button>
             </div>
 
-            {/* Folder config */}
-            <button
-              onClick={openFolderDialog}
-              className={`
-                p-2 rounded-lg transition-colors
-                ${settings.customTasksFolder
-                  ? 'bg-violet-500/20 text-violet-400'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
-                }
-              `}
-              title={`Tasks folder: ${effectiveTasksFolder} (click to change)`}
-            >
-              <FolderCog className="w-4 h-4" />
-            </button>
+            {/* Cloud sync toggle (only show if sync is initialized) */}
+            {syncInitialized && syncConfig?.syncId && (
+              <>
+                <button
+                  onClick={() => setKanbanSettings({ cloudSyncEnabled: !settings.cloudSyncEnabled })}
+                  className={`
+                    p-2 rounded-lg transition-colors
+                    ${isCloudEnabled
+                      ? 'bg-sky-500/20 text-sky-400'
+                      : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
+                    }
+                  `}
+                  title={isCloudEnabled ? 'Cloud sync enabled (click to disable)' : 'Enable cloud sync'}
+                >
+                  {isCloudEnabled ? (
+                    <Cloud className="w-4 h-4" />
+                  ) : (
+                    <CloudOff className="w-4 h-4" />
+                  )}
+                </button>
+
+                {/* Migration button (show when cloud is enabled but not migrated) */}
+                {isCloudEnabled && !settings.cloudSyncMigrated && fileTasks.length > 0 && (
+                  <button
+                    onClick={() => setShowMigrationDialog(true)}
+                    className="p-2 rounded-lg transition-colors bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                    title="Import file-based tasks to cloud"
+                  >
+                    <Upload className="w-4 h-4" />
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Folder config (only in file mode) */}
+            {!isCloudEnabled && (
+              <button
+                onClick={openFolderDialog}
+                className={`
+                  p-2 rounded-lg transition-colors
+                  ${settings.customTasksFolder
+                    ? 'bg-violet-500/20 text-violet-400'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-300'
+                  }
+                `}
+                title={`Tasks folder: ${effectiveTasksFolder} (click to change)`}
+              >
+                <FolderCog className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Toggle completed */}
             <button
@@ -519,6 +633,94 @@ Add any project notes here.
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Migration Dialog */}
+      {showMigrationDialog && (
+        <div
+          className="absolute inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowMigrationDialog(false)
+              setMigrationResult(null)
+            }
+          }}
+        >
+          <div
+            className="w-96 rounded-xl p-5"
+            style={{
+              background: 'linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(20, 28, 45, 0.99) 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Upload className="w-5 h-5 text-amber-400" />
+              <h3 className="text-lg font-semibold text-white">Import Tasks to Cloud</h3>
+            </div>
+
+            {migrationResult ? (
+              <>
+                <div className="mb-4 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                  <p className="text-emerald-400 font-medium mb-1">Migration Complete</p>
+                  <p className="text-sm text-slate-400">
+                    {migrationResult.imported} tasks imported successfully
+                    {migrationResult.failed > 0 && (
+                      <span className="text-amber-400"> ({migrationResult.failed} failed)</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      setShowMigrationDialog(false)
+                      setMigrationResult(null)
+                    }}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-white
+                               bg-emerald-500/20 hover:bg-emerald-500/30 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-400 mb-4">
+                  This will import your existing file-based tasks into the cloud storage.
+                  Your task files will remain untouched.
+                </p>
+
+                <div className="mb-4 p-3 rounded-lg bg-sky-500/10 border border-sky-500/20">
+                  <p className="text-sm text-sky-300">
+                    <strong>{fileTasks.length}</strong> tasks found in workspace
+                  </p>
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => {
+                      setShowMigrationDialog(false)
+                      setMigrationResult(null)
+                    }}
+                    className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white
+                               hover:bg-white/5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleMigrateTasks}
+                    disabled={loading}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-white
+                               bg-amber-500/20 hover:bg-amber-500/30 transition-colors
+                               disabled:opacity-50"
+                  >
+                    {loading ? 'Importing...' : 'Import Tasks'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

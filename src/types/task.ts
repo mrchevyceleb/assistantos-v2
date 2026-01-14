@@ -81,6 +81,8 @@ export interface KanbanSettings {
   listSortBy: ListSortBy  // Sort field for list view
   listSortOrder: ListSortOrder  // Sort direction for list view
   listGroupByProject: boolean  // Group tasks by project in list view
+  cloudSyncEnabled: boolean  // Use Supabase cloud storage for tasks
+  cloudSyncMigrated: boolean  // Has file-based migration been completed
 }
 
 export const DEFAULT_KANBAN_SETTINGS: KanbanSettings = {
@@ -92,6 +94,8 @@ export const DEFAULT_KANBAN_SETTINGS: KanbanSettings = {
   listSortBy: 'dueDate',
   listSortOrder: 'asc',
   listGroupByProject: true,
+  cloudSyncEnabled: false,
+  cloudSyncMigrated: false,
 }
 
 // Legacy TaskSettings - kept temporarily for migration

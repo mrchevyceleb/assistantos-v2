@@ -1,19 +1,29 @@
-import { Calendar, AlertTriangle, Folder, X } from 'lucide-react'
-import { ParsedTask } from '../../types/task'
+import { Calendar, AlertTriangle, Folder, X, Cloud } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { KanbanTask, isSyncTask } from './KanbanBoard'
 
 interface KanbanCardProps {
-  task: ParsedTask
+  task: KanbanTask
   showProject?: boolean
-  onDragStart: (e: React.DragEvent, task: ParsedTask) => void
-  onDelete?: (task: ParsedTask) => void
+  onDragStart: (e: React.DragEvent, task: KanbanTask) => void
+  onDelete?: (task: KanbanTask) => void
 }
 
 export function KanbanCard({ task, showProject = false, onDragStart, onDelete }: KanbanCardProps) {
   const { openFile } = useAppStore()
 
+  // Get task properties based on type
+  const isCloud = isSyncTask(task)
+  const taskText = isCloud ? task.title : task.text
+  const taskProjectName = task.projectName
+  const taskDueDate = task.dueDate
+  const taskPriority = task.priority
+
+  // For SyncTasks, check if there's a linked document
+  const documentPath = isCloud ? task.documentPath : task.filePath
+
   // Check if task is overdue
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'done'
+  const isOverdue = taskDueDate && new Date(taskDueDate) < new Date() && task.status !== 'done'
 
   // Priority colors
   const priorityColors = {
@@ -23,12 +33,15 @@ export function KanbanCard({ task, showProject = false, onDragStart, onDelete }:
   }
 
   const handleClick = () => {
-    openFile(task.filePath)
+    // Open linked document if available
+    if (documentPath) {
+      openFile(documentPath)
+    }
   }
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation() // Prevent opening file
-    if (confirm(`Delete task "${task.text}"?`)) {
+    if (confirm(`Delete task "${taskText}"?`)) {
       onDelete?.(task)
     }
   }
@@ -69,26 +82,37 @@ export function KanbanCard({ task, showProject = false, onDragStart, onDelete }:
           ${task.status === 'done' ? 'line-through text-slate-400' : ''}
         `}
       >
-        {task.text}
+        {taskText}
       </p>
 
       {/* Metadata row */}
       <div className="flex flex-wrap items-center gap-1.5">
+        {/* Cloud indicator */}
+        {isCloud && (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs
+                       bg-sky-500/20 text-sky-400 border border-sky-500/30"
+            title="Cloud-synced task"
+          >
+            <Cloud className="w-3 h-3" />
+          </span>
+        )}
+
         {/* Priority badge */}
-        {task.priority && (
+        {taskPriority && (
           <span
             className={`
               inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium
-              border ${priorityColors[task.priority]}
+              border ${priorityColors[taskPriority]}
             `}
           >
-            {task.priority === 'high' && <AlertTriangle className="w-3 h-3" />}
-            {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+            {taskPriority === 'high' && <AlertTriangle className="w-3 h-3" />}
+            {taskPriority.charAt(0).toUpperCase() + taskPriority.slice(1)}
           </span>
         )}
 
         {/* Due date */}
-        {task.dueDate && (
+        {taskDueDate && (
           <span
             className={`
               inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs
@@ -99,7 +123,7 @@ export function KanbanCard({ task, showProject = false, onDragStart, onDelete }:
             `}
           >
             <Calendar className="w-3 h-3" />
-            {task.dueDate}
+            {taskDueDate}
           </span>
         )}
 
@@ -110,14 +134,16 @@ export function KanbanCard({ task, showProject = false, onDragStart, onDelete }:
                        bg-violet-500/20 text-violet-400 border border-violet-500/30"
           >
             <Folder className="w-3 h-3" />
-            {task.projectName}
+            {taskProjectName}
           </span>
         )}
       </div>
 
       {/* Hover hint */}
       <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <span className="text-[10px] text-slate-500">Click to edit</span>
+        <span className="text-[10px] text-slate-500">
+          {documentPath ? 'Click to edit' : 'Cloud task'}
+        </span>
       </div>
     </div>
   )
