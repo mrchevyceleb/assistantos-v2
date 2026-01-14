@@ -16,7 +16,8 @@ const PRIORITY_REGEX = /!(high|medium|low)/i
 
 // Filename-based task convention: "ProjectName - Task Title - Due YYYY-MM-DD.md"
 // Also supports optional status suffix: "ProjectName - Task Title - Due YYYY-MM-DD [>].md"
-const FILENAME_TASK_REGEX = /^(.+?)\s*-\s*(.+?)\s*-\s*Due\s*(\d{4}-\d{2}-\d{2})(?:\s*\[([xXo>? ])\])?\.md$/i
+// Note: Uses space-dash-space as separator to allow hyphens within project/task names
+const FILENAME_TASK_REGEX = /^(.+?) - (.+?) - Due (\d{4}-\d{2}-\d{2})(?: \[([xXo>? ])\])?\.md$/i
 
 // Map checkbox character to TaskStatus
 function charToStatus(char: string): TaskStatus {
@@ -409,6 +410,13 @@ export async function updateTaskStatus(
         return true
       }
 
+      // Check if source file exists
+      const sourceExists = await window.electronAPI.fs.exists(filePath)
+      if (!sourceExists) {
+        console.error('[taskParser] Source file does not exist:', filePath)
+        return false
+      }
+
       // Check if target file already exists
       const targetExists = await window.electronAPI.fs.exists(newPath)
       if (targetExists) {
@@ -447,6 +455,57 @@ export async function updateTaskStatus(
     return true
   } catch (err) {
     console.error('Error updating task status:', err)
+    return false
+  }
+}
+
+// Delete a task from its source file
+export async function deleteTask(
+  filePath: string,
+  lineNumber: number
+): Promise<boolean> {
+  if (!window.electronAPI) return false
+
+  try {
+    // Check if this is a file-level task (lineNumber === 0)
+    if (lineNumber === 0) {
+      // For filename-based tasks, delete the entire file
+      const exists = await window.electronAPI.fs.exists(filePath)
+      if (!exists) {
+        console.error('[taskParser] Cannot delete - file does not exist:', filePath)
+        return false
+      }
+
+      const deleteResult = await window.electronAPI.fs.delete(filePath)
+      if (!deleteResult.success) {
+        console.error('[taskParser] Failed to delete task file:', deleteResult.error)
+        return false
+      }
+      console.log('[taskParser] File-level task deleted:', filePath)
+      return true
+    }
+
+    // Line-level task: remove the task line from file
+    const content = await window.electronAPI.fs.readFile(filePath)
+    if (!content) return false
+    const lines = content.split('\n')
+
+    const lineIndex = lineNumber - 1 // Convert to 0-indexed
+    if (lineIndex < 0 || lineIndex >= lines.length) return false
+
+    const line = lines[lineIndex]
+    const match = line.match(TASK_REGEX)
+    if (!match) return false
+
+    // Remove the line
+    lines.splice(lineIndex, 1)
+
+    // Write back
+    await window.electronAPI.fs.writeFile(filePath, lines.join('\n'))
+    console.log('[taskParser] Line-level task deleted at line:', lineNumber)
+    return true
+  } catch (err) {
+    console.error('Error deleting task:', err)
     return false
   }
 }

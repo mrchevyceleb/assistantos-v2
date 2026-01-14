@@ -342,6 +342,13 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
 // IPC Handler for renaming files/folders
 ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
   try {
+    // Check if source exists
+    try {
+      await fs.promises.access(oldPath)
+    } catch {
+      return { success: false, error: 'Source file or folder does not exist' }
+    }
+
     // Check if target already exists
     try {
       await fs.promises.access(newPath)

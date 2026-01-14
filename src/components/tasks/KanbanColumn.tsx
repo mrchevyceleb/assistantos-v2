@@ -10,6 +10,7 @@ interface KanbanColumnProps {
   onDragStart: (e: React.DragEvent, task: ParsedTask) => void
   onDrop: (status: TaskStatus) => void
   onAddTask?: (status: TaskStatus) => void
+  onDelete?: (task: ParsedTask) => void
 }
 
 export function KanbanColumn({
@@ -18,7 +19,8 @@ export function KanbanColumn({
   showProject = false,
   onDragStart,
   onDrop,
-  onAddTask
+  onAddTask,
+  onDelete
 }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const config = TASK_STATUS_CONFIG[status]
@@ -118,6 +120,7 @@ export function KanbanColumn({
               task={task}
               showProject={showProject}
               onDragStart={onDragStart}
+              onDelete={onDelete}
             />
           ))
         )}

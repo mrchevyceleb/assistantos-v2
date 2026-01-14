@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { ParsedTask, TaskStatus, KANBAN_COLUMN_ORDER, KanbanSettings, TASK_STATUS_CONFIG } from '../../types/task'
-import { updateTaskStatus, getTasksFolder } from '../../services/taskParser'
+import { updateTaskStatus, deleteTask, getTasksFolder } from '../../services/taskParser'
 import { KanbanColumn } from './KanbanColumn'
 import { NewTaskDialog } from './NewTaskDialog'
 import { useAppStore } from '../../stores/appStore'
@@ -85,6 +85,38 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
     }
   }, [onTaskUpdate, addNotification])
 
+  // Handle task deletion
+  const handleDelete = useCallback(async (task: ParsedTask) => {
+    setUpdating(true)
+    try {
+      const success = await deleteTask(task.filePath, task.lineNumber)
+      if (success) {
+        addNotification(
+          'Task Deleted',
+          `"${task.text}" has been deleted`,
+          'success'
+        )
+        // Refresh the task list
+        onTaskUpdate()
+      } else {
+        addNotification(
+          'Delete Failed',
+          `Could not delete "${task.text}". Check the console for details.`,
+          'error'
+        )
+      }
+    } catch (err) {
+      console.error('Failed to delete task:', err)
+      addNotification(
+        'Delete Error',
+        `Error deleting task: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        'error'
+      )
+    } finally {
+      setUpdating(false)
+    }
+  }, [onTaskUpdate, addNotification])
+
   // Handle new task creation
   const handleCreateTask = useCallback(async (projectName: string, taskTitle: string, dueDate: string, status: TaskStatus) => {
     if (!workspacePath || !window.electronAPI) return
@@ -159,6 +191,7 @@ Add task description here...
             showProject={showProject}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
+            onDelete={handleDelete}
             onAddTask={(columnStatus) => {
               setDefaultStatus(columnStatus)
               setShowNewTaskDialog(true)

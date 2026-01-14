@@ -1,4 +1,4 @@
-import { Calendar, AlertTriangle, Folder } from 'lucide-react'
+import { Calendar, AlertTriangle, Folder, X } from 'lucide-react'
 import { ParsedTask } from '../../types/task'
 import { useAppStore } from '../../stores/appStore'
 
@@ -6,9 +6,10 @@ interface KanbanCardProps {
   task: ParsedTask
   showProject?: boolean
   onDragStart: (e: React.DragEvent, task: ParsedTask) => void
+  onDelete?: (task: ParsedTask) => void
 }
 
-export function KanbanCard({ task, showProject = false, onDragStart }: KanbanCardProps) {
+export function KanbanCard({ task, showProject = false, onDragStart, onDelete }: KanbanCardProps) {
   const { openFile } = useAppStore()
 
   // Check if task is overdue
@@ -25,6 +26,13 @@ export function KanbanCard({ task, showProject = false, onDragStart }: KanbanCar
     openFile(task.filePath)
   }
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent opening file
+    if (confirm(`Delete task "${task.text}"?`)) {
+      onDelete?.(task)
+    }
+  }
+
   return (
     <div
       draggable
@@ -32,7 +40,7 @@ export function KanbanCard({ task, showProject = false, onDragStart }: KanbanCar
       onClick={handleClick}
       className={`
         p-3 rounded-lg cursor-grab active:cursor-grabbing
-        transition-all duration-200 group
+        transition-all duration-200 group relative
         hover:scale-[1.02] hover:shadow-lg
         ${task.status === 'done' ? 'opacity-60' : ''}
       `}
@@ -42,6 +50,18 @@ export function KanbanCard({ task, showProject = false, onDragStart }: KanbanCar
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
       }}
     >
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          className="absolute top-1 right-1 p-1 rounded opacity-0 group-hover:opacity-100
+                     hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all"
+          title="Delete task"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+
       {/* Task text */}
       <p
         className={`
