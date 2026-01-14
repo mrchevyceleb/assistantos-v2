@@ -38,47 +38,94 @@ export function CalendarWidget() {
 
       // Get today's events
       const now = new Date()
+      const startOfDay = new Date(now)
+      startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(now)
       endOfDay.setHours(23, 59, 59, 999)
 
+      // Format dates without timezone (YYYY-MM-DDTHH:mm:ss)
+      const formatDateForCalendar = (date: Date) => {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        const hours = String(date.getHours()).padStart(2, '0')
+        const minutes = String(date.getMinutes()).padStart(2, '0')
+        const seconds = String(date.getSeconds()).padStart(2, '0')
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+      }
+
+      // List available tools
+      const availableTools = await window.electronAPI?.mcp.getTools(['calendar'])
+      console.log('[CalendarWidget] Available tools:', availableTools)
+
+      // Find the list-events tool
+      const listEventsTool = availableTools?.find((t: any) =>
+        t.name?.includes('list') && t.name?.includes('event')
+      )
+      console.log('[CalendarWidget] Using tool:', listEventsTool?.name)
+
       const result = await window.electronAPI?.mcp.executeTool(
         'calendar',
-        'mcp__google-calendar__list-events',
+        listEventsTool?.name || 'calendar_list-events',
         {
           calendarId: 'primary',
-          timeMin: now.toISOString(),
-          timeMax: endOfDay.toISOString()
+          timeMin: formatDateForCalendar(startOfDay),
+          timeMax: formatDateForCalendar(endOfDay)
         }
       )
 
       if (result?.success && result.result) {
-        // Parse the response - format may vary based on MCP implementation
-        const resultData = result.result as { content?: Array<{ text?: string }> }
-        const content = resultData?.content?.[0]?.text || ''
+        console.log('[CalendarWidget] Raw result:', JSON.stringify(result.result, null, 2).substring(0, 1000))
+
+        // Helper to extract datetime string from various formats
+        const extractDateTime = (dateObj: any): string => {
+          if (typeof dateObj === 'string') {
+            return dateObj
+          }
+          // Google Calendar API format: { dateTime: "2024-01-13T10:00:00-05:00" }
+          if (dateObj?.dateTime) {
+            return dateObj.dateTime
+          }
+          // All-day event format: { date: "2024-01-13" }
+          if (dateObj?.date) {
+            return dateObj.date
+          }
+          return new Date().toISOString()
+        }
+
         try {
-          // Try to parse as JSON array of events
-          const parsedEvents: CalendarEvent[] = JSON.parse(content)
-          setEvents(parsedEvents.map(event => ({
-            id: event.id,
-            summary: event.summary,
-            start: event.start,
-            end: event.end,
-            htmlLink: event.htmlLink,
-          })))
-        } catch {
-          // If result.result is already an array, use it directly
-          if (Array.isArray(result.result)) {
-            setEvents(result.result.map((event: any) => ({
-              id: event.id,
-              summary: event.summary,
-              start: event.start,
-              end: event.end,
+          // MCP returns: [{ type: "text", text: "{\"events\":[...],\"totalCount\":0}" }]
+          let eventsData = result.result
+
+          // Extract text from MCP format
+          if (Array.isArray(eventsData) && eventsData[0]?.type === 'text') {
+            const textContent = eventsData[0].text || ''
+            if (textContent.trim()) {
+              eventsData = JSON.parse(textContent)
+            } else {
+              setEvents([])
+              return
+            }
+          }
+
+          // Now eventsData should be { events: [...], totalCount: 0 }
+          const eventsList = eventsData.events || eventsData
+          console.log('[CalendarWidget] Parsed events:', eventsList)
+
+          if (Array.isArray(eventsList)) {
+            setEvents(eventsList.map((event: any) => ({
+              id: event.id || Math.random().toString(),
+              summary: event.summary || 'Untitled Event',
+              start: extractDateTime(event.start),
+              end: extractDateTime(event.end),
               htmlLink: event.htmlLink,
             })))
           } else {
-            console.log('[CalendarWidget] Calendar response format:', typeof result.result, content?.slice(0, 200))
             setEvents([])
           }
+        } catch (err) {
+          console.error('[CalendarWidget] Parse error:', err)
+          setEvents([])
         }
       } else {
         console.log('[CalendarWidget] No result or unsuccessful:', result)
@@ -93,8 +140,16 @@ export function CalendarWidget() {
   }
 
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    try {
+      const date = new Date(dateString)
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return 'Time TBD'
+      }
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    } catch {
+      return 'Time TBD'
+    }
   }
 
   if (!isConfigured) {

@@ -1,4 +1,4 @@
-import { X, Bot, FileText, Globe, LayoutDashboard, CheckSquare, Zap } from 'lucide-react'
+import { X, Bot, FileText, Globe, LayoutDashboard, CheckSquare, Zap, FolderOpen, StickyNote } from 'lucide-react'
 import type { Tab as TabType, TabType as TabTypeEnum } from '../../stores/tabStore'
 import type { AgentStatus } from '../../stores/agentStore'
 
@@ -27,6 +27,10 @@ function getTabIcon(type: TabTypeEnum, isActive: boolean) {
       return <CheckSquare className={className} />
     case 'ludicrous':
       return <Zap className={`${className} ${isActive ? 'text-amber-400' : ''}`} />
+    case 'files':
+      return <FolderOpen className={className} />
+    case 'note':
+      return <StickyNote className={className} />
     default:
       return <FileText className={className} />
   }

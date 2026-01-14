@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw, Plus, Maximize2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { useTabStore } from '../../stores/tabStore'
 // isMediaFile imported if needed for future media handling
@@ -157,6 +157,7 @@ export function FilesSection() {
   const isStarred = useAppStore(state => state.isStarred)
 
   const openOrFocusFile = useTabStore(state => state.openOrFocusFile)
+  const openOrFocusFiles = useTabStore(state => state.openOrFocusFiles)
 
   // Global keyboard shortcut for search
   useEffect(() => {
@@ -324,6 +325,18 @@ export function FilesSection() {
         </div>
 
         <div className="flex items-center gap-1">
+          {workspacePath && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openOrFocusFiles()
+              }}
+              className="p-1 rounded hover:bg-white/10 text-cyan-400"
+              title="Open file browser in tab"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation()

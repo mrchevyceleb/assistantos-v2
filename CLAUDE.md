@@ -72,9 +72,10 @@ Zustand store with localStorage persistence (`assistantos-storage`):
 - `App.tsx` - Root with TitleBar + AppLayout
 - `AppLayout.tsx` - Sidebar + TabBar + TabContent
 - `Sidebar.tsx` - Dashboard, Agents, Tasks, Notes, Files, Settings
-- `TabBar.tsx` - Dynamic tabs (agent, file, browser, dashboard, tasks, ludicrous)
+- `TabBar.tsx` - Dynamic tabs (agent, file, browser, dashboard, tasks, ludicrous, files, note)
 - `TabContent.tsx` - Renders active tab
 - `FileTree.tsx` - Navigation (auto-hides dotfiles), drag-drop to chat, context menu
+- `FileBrowserPanel.tsx` - Full-screen file browser with navigation, search, and file operations
 - `MarkdownEditor.tsx` - Milkdown WYSIWYG with GFM, adjustable font (12-32px)
 - `MediaViewer.tsx` - Images, video, audio with zoom/fullscreen
 - `AgentChat.tsx` - Chat interface with @mentions, drag-drop files, grouped tool display, customizable avatars
@@ -375,6 +376,20 @@ Fuzzy filename + content search. `Ctrl+P`/`Ctrl+Shift+F` to focus. Excludes: nod
 
 ### Starred Documents (`src/components/filetree/StarredSection.tsx`)
 Bookmarked files in amber with filled star. Click to open, click star to unstar.
+
+### File Browser Tab (`src/components/filetree/FileBrowserPanel.tsx`)
+Full-screen file browser that can be opened in a tab for enhanced file management.
+
+**Features**:
+- **Navigation**: Home button (workspace root), Up button (parent directory), double-click folders to navigate into them
+- **Search**: Real-time file/folder search with filtering
+- **File Operations**: Create new files/folders, rename, delete, context menu support
+- **View**: Expandable folder tree, file type icons (images, videos, audio), starred file indicators
+- **Integration**: Click files to open in editor, send to chat via context menu
+
+**Access**: Click the Maximize icon (cyan) in the FILES section header of the sidebar to open the file browser in a new tab.
+
+**Tab Store**: Uses `openOrFocusFiles()` function from tabStore (singleton tab - only one file browser tab at a time).
 
 ### Workspace Onboarding (`src/components/dashboard/OnboardingWidget.tsx`)
 AI-driven setup for new users. Tracks in `onboardedWorkspaces` array.

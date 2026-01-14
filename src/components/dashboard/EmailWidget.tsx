@@ -22,7 +22,6 @@ interface AccountSummary {
 export function EmailWidget() {
   const { gmailAccounts } = useAppStore()
   const [messages, setMessages] = useState<EmailMessage[]>([])
-  const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,64 +61,121 @@ export function EmailWidget() {
         }
       }
 
-      // Get account summaries first
-      const summaryResult = await window.electronAPI?.mcp.executeTool(
-        firstAccount.integrationId,
-        'summary',
-        {}
+      // List available tools to see what we can actually call
+      const availableTools = await window.electronAPI?.mcp.getTools([firstAccount.integrationId])
+      console.log('[EmailWidget] Available tools:', availableTools)
+
+      // Find the search/list messages tool
+      const searchTool = availableTools?.find((t: any) =>
+        t.name?.includes('search') && t.name?.includes('email')
       )
+      console.log('[EmailWidget] Using search tool:', searchTool?.name)
+      console.log('[EmailWidget] Search tool schema:', searchTool?.inputSchema)
 
-      if (summaryResult?.success && summaryResult.result) {
-        try {
-          const summaryData = typeof summaryResult.result === 'string'
-            ? JSON.parse(summaryResult.result)
-            : summaryResult.result
-
-          if (summaryData.accounts) {
-            setAccounts(summaryData.accounts)
-          }
-        } catch (parseErr) {
-          console.error('[EmailWidget] Failed to parse summary:', parseErr)
-        }
+      // Try to get recent messages using the discovered tool
+      if (!searchTool) {
+        setError('No email search tool available')
+        return
       }
 
       // Get recent unread messages
       const messagesResult = await window.electronAPI?.mcp.executeTool(
         firstAccount.integrationId,
-        'get_messages',
+        searchTool.name,
         {
-          maxResults: 10,
-          labelIds: ['INBOX', 'UNREAD']
+          query: 'in:inbox is:unread',
+          maxResults: 5
         }
       )
 
+      console.log('[EmailWidget] Search result:', messagesResult)
+
       if (messagesResult?.success && messagesResult.result) {
         try {
-          const messagesData = typeof messagesResult.result === 'string'
-            ? JSON.parse(messagesResult.result)
-            : messagesResult.result
+          // MCP returns: [{ type: "text", text: "..." }]
+          let messagesData = messagesResult.result
+
+          // Extract text from MCP format
+          if (Array.isArray(messagesData) && messagesData[0]?.type === 'text') {
+            const textContent = messagesData[0]?.text || ''
+            console.log('[EmailWidget] Extracted text:', textContent.substring(0, 200))
+
+            if (!textContent || !textContent.trim()) {
+              // Empty result - inbox zero!
+              console.log('[EmailWidget] Empty search result - inbox zero!')
+              setMessages([])
+              return
+            }
+
+            try {
+              messagesData = JSON.parse(textContent)
+            } catch (parseErr) {
+              console.error('[EmailWidget] Failed to parse email text:', parseErr)
+              setMessages([])
+              return
+            }
+          }
+
+          console.log('[EmailWidget] Parsed messagesData type:', typeof messagesData, Array.isArray(messagesData))
+
+          // Helper function to extract header value
+          const getHeader = (msg: any, headerName: string): string => {
+            if (msg.payload?.headers) {
+              const header = msg.payload.headers.find((h: any) =>
+                h.name?.toLowerCase() === headerName.toLowerCase()
+              )
+              return header?.value || ''
+            }
+            return ''
+          }
+
+          // Helper function to format message
+          const formatMessage = (msg: any): EmailMessage => {
+            console.log('[EmailWidget] Processing message:', {
+              id: msg.id,
+              from: msg.from,
+              subject: msg.subject,
+              hasPayload: !!msg.payload,
+              hasHeaders: !!msg.payload?.headers,
+              headerCount: msg.payload?.headers?.length || 0
+            })
+
+            // Try multiple ways to get the 'from' field
+            let from = msg.from || getHeader(msg, 'From')
+            if (!from || from === '') {
+              from = 'Unknown Sender'
+            }
+
+            // Try multiple ways to get the 'subject' field
+            let subject = msg.subject || getHeader(msg, 'Subject') || '(No subject)'
+
+            // Try to get date - could be in multiple formats
+            let date = msg.date || msg.internalDate
+            if (!date && msg.payload?.headers) {
+              date = getHeader(msg, 'Date')
+            }
+            if (!date) {
+              date = new Date().toISOString()
+            }
+
+            console.log('[EmailWidget] Formatted message:', { from, subject, date })
+
+            return {
+              id: msg.id || msg.messageId || Math.random().toString(),
+              account: msg.account || firstAccount.email,
+              from,
+              subject,
+              snippet: msg.snippet || msg.body?.substring(0, 100) || '',
+              date,
+              isUnread: msg.labelIds?.includes('UNREAD') ?? true
+            }
+          }
 
           if (Array.isArray(messagesData)) {
-            const formatted: EmailMessage[] = messagesData.slice(0, 5).map((msg: any) => ({
-              id: msg.id || msg.messageId,
-              account: msg.account || firstAccount.email,
-              from: msg.from || 'Unknown',
-              subject: msg.subject || '(No subject)',
-              snippet: msg.snippet || msg.body?.substring(0, 100) || '',
-              date: msg.date || msg.internalDate || new Date().toISOString(),
-              isUnread: msg.labelIds?.includes('UNREAD') ?? true
-            }))
+            const formatted = messagesData.slice(0, 5).map(formatMessage)
             setMessages(formatted)
           } else if (messagesData.messages && Array.isArray(messagesData.messages)) {
-            const formatted: EmailMessage[] = messagesData.messages.slice(0, 5).map((msg: any) => ({
-              id: msg.id || msg.messageId,
-              account: msg.account || firstAccount.email,
-              from: msg.from || 'Unknown',
-              subject: msg.subject || '(No subject)',
-              snippet: msg.snippet || msg.body?.substring(0, 100) || '',
-              date: msg.date || msg.internalDate || new Date().toISOString(),
-              isUnread: msg.labelIds?.includes('UNREAD') ?? true
-            }))
+            const formatted = messagesData.messages.slice(0, 5).map(formatMessage)
             setMessages(formatted)
           }
         } catch (parseErr) {
@@ -168,8 +224,6 @@ export function EmailWidget() {
     return from.substring(0, 20)
   }
 
-  const totalUnread = accounts.reduce((sum, acc) => sum + acc.unreadCount, 0)
-
   // Not configured state
   if (!hasAccounts) {
     return (
@@ -201,7 +255,7 @@ export function EmailWidget() {
 
   return (
     <WidgetContainer
-      title={totalUnread > 0 ? `Email (${totalUnread} unread)` : 'Email'}
+      title="Email"
       icon={<Mail className="w-4 h-4" />}
       loading={loading}
       onRefresh={fetchEmails}

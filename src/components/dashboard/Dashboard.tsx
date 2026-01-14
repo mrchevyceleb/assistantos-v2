@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react'
 import { GreetingHeader } from './GreetingHeader'
 import { WeatherWidget } from './WeatherWidget'
-import { Next48HoursWidget } from './Next48HoursWidget'
 import { CalendarWidget } from './CalendarWidget'
 import { TaskSummaryWidget } from './TaskSummaryWidget'
 import { QuickLinksWidget } from './QuickLinksWidget'
@@ -32,25 +31,20 @@ export function Dashboard() {
           {/* Onboarding Widget - spans full width */}
           <OnboardingWidget />
 
-          {/* Top row: Weather + Next 48 Hours */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-1">
-              <WeatherWidget />
-            </div>
-            <div className="md:col-span-2">
-              <Next48HoursWidget />
-            </div>
-          </div>
-
-          {/* Middle row: Email and Tasks */}
+          {/* Top row: Weather and Email */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <WeatherWidget />
             <EmailWidget />
-            <TaskSummaryWidget />
           </div>
 
-          {/* Bottom row: Calendar and Quick Links */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Middle row: Tasks and Calendar */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TaskSummaryWidget />
             <CalendarWidget />
+          </div>
+
+          {/* Bottom row: Quick Links */}
+          <div className="grid grid-cols-1 gap-4">
             <QuickLinksWidget />
           </div>
         </div>
