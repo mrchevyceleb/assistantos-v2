@@ -298,6 +298,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const setLoadedSkills = useAppStore(state => state.setLoadedSkills)
   const kanbanSettings = useAppStore(state => state.kanbanSettings)  // [Bug Fix] Added for custom tasks folder
   const showContextUsage = useAppStore(state => state.showContextUsage)
+  const pendingChatInput = useAppStore(state => state.pendingChatInput)
+  const setPendingChatInput = useAppStore(state => state.setPendingChatInput)
 
   // Agent store (per-agent state)
   const agent = useAgentStore(state => state.getAgent(agentId))
@@ -418,6 +420,18 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
   // Get combined shortcuts (user shortcuts + loaded skills)
   const shortcuts = getAllShortcuts()
+
+  // Handle pending chat input from file tree "Send to Chat"
+  useEffect(() => {
+    if (pendingChatInput !== null) {
+      setInput(pendingChatInput)
+      setPendingChatInput(null)
+      // Focus the textarea after a short delay to ensure render
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 50)
+    }
+  }, [pendingChatInput, setPendingChatInput])
 
   // Scroll to bottom when messages change
   useEffect(() => {

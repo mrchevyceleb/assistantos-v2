@@ -357,7 +357,21 @@ ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
       // Target doesn't exist, safe to rename
     }
 
-    await fs.promises.rename(oldPath, newPath)
+    // Use copy + delete instead of rename for better OneDrive compatibility
+    // fs.rename() can fail with ENOENT on OneDrive even when file exists
+    try {
+      await fs.promises.rename(oldPath, newPath)
+    } catch (error: any) {
+      // If rename fails (common with OneDrive), try copy + delete
+      if (error.code === 'ENOENT' || error.code === 'EXDEV') {
+        console.log('[fs:rename] Rename failed, trying copy+delete fallback')
+        await fs.promises.copyFile(oldPath, newPath)
+        await fs.promises.unlink(oldPath)
+      } else {
+        throw error
+      }
+    }
+
     return { success: true }
   } catch (error) {
     console.error('Error renaming file:', error)
