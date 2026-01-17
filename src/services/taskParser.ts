@@ -385,9 +385,12 @@ export async function updateTaskStatus(
     if (lineNumber === 0) {
       // For filename-based tasks, update the status marker in the filename
       // Expected format: "ProjectName - Task Title - Due YYYY-MM-DD [status].md"
-      const normalizedPath = filePath.replace(/\\/g, '/')
-      const dirPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'))
-      const filename = normalizedPath.split('/').pop() || ''
+
+      // Use async path utilities for platform-specific path handling
+      const normalizedPath = await window.electronAPI.fs.normalizePath(filePath)
+
+      // Extract filename from path (cross-platform)
+      const filename = normalizedPath.split(/[/\\]/).pop() || ''
 
       // Check if filename matches the task convention
       const match = filename.match(FILENAME_TASK_REGEX)
@@ -402,7 +405,10 @@ export async function updateTaskStatus(
       const statusChar = statusToChar(newStatus)
       const sanitize = (str: string) => str.replace(/[<>:"/\\|?*]/g, '-').trim()
       const newFilename = `${sanitize(projectName)} - ${sanitize(taskTitle)} - Due ${dueDate} [${statusChar}].md`
-      const newPath = `${dirPath}/${newFilename}`
+
+      // Get directory path and build new path using async utilities
+      const dirPath = normalizedPath.substring(0, normalizedPath.lastIndexOf(normalizedPath.includes('/') ? '/' : '\\'))
+      const newPath = await window.electronAPI.fs.joinPath(dirPath, newFilename)
 
       // Don't rename if the path is the same (status hasn't changed)
       if (normalizedPath === newPath) {
@@ -411,9 +417,10 @@ export async function updateTaskStatus(
       }
 
       // Check if source file exists
-      const sourceExists = await window.electronAPI.fs.exists(filePath)
+      const sourceExists = await window.electronAPI.fs.exists(normalizedPath)
       if (!sourceExists) {
-        console.error('[taskParser] Source file does not exist:', filePath)
+        console.error('[taskParser] Source file does not exist:', normalizedPath)
+        console.error('[taskParser] Original path:', filePath)
         return false
       }
 
@@ -424,10 +431,17 @@ export async function updateTaskStatus(
         return false
       }
 
+      // Log the rename operation for debugging
+      console.log('[taskParser] Renaming task file:')
+      console.log('  From:', normalizedPath)
+      console.log('  To:', newPath)
+
       // Rename the file to update the status marker
-      const renameResult = await window.electronAPI.fs.rename(filePath, newPath)
+      const renameResult = await window.electronAPI.fs.rename(normalizedPath, newPath)
       if (!renameResult.success) {
         console.error('[taskParser] Failed to rename task file:', renameResult.error)
+        console.error('[taskParser] From:', normalizedPath)
+        console.error('[taskParser] To:', newPath)
         return false
       }
       console.log('[taskParser] File-level task status updated via rename:', newFilename)

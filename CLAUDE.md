@@ -55,7 +55,25 @@ Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context
 3. **Dynamic Context** - Auto-gathered (git status, platform, date, workspace)
 
 ### Tools (`src/services/tools/`)
-Available tools: `read_file`, `write_file`, `list_directory`, `file_exists`, `create_directory`, `bash`, `create_mcp_integration`
+
+**File Tools**: `read_file`, `write_file`, `list_directory`, `file_exists`, `create_directory`
+
+**Efficient Tools**: `grep`, `glob`, `edit`
+
+**Task Tools** (Supabase cloud tasks):
+- `create_task` - Create task with title, projectName, description, status, priority, dueDate, tags
+- `update_task` - Update task by ID (any field)
+- `delete_task` - Delete task by ID
+- `get_task` - Get single task by ID
+- `list_tasks` - List tasks with optional filters (projectName, status, priority, limit)
+
+**Other Tools**: `bash`, `create_mcp_integration`
+
+**Task Tools Implementation** (`src/services/tools/taskTools.ts`):
+- Tools operate directly on `useTaskStore` which syncs to Supabase
+- No IPC required - runs entirely in renderer process
+- Requires cloud sync to be enabled (Settings > Tasks)
+- Real-time updates via Supabase subscriptions
 
 ### Chat Utilities (`src/components/chat/utils/chatUtils.ts`)
 Standalone utility functions for the chat system:
@@ -171,26 +189,42 @@ Customizable avatars for user and agent in chat messages (Settings > Profile & A
 
 **Settings** (in appStore): `weatherLocation`, `temperatureUnit`, `clockFormat`, `showSeconds`
 
-### Task Management (`src/components/tasks/`, `src/services/taskParser.ts`)
+### Task Management (`src/components/tasks/`, `src/stores/taskStore.ts`)
 
-Two conventions (auto-detected):
+**Supabase-Only Architecture**: Tasks are stored exclusively in Supabase cloud storage. File-based task management has been removed.
 
-**1. Filename-based (RECOMMENDED)**
-```
-tasks/ProjectA - Task Title - Due 2026-01-15.md
-```
-Format: `{Project} - {Title} - Due {YYYY-MM-DD}.md`. Status from checkbox completion (0% → todo, 1-99% → in_progress, 100% → done).
+**Requirements**:
+- Cloud sync must be configured in Settings for tasks to work
+- Tasks sync across devices via Supabase real-time subscriptions
+- No workspace folder or file parsing required
 
-**2. Subfolder structure (legacy)**
-```
-TASKS/ProjectName/tasks.md  (with - [x], - [o], - [>], - [?], - [ ] checkboxes)
-```
+**Components**: TaskPanel, KanbanBoard, KanbanColumn, KanbanCard, TaskListView, TaskListRow, ProjectSelector
 
-**Components**: TaskPanel, KanbanBoard, KanbanColumn, KanbanCard, TaskListView, TaskListRow
+**Task Store** (`src/stores/taskStore.ts`):
+- `initialize(syncId)` - Connect to Supabase with sync ID
+- `loadTasks(projectFilter?)` - Fetch tasks from cloud
+- `createTask(task)` - Create new task
+- `updateTask(taskId, updates)` - Update task
+- `updateTaskStatus(taskId, status, sortOrder?)` - Change status (drag-drop)
+- `deleteTask(taskId)` - Remove task
+- `reorderTasks(taskOrders)` - Reorder within column
+- `subscribeToChanges()` - Real-time sync
 
-**Parser functions**: `parseTasksFromWorkspace()`, `getProjectList()`, `updateTaskStatus()`, `calculateStatusFromContent()`
+**Task Sync Service** (`src/services/tasks/taskSyncService.ts`):
+- Supabase CRUD operations
+- Real-time subscription callbacks (onInsert, onUpdate, onDelete)
+- Project listing and filtering
 
-**Types** (`src/types/task.ts`): `TaskStatus`, `ParsedTask`, `KanbanSettings`
+**Types** (`src/types/task.ts`): `TaskStatus`, `KanbanSettings`
+**Types** (`src/types/syncTask.ts`): `SyncTask`, `NewSyncTask`, `UpdateSyncTask`
+
+**Legacy** (`src/services/taskParser.ts`):
+- File parsing utilities (kept for potential future use, not used by TaskPanel)
+- Functions: `parseTasksFromWorkspace()`, `getProjectList()`, `updateTaskStatus()`
+
+**Document Linking** (optional):
+- Tasks can have a `documentPath` field linking to a workspace file
+- This is metadata only - the task itself is stored in Supabase
 
 ### Multi-Agent Support (`src/stores/agentStore.ts`, `src/stores/tabStore.ts`, `src/stores/fileLockStore.ts`)
 
@@ -549,6 +583,18 @@ Tailwind with custom theme: metallic dark + cyan/violet/pink accents, custom sha
 - This breaks MCP integrations by preventing the preload script from loading
 - File: `tsconfig.preload.json` (line 4)
 - Related: `src/services/claude.ts` uses ESNext modules (this is correct - only preload differs)
+
+## Auto-Updater
+
+**Update Checking** (`electron/services/autoUpdater.ts`, `electron/main.ts`):
+- Uses `electron-updater` library with GitHub releases integration
+- **Critical**: `checkForUpdates()` wraps electron-updater events in a promise to prevent infinite hangs
+- electron-updater emits events (`update-available`, `update-not-available`, `error`) but doesn't always reject/resolve its promise
+- Solution: Listen to events and resolve/reject based on first event received
+- Timeout: 15-second timeout in IPC handler prevents indefinite waits
+- Event flow: `checking-for-update` → `update-available` | `update-not-available` | `error`
+- UI updates via IPC events: `auto-update:update-checking`, `auto-update:update-available`, etc.
+- Settings modal displays status and provides manual "Check for Updates" button
 
 ## Path Aliases
 

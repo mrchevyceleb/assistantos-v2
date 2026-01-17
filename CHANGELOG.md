@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Task System Refactored to Supabase-Only**: Removed file-based task management entirely
+  - Tasks are now stored exclusively in Supabase cloud storage
+  - Removed cloud sync toggle - Supabase is always used when configured
+  - Removed file task parsing from TaskPanel (fileTasks, fileProjects state removed)
+  - Removed folder configuration UI (custom tasks folder, folder creation dialogs)
+  - Removed migration dialog (no longer needed without file-based tasks)
+  - Added clear messaging when cloud sync is not configured
+  - Simplified TaskPanel from 770 lines to 262 lines (~66% reduction)
+  - Real-time sync across devices via Supabase subscriptions
+  - Note: `taskParser.ts` kept for potential future use but not used by TaskPanel
+  - File: `src/components/tasks/TaskPanel.tsx`
+
 ### Fixed
+
+- **Update Checker Infinite Hang**: Fixed "Check for Updates" feature hanging forever with infinite spinner
+  - Root cause: `electron-updater` emits error events instead of rejecting promises, causing IPC handler to hang indefinitely
+  - Added 15-second timeout to update check IPC handler to prevent infinite hangs
+  - Wrapped `checkForUpdates()` in promise that resolves/rejects based on electron-updater events
+  - Now properly handles: update available, no updates, errors (404, network, etc.)
+  - UI shows clear error messages after timeout or failure instead of spinning forever
+  - Files: `electron/main.ts` (lines 280-298), `electron/services/autoUpdater.ts` (lines 222-301)
 
 - **Context Usage Not Resetting on Clear Chat**: Fixed context usage indicator showing incorrect token count after clearing chat
   - Context indicator now properly resets to 0 tokens when trash icon is clicked

@@ -221,25 +221,83 @@ export async function initAutoUpdater(mainWindow: BrowserWindow): Promise<void> 
 
 /**
  * Check for updates manually
+ * Wraps electron-updater's checkForUpdates() with proper error handling
  */
 export async function checkForUpdates(): Promise<void> {
   if (!UPDATER_ENABLED) {
     logger.warn('Auto-updater disabled - app is not packaged (development mode)')
-    return
+    throw new Error('Auto-updater is disabled in development mode')
   }
 
   logger.info('Initiating update check...')
-  try {
-    const result = await autoUpdater.checkForUpdates()
-    logger.info('Update check completed', {
-      updateInfo: result?.updateInfo?.version,
-      cancellationToken: !!result?.cancellationToken
-    })
-  } catch (error) {
-    // Log but don't throw - error event will handle notification
-    logger.error('checkForUpdates threw an error:', { error: (error as Error).message })
-    throw error // Re-throw so IPC handler can catch it
-  }
+
+  // [Bug Fix] Wrap the update check in a promise that resolves when we get a definitive answer
+  // electron-updater emits events but doesn't always reject/resolve the promise properly
+  return new Promise((resolve, reject) => {
+    let completed = false
+
+    // Success handlers
+    const onAvailable = () => {
+      if (!completed) {
+        completed = true
+        cleanup()
+        logger.info('Update available - resolving check')
+        resolve()
+      }
+    }
+
+    const onNotAvailable = () => {
+      if (!completed) {
+        completed = true
+        cleanup()
+        logger.info('No updates available - resolving check')
+        resolve()
+      }
+    }
+
+    // Error handler
+    const onError = (error: Error) => {
+      if (!completed) {
+        completed = true
+        cleanup()
+        logger.error('Update check error - rejecting check:', { error: error.message })
+        reject(error)
+      }
+    }
+
+    // Cleanup function to remove listeners
+    const cleanup = () => {
+      autoUpdater.removeListener('update-available', onAvailable)
+      autoUpdater.removeListener('update-not-available', onNotAvailable)
+      autoUpdater.removeListener('error', onError)
+    }
+
+    // Attach listeners
+    autoUpdater.once('update-available', onAvailable)
+    autoUpdater.once('update-not-available', onNotAvailable)
+    autoUpdater.once('error', onError)
+
+    // Initiate the check
+    autoUpdater.checkForUpdates()
+      .then((result) => {
+        // If the promise resolves but we haven't completed yet, treat as success
+        if (!completed) {
+          logger.info('Update check completed via promise resolution', {
+            updateInfo: result?.updateInfo?.version,
+            cancellationToken: !!result?.cancellationToken
+          })
+        }
+      })
+      .catch((error) => {
+        // If the promise rejects but we haven't completed yet, treat as error
+        if (!completed) {
+          completed = true
+          cleanup()
+          logger.error('checkForUpdates threw an error:', { error: error.message })
+          reject(error)
+        }
+      })
+  })
 }
 
 /**

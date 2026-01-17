@@ -2,15 +2,17 @@ import { executeFileTool } from './fileTools';
 import { executeBashTool } from './bashTool';
 import { executeCreateIntegration } from './integrationTool';
 import { executeEfficientTool } from './efficientTools';
+import { executeTaskTool } from './taskTools';
 import { allTools } from './schemas';
 
 export { allTools } from './schemas';
 
 const FILE_TOOLS = ['read_file', 'write_file', 'list_directory', 'file_exists', 'create_directory'];
 const EFFICIENT_TOOLS = ['grep', 'glob', 'edit'];
+const TASK_TOOLS = ['create_task', 'update_task', 'delete_task', 'get_task', 'list_tasks'];
 
 // Local tools that are always available
-const LOCAL_TOOLS = new Set([...FILE_TOOLS, ...EFFICIENT_TOOLS, 'bash', 'create_mcp_integration']);
+const LOCAL_TOOLS = new Set([...FILE_TOOLS, ...EFFICIENT_TOOLS, ...TASK_TOOLS, 'bash', 'create_mcp_integration']);
 
 /**
  * Execute a tool - routes to local handler or MCP server
@@ -30,6 +32,11 @@ export async function executeTool(
   // Handle efficient tools (grep, glob, edit)
   if (EFFICIENT_TOOLS.includes(name)) {
     return executeEfficientTool(name, input, workspacePath, agentId, agentName);
+  }
+
+  // Handle task tools (create_task, update_task, delete_task, get_task, list_tasks)
+  if (TASK_TOOLS.includes(name)) {
+    return executeTaskTool(name, input);
   }
 
   // Handle bash

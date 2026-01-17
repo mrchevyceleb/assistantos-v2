@@ -244,4 +244,152 @@ export const efficientTools: Tool[] = [
   }
 ];
 
-export const allTools: Tool[] = [...fileTools, ...efficientTools, bashTool, createIntegrationTool];
+/**
+ * Task management tools for Supabase-synced tasks
+ */
+export const taskTools: Tool[] = [
+  {
+    name: 'create_task',
+    description: 'Create a new task in the task management system. Tasks are synced to the cloud via Supabase.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: {
+          type: 'string',
+          description: 'The title/name of the task'
+        },
+        projectName: {
+          type: 'string',
+          description: 'The project this task belongs to (e.g., "Work", "Personal", "AssistantOS")'
+        },
+        description: {
+          type: 'string',
+          description: 'Optional detailed description of the task'
+        },
+        status: {
+          type: 'string',
+          enum: ['backlog', 'todo', 'in_progress', 'review', 'done'],
+          description: 'Task status. Defaults to "todo" if not specified.'
+        },
+        priority: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Optional priority level'
+        },
+        dueDate: {
+          type: 'string',
+          description: 'Optional due date in YYYY-MM-DD format'
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional array of tags for categorization'
+        }
+      },
+      required: ['title', 'projectName']
+    }
+  },
+  {
+    name: 'update_task',
+    description: 'Update an existing task by its ID. You can update any combination of fields.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The UUID of the task to update'
+        },
+        title: {
+          type: 'string',
+          description: 'New title for the task'
+        },
+        description: {
+          type: 'string',
+          description: 'New description (set to empty string to clear)'
+        },
+        status: {
+          type: 'string',
+          enum: ['backlog', 'todo', 'in_progress', 'review', 'done'],
+          description: 'New status for the task'
+        },
+        projectName: {
+          type: 'string',
+          description: 'Move task to a different project'
+        },
+        priority: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'New priority level (use null to clear)'
+        },
+        dueDate: {
+          type: 'string',
+          description: 'New due date in YYYY-MM-DD format (use null to clear)'
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Replace tags with this new array'
+        }
+      },
+      required: ['id']
+    }
+  },
+  {
+    name: 'delete_task',
+    description: 'Delete a task by its ID. This action cannot be undone.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The UUID of the task to delete'
+        }
+      },
+      required: ['id']
+    }
+  },
+  {
+    name: 'get_task',
+    description: 'Get details of a single task by its ID.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The UUID of the task to retrieve'
+        }
+      },
+      required: ['id']
+    }
+  },
+  {
+    name: 'list_tasks',
+    description: 'List tasks with optional filters. Use this to show the user their tasks or find specific tasks.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        projectName: {
+          type: 'string',
+          description: 'Filter by project name (case-insensitive)'
+        },
+        status: {
+          type: 'string',
+          enum: ['backlog', 'todo', 'in_progress', 'review', 'done'],
+          description: 'Filter by status'
+        },
+        priority: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Filter by priority'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of tasks to return (default: 50)'
+        }
+      },
+      required: []
+    }
+  }
+];
+
+export const allTools: Tool[] = [...fileTools, ...efficientTools, ...taskTools, bashTool, createIntegrationTool];

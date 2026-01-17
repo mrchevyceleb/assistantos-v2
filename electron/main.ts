@@ -279,7 +279,16 @@ ipcMain.handle('window:close', () => {
 // IPC Handlers for auto-updater
 ipcMain.handle('updater:checkForUpdates', async () => {
   try {
-    await checkForUpdates()
+    // [Bug Fix] Add timeout to prevent infinite hang
+    // electron-updater can hang if no event fires (rare edge case)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Update check timed out after 15 seconds')), 15000)
+    })
+
+    await Promise.race([
+      checkForUpdates(),
+      timeoutPromise
+    ])
     return { success: true }
   } catch (error) {
     // [Bug Fix] Log the error for debugging
@@ -439,45 +448,62 @@ ipcMain.handle('fs:isAbsolute', (_, filePath: string) => {
 // IPC Handler for renaming files/folders
 ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
   try {
+    console.log('[fs:rename] Attempting rename:')
+    console.log('  From:', oldPath)
+    console.log('  To:', newPath)
+
     // Validate paths
     if (!validatePath(oldPath) || !validatePath(newPath)) {
-      console.error('Path validation failed for rename:', oldPath, '->', newPath)
+      console.error('[fs:rename] Path validation failed')
       return { success: false, error: 'Invalid path - operation not allowed' }
     }
 
     // Check if source exists
     try {
       await fs.promises.access(oldPath)
-    } catch {
+      console.log('[fs:rename] Source file exists')
+    } catch (err) {
+      console.error('[fs:rename] Source file does not exist:', err)
       return { success: false, error: 'Source file or folder does not exist' }
     }
 
     // Check if target already exists
     try {
       await fs.promises.access(newPath)
+      console.log('[fs:rename] Target already exists')
       return { success: false, error: 'A file or folder with that name already exists' }
     } catch {
       // Target doesn't exist, safe to rename
+      console.log('[fs:rename] Target does not exist, safe to rename')
     }
 
     // Use copy + delete instead of rename for better OneDrive compatibility
     // fs.rename() can fail with ENOENT on OneDrive even when file exists
     try {
       await fs.promises.rename(oldPath, newPath)
+      console.log('[fs:rename] Rename successful')
     } catch (error: any) {
       // If rename fails (common with OneDrive), try copy + delete
       if (error.code === 'ENOENT' || error.code === 'EXDEV') {
-        console.log('[fs:rename] Rename failed, trying copy+delete fallback')
-        await fs.promises.copyFile(oldPath, newPath)
-        await fs.promises.unlink(oldPath)
+        console.log('[fs:rename] Rename failed with', error.code, '- trying copy+delete fallback')
+        try {
+          await fs.promises.copyFile(oldPath, newPath)
+          console.log('[fs:rename] Copy successful, deleting original')
+          await fs.promises.unlink(oldPath)
+          console.log('[fs:rename] Copy+delete fallback successful')
+        } catch (fallbackError) {
+          console.error('[fs:rename] Copy+delete fallback failed:', fallbackError)
+          throw fallbackError
+        }
       } else {
+        console.error('[fs:rename] Rename failed with unexpected error:', error)
         throw error
       }
     }
 
     return { success: true }
   } catch (error) {
-    console.error('Error renaming file:', error)
+    console.error('[fs:rename] Final error:', error)
     return { success: false, error: String(error) }
   }
 })
