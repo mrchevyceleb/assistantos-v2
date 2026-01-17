@@ -57,6 +57,21 @@ Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context
 ### Tools (`src/services/tools/`)
 Available tools: `read_file`, `write_file`, `list_directory`, `file_exists`, `create_directory`, `bash`, `create_mcp_integration`
 
+### Chat Utilities (`src/components/chat/utils/chatUtils.ts`)
+Standalone utility functions for the chat system:
+- `fileToAttachedImage()` - Convert File to AttachedImage format
+- `clipboardToAttachedImage()` - Convert clipboard data to AttachedImage
+- `readDocumentContext()` - Read and format @mentioned documents
+- `sanitizeToolName()` - Sanitize tool names for Anthropic API
+- `sanitizeMCPTools()` - Sanitize MCP tools with name mapping
+- `prepareAllEnabledTools()` - Load all enabled integration tools
+- `attachedImagesToImageContent()` - Convert to Claude API format
+- `generateMessageId()` - Generate unique message IDs
+
+### Chat Hooks (`src/components/chat/hooks/`)
+Custom hooks extracted from AgentChatContainer for better maintainability:
+- `useVoiceDictation` - Web Speech API integration for voice-to-text input
+
 ### State Management (`src/stores/appStore.ts`)
 Zustand store with localStorage persistence (`assistantos-storage`):
 - Workspace path, current file, open files

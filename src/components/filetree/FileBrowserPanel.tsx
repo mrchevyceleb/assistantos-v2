@@ -3,7 +3,7 @@
  * A full-panel version of the file tree for center panel display
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   ChevronRight,
   ChevronDown,
@@ -57,7 +57,7 @@ type RenameState = RenameStateData | null
 type NewItemState = NewItemStateData | null
 
 export function FileBrowserPanel() {
-  const { workspacePath, setWorkspacePath, toggleStarred, isStarred, setPendingChatInput } = useAppStore()
+  const { workspacePath, isStarred, setPendingChatInput } = useAppStore()
   const openOrFocusFile = useTabStore(state => state.openOrFocusFile)
   const [files, setFiles] = useState<FileEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
@@ -71,7 +71,7 @@ export function FileBrowserPanel() {
   // Rename state
   const [renameState, setRenameState] = useState<RenameState>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [renameError, setRenameError] = useState('')
+  const [_renameError, setRenameError] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Delete confirmation state

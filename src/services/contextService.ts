@@ -4,7 +4,7 @@
  * and tasks for injection into the system prompt.
  */
 
-import { parseTasksFromWorkspace, TASKS_FOLDER, getTasksFolder } from './taskParser'
+import { parseTasksFromWorkspace, getTasksFolder } from './taskParser'
 import type { ParsedTask } from '../types/task'
 
 export interface TaskSummary {

@@ -67,7 +67,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /book\s+(a\s+)?(meeting|time)/i,
       /when\s+(am\s+i|is\s+my)/i
     ],
-    contextual: (msg, history) => {
+    contextual: (msg, _history) => {
       // If discussing time/dates, likely calendar related
       const timeTerms = ['today', 'tomorrow', 'next week', 'monday', 'tuesday', 'wednesday',
                         'thursday', 'friday', 'saturday', 'sunday', 'am', 'pm']
@@ -89,7 +89,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /current\s+(news|information)/i,
       /how\s+does\s+.*\s+work/i
     ],
-    contextual: (msg, history) => {
+    contextual: (msg, _history) => {
       // Perplexity for complex, open-ended research questions
       const isQuestion = /\?/.test(msg) ||
                         /^(what|who|when|where|why|how|is|are|can|could|should)/i.test(msg)
@@ -109,7 +109,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /(find|search)\s+on\s+(the\s+)?(web|internet)/i,
       /look\s+online/i
     ],
-    contextual: (msg, history) => {
+    contextual: (msg, _history) => {
       // Brave for quick web searches
       const searchTerms = ['search', 'find', 'google']
       return searchTerms.some(term => msg.toLowerCase().includes(term))
@@ -130,7 +130,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /go\s+to\s+(the\s+)?(website|page)/i,
       /browser\s+automation/i
     ],
-    contextual: (msg, history) => {
+    contextual: (msg, _history) => {
       // Check for URLs in message
       return /https?:\/\//.test(msg)
     },
@@ -147,7 +147,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /push\s+to\s+production/i,
       /deploy\s+(the\s+)?(app|site|website)/i
     ],
-    contextual: (msg, history) => false,
+    contextual: (_msg, _history) => false,
     priority: 5
   },
 
@@ -160,7 +160,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /cloud\s+browser/i,
       /remote\s+browser/i
     ],
-    contextual: (msg, history) => false,
+    contextual: (_msg, _history) => false,
     priority: 4
   },
 
@@ -172,7 +172,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /context7/i,
       /search\s+(the\s+)?codebase/i
     ],
-    contextual: (msg, history) => false,
+    contextual: (_msg, _history) => false,
     priority: 4
   },
 
@@ -183,7 +183,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
     patterns: [
       /nano\s+banana/i
     ],
-    contextual: (msg, history) => false,
+    contextual: (_msg, _history) => false,
     priority: 3
   },
 
@@ -196,7 +196,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /generate\s+(an?\s+)?image/i,
       /create\s+(an?\s+)?image/i
     ],
-    contextual: (msg, history) => false,
+    contextual: (_msg, _history) => false,
     priority: 4
   }
 ]
@@ -240,14 +240,12 @@ export function detectIntent(
     }
 
     // Pattern matching (strong signal)
-    let patternMatched = false
     for (const regex of pattern.patterns) {
       if (regex.test(message)) {
         confidence += 0.6
         trigger = trigger
           ? `${trigger} + pattern: ${regex.source.substring(0, 30)}...`
           : `pattern: ${regex.source.substring(0, 30)}...`
-        patternMatched = true
         break
       }
     }

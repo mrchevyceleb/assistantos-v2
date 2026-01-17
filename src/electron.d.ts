@@ -376,6 +376,7 @@ interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
     getHomeDir: () => Promise<string>
+    getEnv: (key: string) => Promise<string | null>
   }
   conversation: {
     save: (conversation: ConversationData) => Promise<{ success: boolean; id?: string; error?: string }>

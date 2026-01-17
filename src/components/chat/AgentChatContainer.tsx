@@ -8,7 +8,7 @@
  * - Per-agent model selection
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, X, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain, Mic, MicOff } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { LinkifiedText } from './LinkifiedText'
@@ -20,13 +20,13 @@ import { useTabStore } from '../../stores/tabStore'
 
 // Hooks
 import { useChatAutosave } from '../../hooks/useChatAutosave'
+import { useVoiceDictation } from './hooks/useVoiceDictation'
 import { ChatMessage, setAgentConversationId } from '../../services/chatHistory/chatHistoryService'
 
 // Services
 import { ClaudeService, ImageContent } from '../../services/claude'
 import { allTools, createToolExecutor } from '../../services/tools'
 import { assembleSystemPrompt, type EnabledIntegration } from '../../services/systemPrompt'
-import { getCachedMCPTools } from '../../services/toolCache'
 import { getToolsForMessage, markToolUsed, clearAgentTools } from '../../services/intent/toolLoadingManager'
 import { extractIntegrationId } from '../../services/intent/heuristicMatcher'
 import {
@@ -49,193 +49,21 @@ import {
   type ContextUsage
 } from '../../services/tokenService'
 
+// Chat utilities
+import {
+  type AttachedImage,
+  fileToAttachedImage,
+  clipboardToAttachedImage,
+  readDocumentContext,
+  sanitizeMCPTools,
+  prepareAllEnabledTools
+} from './utils/chatUtils'
+
 // Components
 import { SettingsModal } from '../settings/SettingsModal'
 
 interface AgentChatContainerProps {
   agentId: string
-}
-
-/**
- * AttachedImage type for image attachments
- */
-interface AttachedImage {
-  id: string
-  data: string // base64 encoded (without data URL prefix)
-  mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
-  preview: string // data URL for preview display
-  name: string
-}
-
-/**
- * Convert a File to AttachedImage format
- */
-async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
-  // Validate file type (be lenient for Windows clipboard)
-  const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
-  const isValidMime = validTypes.includes(file.type)
-  const hasImageExtension = /\.(png|jpe?g|gif|webp)$/i.test(file.name)
-
-  if (!isValidMime && !hasImageExtension) {
-    return null
-  }
-
-  // Infer media type if mime type is missing (Windows clipboard edge case)
-  let mediaType = file.type as AttachedImage['mediaType']
-  if (!mediaType || mediaType === 'application/octet-stream') {
-    const ext = file.name.match(/\.(png|jpe?g|gif|webp)$/i)?.[1]?.toLowerCase()
-    if (ext === 'png') mediaType = 'image/png'
-    else if (ext === 'jpg' || ext === 'jpeg') mediaType = 'image/jpeg'
-    else if (ext === 'gif') mediaType = 'image/gif'
-    else if (ext === 'webp') mediaType = 'image/webp'
-    else mediaType = 'image/png' // default fallback
-  }
-
-  // Size validation (max 10MB to prevent memory issues)
-  const maxSize = 10 * 1024 * 1024
-  if (file.size > maxSize) {
-    return null
-  }
-
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-
-    reader.onload = (e) => {
-      try {
-        const dataUrl = e.target?.result as string
-        if (!dataUrl) {
-          resolve(null)
-          return
-        }
-
-        // Extract base64 data (remove "data:image/png;base64," prefix)
-        const base64Data = dataUrl.split(',')[1]
-
-        if (!base64Data) {
-          resolve(null)
-          return
-        }
-
-        const image: AttachedImage = {
-          id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          data: base64Data,
-          mediaType,
-          preview: dataUrl,
-          name: file.name || 'pasted-image.png'
-        }
-
-        resolve(image)
-      } catch (err) {
-        console.error('[Image] Error processing file:', err)
-        resolve(null)
-      }
-    }
-
-    reader.onerror = (err) => {
-      console.error('[Image] FileReader error:', err)
-      resolve(null)
-    }
-
-    reader.readAsDataURL(file)
-  })
-}
-
-/**
- * Convert clipboard data to AttachedImage
- */
-async function clipboardToAttachedImage(item: DataTransferItem): Promise<AttachedImage | null> {
-  const file = item.getAsFile()
-  if (!file) return null
-  return fileToAttachedImage(file)
-}
-
-/**
- * Read and format referenced document content
- */
-async function readDocumentContext(documents: DocumentMention[]): Promise<string> {
-  const docContents: string[] = []
-
-  for (const doc of documents) {
-    try {
-      const content = await window.electronAPI.fs.readFile(doc.path)
-      if (content) {
-        docContents.push(`--- ${doc.relativePath} ---\n${content}\n`)
-      }
-    } catch (e) {
-      console.error(`Failed to read document: ${doc.path}`, e)
-    }
-  }
-
-  if (docContents.length === 0) return ''
-  return `\n\n<referenced_documents>\n${docContents.join('\n')}</referenced_documents>`
-}
-
-/**
- * Sanitize tool names to comply with Anthropic API requirements
- * Pattern: ^[a-zA-Z0-9_-]{1,128}$
- * Replaces @ and . with underscores for Gmail tools (e.g., gmail_user@gmail.com → gmail_user_gmail_com)
- */
-function sanitizeToolName(toolName: string): string {
-  return toolName.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 128)
-}
-
-/**
- * Sanitize MCP tools to ensure names comply with API requirements
- * Handles both tool.name and tool.custom.name formats
- * Returns both sanitized tools and a mapping for reverse lookup during execution
- */
-function sanitizeMCPTools(tools: any[]): { tools: any[], nameMap: Map<string, string> } {
-  const nameMap = new Map<string, string>()
-
-  const sanitizedTools = tools.map(tool => {
-    // Check tool.name (standard format)
-    if (tool.name && !/^[a-zA-Z0-9_-]{1,128}$/.test(tool.name)) {
-      const originalName = tool.name
-      const sanitizedName = sanitizeToolName(tool.name)
-      nameMap.set(sanitizedName, originalName)
-      return { ...tool, name: sanitizedName }
-    }
-
-    // Check tool.custom.name (MCP custom tool format)
-    if (tool.custom?.name && !/^[a-zA-Z0-9_-]{1,128}$/.test(tool.custom.name)) {
-      const originalName = tool.custom.name
-      const sanitizedName = sanitizeToolName(tool.custom.name)
-      nameMap.set(sanitizedName, originalName)
-      return {
-        ...tool,
-        custom: { ...tool.custom, name: sanitizedName }
-      }
-    }
-
-    return tool
-  })
-
-  return { tools: sanitizedTools, nameMap }
-}
-
-/**
- * Prepare ALL enabled tools for context usage calculation
- * This loads all enabled integrations regardless of @mentions
- */
-async function prepareAllEnabledTools(
-  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
-) {
-  // Get all enabled integration IDs
-  const enabledIds = Object.entries(integrationConfigs)
-    .filter(([_, config]) => config.enabled)
-    .map(([id]) => id)
-
-  if (enabledIds.length === 0) return allTools
-
-  try {
-    // Use cached tools for performance
-    const mcpTools = await getCachedMCPTools(enabledIds)
-    const { tools: sanitizedTools } = sanitizeMCPTools(mcpTools)
-    return [...allTools, ...sanitizedTools]
-  } catch (e) {
-    console.error('[AgentChatContainer] Failed to load MCP tools for context calculation:', e)
-    return allTools
-  }
 }
 
 export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
@@ -286,12 +114,22 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const [activeMentions, setActiveMentions] = useState<string[]>([])
   const [activeDocuments, setActiveDocuments] = useState<DocumentMention[]>([])
 
-  // Voice dictation state
-  const [isRecording, setIsRecording] = useState(false)
-  const [interimTranscript, setInterimTranscript] = useState('')
-  const recognitionRef = useRef<any>(null)
-  const recordingStartInputRef = useRef<string>('') // Store input when recording starts
-  const isRecordingRef = useRef<boolean>(false) // Ref for onend handler to avoid stale closure
+  // Helper function to show notifications (placeholder - integrate with app notification system)
+  const addNotification = useCallback((title: string, message: string, type: 'info' | 'success' | 'warning' | 'error') => {
+    // TODO: Integrate with app notification system if available
+    void { title, message, type }
+  }, [])
+
+  // Voice dictation hook
+  const {
+    isRecording,
+    interimTranscript,
+    toggleVoiceRecording
+  } = useVoiceDictation({
+    input,
+    setInput,
+    addNotification
+  })
 
   // Esc+Esc tracking for stopping AI response
   const lastEscPressRef = useRef<number>(0)
@@ -305,12 +143,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // Helper function to show notifications (placeholder - integrate with app notification system)
-  const addNotification = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error') => {
-    // TODO: Integrate with app notification system if available
-    void { title, message, type }
-  }
 
   // Get messages from agent
   const messages = agent?.messages || []
@@ -447,168 +279,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     )
     setContextUsage(usage)
   }, [messages, lastSystemPrompt, lastTools, agentModel, showContextUsage])
-
-  // Initialize Web Speech API (ONCE - no dependencies to avoid recreation)
-  useEffect(() => {
-    // Check for browser support
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      return
-    }
-
-    // Create recognition instance
-    const recognition = new SpeechRecognition()
-    recognition.continuous = true // Keep listening until stopped
-    recognition.interimResults = true // Get partial results while speaking
-    recognition.lang = 'en-US' // Default to English
-
-    // Handle results
-    recognition.onresult = (event: any) => {
-      let interimText = ''
-      let finalText = ''
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalText += transcript + ' '
-        } else {
-          interimText += transcript
-        }
-      }
-
-      // Update interim transcript for visual feedback
-      setInterimTranscript(interimText)
-
-      // Append final results to input
-      if (finalText) {
-        setInput(prevInput => {
-          const baseInput = recordingStartInputRef.current
-          const currentFinalText = prevInput.slice(baseInput.length).trim()
-          const newFinalText = (currentFinalText + ' ' + finalText).trim()
-          return baseInput + (baseInput && newFinalText ? ' ' : '') + newFinalText
-        })
-        setInterimTranscript('')
-      }
-    }
-
-    // Handle errors
-    recognition.onerror = (event: any) => {
-      console.error('[Voice] Speech recognition error:', event.error)
-
-      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-        addNotification(
-          'Microphone Permission Denied',
-          'Please grant microphone access to use voice dictation',
-          'error'
-        )
-      } else if (event.error === 'no-speech') {
-        // Don't stop recording on no-speech - let user decide when to stop
-        return
-      } else if (event.error === 'network') {
-        addNotification(
-          'Network Error',
-          'Voice recognition requires an internet connection',
-          'error'
-        )
-      } else {
-        addNotification(
-          'Voice Recognition Error',
-          `An error occurred: ${event.error}`,
-          'error'
-        )
-      }
-
-      setIsRecording(false)
-      isRecordingRef.current = false
-      setInterimTranscript('')
-    }
-
-    // Handle end of recognition - restart if still recording
-    recognition.onend = () => {
-      if (isRecordingRef.current) {
-        try {
-          recognition.start()
-        } catch {
-          // Recognition already started or error - ignore
-        }
-      }
-    }
-
-    recognitionRef.current = recognition
-
-    // Cleanup
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-      }
-    }
-  }, []) // EMPTY DEPS - only initialize once
-
-  // Start voice recording
-  const startVoiceRecording = async () => {
-    if (!recognitionRef.current) {
-      addNotification(
-        'Voice Input Not Supported',
-        'Your browser does not support voice input. Try Chrome or Edge.',
-        'error'
-      )
-      return
-    }
-
-    try {
-      // Store current input so we can append to it
-      recordingStartInputRef.current = input
-
-      // Set BOTH state and ref (ref for onend handler)
-      setIsRecording(true)
-      isRecordingRef.current = true
-      setInterimTranscript('')
-
-      recognitionRef.current.start()
-
-      addNotification(
-        'Voice Recording Started',
-        'Speak your message. Click the microphone again to stop.',
-        'info'
-      )
-    } catch (error) {
-      console.error('[Voice] Error starting recognition:', error)
-      addNotification(
-        'Recording Failed',
-        'Could not start voice recording. Please try again.',
-        'error'
-      )
-      setIsRecording(false)
-      isRecordingRef.current = false
-    }
-  }
-
-  // Stop voice recording
-  const stopVoiceRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-    }
-
-    // Set BOTH state and ref
-    setIsRecording(false)
-    isRecordingRef.current = false
-    setInterimTranscript('')
-
-    addNotification(
-      'Voice Recording Stopped',
-      'Your message has been transcribed.',
-      'success'
-    )
-  }
-
-  // Toggle voice recording
-  const toggleVoiceRecording = () => {
-    if (isRecording) {
-      stopVoiceRecording()
-    } else {
-      startVoiceRecording()
-    }
-  }
 
   // Toggle tool expanded state
   const toggleToolExpanded = (toolId: string) => {
@@ -1679,7 +1349,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
           {/* Send Button */}
           <button
-            onClick={handleSendMessage}
+            onClick={() => handleSendMessage()}
             disabled={isLoading ? isInterrupting : (!input.trim() && attachedImages.length === 0)}
             title={isLoading ? 'Send new message (or press Esc+Esc to stop)' : 'Send message'}
             className={`

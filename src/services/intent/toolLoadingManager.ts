@@ -274,7 +274,7 @@ export function unpinIntegration(agentId: string, integrationId: string): void {
 export async function manuallyLoadIntegration(
   agentId: string,
   integrationId: string,
-  coreTools: Tool[]
+  _coreTools: Tool[]
 ): Promise<void> {
   try {
     const mcpTools = await getCachedMCPTools([integrationId])

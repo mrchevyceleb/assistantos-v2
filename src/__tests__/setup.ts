@@ -59,7 +59,16 @@ beforeAll(() => {
       registerCustomIntegration: vi.fn().mockResolvedValue({ success: true }),
       unregisterCustomIntegration: vi.fn().mockResolvedValue({ success: true }),
       updateCustomIntegration: vi.fn().mockResolvedValue({ success: true }),
-      loadCustomIntegrations: vi.fn().mockResolvedValue({ success: true })
+      loadCustomIntegrations: vi.fn().mockResolvedValue({ success: true }),
+      // OAuth methods
+      startOAuth: vi.fn().mockResolvedValue({ success: false }),
+      hasOAuthTokens: vi.fn().mockResolvedValue(false),
+      clearOAuthTokens: vi.fn().mockResolvedValue({ success: true }),
+      // Gmail Account Management
+      addGmailAccount: vi.fn().mockResolvedValue({ success: false }),
+      removeGmailAccount: vi.fn().mockResolvedValue({ success: true }),
+      initializeGmailAccountCredentials: vi.fn().mockResolvedValue({ success: false }),
+      registerVirtualGmailAccount: vi.fn().mockResolvedValue({ success: true })
     },
     conversation: {
       save: vi.fn().mockResolvedValue({ success: true }),
@@ -102,7 +111,8 @@ beforeAll(() => {
     },
     app: {
       getVersion: vi.fn().mockResolvedValue('1.5.2'),
-      getHomeDir: vi.fn().mockResolvedValue('/home/test')
+      getHomeDir: vi.fn().mockResolvedValue('/home/test'),
+      getEnv: vi.fn().mockResolvedValue(null)
     },
     anthropic: {
       validateKey: vi.fn().mockResolvedValue({ valid: true }),

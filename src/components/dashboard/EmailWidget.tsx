@@ -13,11 +13,12 @@ interface EmailMessage {
   isUnread: boolean
 }
 
-interface AccountSummary {
-  email: string
-  unreadCount: number
-  isConnected: boolean
-}
+// AccountSummary interface for future multi-account display
+// interface AccountSummary {
+//   email: string
+//   unreadCount: number
+//   isConnected: boolean
+// }
 
 export function EmailWidget() {
   const { gmailAccounts } = useAppStore()
@@ -88,7 +89,8 @@ export function EmailWidget() {
       if (messagesResult?.success && messagesResult.result) {
         try {
           // MCP returns: [{ type: "text", text: "..." }]
-          let messagesData = messagesResult.result
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let messagesData: any = messagesResult.result
 
           // Extract text from MCP format
           if (Array.isArray(messagesData) && messagesData[0]?.type === 'text') {

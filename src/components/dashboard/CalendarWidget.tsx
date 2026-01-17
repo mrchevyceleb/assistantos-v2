@@ -92,7 +92,8 @@ export function CalendarWidget() {
 
         try {
           // MCP returns: [{ type: "text", text: "{\"events\":[...],\"totalCount\":0}" }]
-          let eventsData = result.result
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let eventsData: any = result.result
 
           // Extract text from MCP format
           if (Array.isArray(eventsData) && eventsData[0]?.type === 'text') {
