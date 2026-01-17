@@ -60,20 +60,24 @@ Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context
 
 **Efficient Tools**: `grep`, `glob`, `edit`
 
-**Task Tools** (Supabase cloud tasks):
-- `create_task` - Create task with title, projectName, description, status, priority, dueDate, tags
-- `update_task` - Update task by ID (any field)
-- `delete_task` - Delete task by ID
-- `get_task` - Get single task by ID
-- `list_tasks` - List tasks with optional filters (projectName, status, priority, limit)
-
-**Other Tools**: `bash`, `create_mcp_integration`
+**Task Tools** (Supabase cloud tasks - AI agent access):
+- `create_task(title, projectName, description?, status?, priority?, dueDate?, tags?)` - Create new task
+- `update_task(id, title?, description?, status?, projectName?, priority?, dueDate?, tags?)` - Update task fields
+- `delete_task(id)` - Delete task by ID
+- `get_task(id)` - Retrieve single task by ID
+- `list_tasks(projectName?, status?, priority?, limit?)` - List tasks with optional filtering
 
 **Task Tools Implementation** (`src/services/tools/taskTools.ts`):
-- Tools operate directly on `useTaskStore` which syncs to Supabase
-- No IPC required - runs entirely in renderer process
-- Requires cloud sync to be enabled (Settings > Tasks)
-- Real-time updates via Supabase subscriptions
+- ~311 lines of pure task CRUD operations
+- Tools interact directly with Supabase via `taskSyncService`
+- Runs in renderer process (no IPC required)
+- No file system involvement - all data in Supabase
+- Requires cloud sync configured in Settings > Tasks
+- Real-time sync across devices via Supabase subscriptions
+- Input validation: required fields checked, dates parsed, status validated
+- Output formatted as Markdown with task details (ID, status, priority, due date, tags)
+
+**Other Tools**: `bash`, `create_mcp_integration`
 
 ### Chat Utilities (`src/components/chat/utils/chatUtils.ts`)
 Standalone utility functions for the chat system:
@@ -174,6 +178,7 @@ Customizable avatars for user and agent in chat messages (Settings > Profile & A
 
 **Keyboard Shortcuts**:
 - Global: `Ctrl+T` (new agent), `Ctrl+W` (close), `Ctrl+Tab` (next), `Ctrl+L` (LUDICROUS MODE), `Ctrl+P` (file search)
+- Chat: `Esc+Esc` (stop agent response - press twice within 500ms), `Enter` (send), `Shift+Enter` (new line)
 - Editor: `Ctrl+S` (save), `Ctrl+B/I` (bold/italic), `Ctrl+K` (link), `Ctrl+±` (font), `Ctrl+Shift+S` (strikethrough)
 - FileTree: `Enter` (open), `F2` (rename), `Delete` (delete), `Ctrl+C` (copy path)
 
@@ -189,42 +194,61 @@ Customizable avatars for user and agent in chat messages (Settings > Profile & A
 
 **Settings** (in appStore): `weatherLocation`, `temperatureUnit`, `clockFormat`, `showSeconds`
 
-### Task Management (`src/components/tasks/`, `src/stores/taskStore.ts`)
+### Task Management (`src/components/tasks/`, `src/stores/taskStore.ts`, `src/services/tools/taskTools.ts`)
 
-**Supabase-Only Architecture**: Tasks are stored exclusively in Supabase cloud storage. File-based task management has been removed.
+**Supabase-Only Architecture**: Tasks are now stored EXCLUSIVELY in Supabase cloud storage. File-based task management has been completely removed.
+
+**Key Changes** (v1.6.0):
+- File task parsing removed (no more workspace folder scanning)
+- Cloud sync toggle removed (Supabase is always required when configured)
+- TaskPanel simplified from 770 lines to 262 lines (~66% reduction)
+- Migration dialog removed
+- `taskParser.ts` kept for potential future use but not active
 
 **Requirements**:
-- Cloud sync must be configured in Settings for tasks to work
+- Cloud sync MUST be configured in Settings > Tasks for task features
+- Supabase project linked and authenticated (via `syncId`)
 - Tasks sync across devices via Supabase real-time subscriptions
-- No workspace folder or file parsing required
+- No local workspace files or folders involved
 
-**Components**: TaskPanel, KanbanBoard, KanbanColumn, KanbanCard, TaskListView, TaskListRow, ProjectSelector
+**Components** (`src/components/tasks/`):
+- `TaskPanel.tsx` - Main tasks UI (262 lines, Supabase-only)
+- `KanbanBoard.tsx`, `KanbanColumn.tsx`, `KanbanCard.tsx` - Kanban view
+- `TaskListView.tsx`, `TaskListRow.tsx` - List view
+- `ProjectSelector.tsx` - Project filtering
+- `TaskFormModal.tsx` - Create/edit dialog
 
 **Task Store** (`src/stores/taskStore.ts`):
 - `initialize(syncId)` - Connect to Supabase with sync ID
 - `loadTasks(projectFilter?)` - Fetch tasks from cloud
 - `createTask(task)` - Create new task
 - `updateTask(taskId, updates)` - Update task
-- `updateTaskStatus(taskId, status, sortOrder?)` - Change status (drag-drop)
+- `updateTaskStatus(taskId, status, sortOrder?)` - Change status (for drag-drop)
 - `deleteTask(taskId)` - Remove task
 - `reorderTasks(taskOrders)` - Reorder within column
-- `subscribeToChanges()` - Real-time sync
+- `subscribeToChanges()` - Real-time sync subscription
 
 **Task Sync Service** (`src/services/tasks/taskSyncService.ts`):
-- Supabase CRUD operations
+- Supabase CRUD operations with snake_case field mapping
 - Real-time subscription callbacks (onInsert, onUpdate, onDelete)
 - Project listing and filtering
 
-**Types** (`src/types/task.ts`): `TaskStatus`, `KanbanSettings`
-**Types** (`src/types/syncTask.ts`): `SyncTask`, `NewSyncTask`, `UpdateSyncTask`
+**AI Agent Task Tools** (`src/services/tools/taskTools.ts`):
+- Claude can now create, update, delete, and list tasks via tools
+- Tools validate input and format responses as Markdown
+- See Tools section above for full API
 
-**Legacy** (`src/services/taskParser.ts`):
-- File parsing utilities (kept for potential future use, not used by TaskPanel)
-- Functions: `parseTasksFromWorkspace()`, `getProjectList()`, `updateTaskStatus()`
+**Types**:
+- `TaskStatus` - 'todo' | 'in_progress' | 'done' (`src/types/task.ts`)
+- `KanbanSettings` - UI preferences (`src/types/task.ts`)
+- `SyncTask`, `NewSyncTask`, `UpdateSyncTask` - Supabase models (`src/types/syncTask.ts`)
 
-**Document Linking** (optional):
-- Tasks can have a `documentPath` field linking to a workspace file
-- This is metadata only - the task itself is stored in Supabase
+**Removed Code**:
+- File-based task scanning (no more parsing `tasks.md` files)
+- Folder configuration UI (custom tasks folder setting)
+- Migration dialogs and compatibility layers
+- File watcher for task changes
+- Legacy `TaskStatusEnum` values for file-based system
 
 ### Multi-Agent Support (`src/stores/agentStore.ts`, `src/stores/tabStore.ts`, `src/stores/fileLockStore.ts`)
 
@@ -489,12 +513,23 @@ Full-screen file browser that can be opened in a tab for enhanced file managemen
 ### Workspace Onboarding (`src/components/dashboard/OnboardingWidget.tsx`)
 AI-driven setup for new users. Tracks in `onboardedWorkspaces` array.
 
-**Recommended structure**:
+**Recommended structure** (tasks now in Supabase, not files):
 ```
-TASKS/Project1/tasks.md
-00-Inbox/, 01-Active/, 02-Someday/, 03-Reference/, 04-Archive/
-Templates/, README.md
+00-Inbox/          # Reference documents
+01-Active/
+02-Someday/
+03-Reference/
+04-Archive/
+Templates/         # Reusable document templates
+README.md          # Project overview
+NOTES/             # Quick notes and documentation
 ```
+
+**Tasks Management**:
+- Tasks are now stored in Supabase (cloud-only)
+- No local `TASKS/` folder or `tasks.md` files needed
+- Create tasks via TaskPanel UI or @tell Claude to create them
+- Tasks sync across devices automatically
 
 ### Styling
 Tailwind with custom theme: metallic dark + cyan/violet/pink accents, custom shadows/gradients, Outfit (display) + DM Sans (body). `.input-metallic` and `.btn-primary` classes.
@@ -584,17 +619,32 @@ Tailwind with custom theme: metallic dark + cyan/violet/pink accents, custom sha
 - File: `tsconfig.preload.json` (line 4)
 - Related: `src/services/claude.ts` uses ESNext modules (this is correct - only preload differs)
 
+## Cross-Platform Path Handling
+
+**Windows vs Unix Paths**:
+- Tool schemas use forward slashes in all path examples (cross-platform standard)
+- Electron IPC handlers normalize paths: `path.resolve()` converts OS separators automatically
+- Tools like `read_file`, `write_file` accept both forward and backslashes on Windows
+- File searches use normalized paths for consistent behavior across platforms
+
+**File Operations** (`src/services/tools/`):
+- All path operations go through Electron IPC (handles OS differences)
+- Workspace paths normalized before use in regex or path operations
+- Glob patterns use forward slashes (glob library handles OS differences)
+- Search content operations work with any path separator
+
 ## Auto-Updater
 
 **Update Checking** (`electron/services/autoUpdater.ts`, `electron/main.ts`):
 - Uses `electron-updater` library with GitHub releases integration
-- **Critical**: `checkForUpdates()` wraps electron-updater events in a promise to prevent infinite hangs
-- electron-updater emits events (`update-available`, `update-not-available`, `error`) but doesn't always reject/resolve its promise
-- Solution: Listen to events and resolve/reject based on first event received
-- Timeout: 15-second timeout in IPC handler prevents indefinite waits
+- **Critical Issue Fixed**: `checkForUpdates()` now wraps electron-updater events in a promise to prevent infinite hangs
+- **Root Cause**: electron-updater emits events (`update-available`, `update-not-available`, `error`) but doesn't always reject/resolve its promise
+- **Solution**: Listen to events and resolve/reject based on first event received (v1.6.0)
+- **Timeout Safety**: 15-second timeout in IPC handler prevents indefinite waits if something goes wrong
 - Event flow: `checking-for-update` → `update-available` | `update-not-available` | `error`
 - UI updates via IPC events: `auto-update:update-checking`, `auto-update:update-available`, etc.
 - Settings modal displays status and provides manual "Check for Updates" button
+- Handles all error scenarios gracefully (network errors, 404s, timeouts)
 
 ## Path Aliases
 

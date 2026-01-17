@@ -7,11 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### AI Agent Task Tools
+- **New AI-Accessible Task CRUD API** (`src/services/tools/taskTools.ts`, 311 lines)
+  - `create_task(title, projectName, description?, status?, priority?, dueDate?, tags?)` - Create task
+  - `update_task(id, title?, description?, status?, projectName?, priority?, dueDate?, tags?)` - Update task
+  - `delete_task(id)` - Delete task by ID
+  - `get_task(id)` - Get single task by ID
+  - `list_tasks(projectName?, status?, priority?, limit?)` - List tasks with filtering
+- Task tools validate input (required fields, date parsing, status validation)
+- Output formatted as readable Markdown with task details
+- All task tools require Supabase cloud sync to be configured
+- Enables Claude to autonomously manage tasks during conversations
+
+#### Stop/Cancel Response Feature
+- **Stop Button**: Red square button replaces send button when agent is working
+- **Keyboard Shortcut**: Press `Esc` twice within 500ms to stop response
+- **Abort Signal**: Uses `AbortController` to properly abort Claude API request
+- **Partial Response**: Any partial response received before stopping is preserved
+- Implemented in `src/components/chat/AgentChatContainer.tsx`
+
 ### Changed
 
 - **Task System Refactored to Supabase-Only**: Removed file-based task management entirely
   - Tasks are now stored exclusively in Supabase cloud storage
-  - Removed cloud sync toggle - Supabase is always used when configured
+  - Removed cloud sync toggle - Supabase is always required when configured
   - Removed file task parsing from TaskPanel (fileTasks, fileProjects state removed)
   - Removed folder configuration UI (custom tasks folder, folder creation dialogs)
   - Removed migration dialog (no longer needed without file-based tasks)
@@ -20,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Real-time sync across devices via Supabase subscriptions
   - Note: `taskParser.ts` kept for potential future use but not used by TaskPanel
   - File: `src/components/tasks/TaskPanel.tsx`
+
+- **Tool Schemas Extended** (`src/services/tools/schemas.ts`):
+  - Added comprehensive schemas for all 5 task tools (create, update, delete, get, list)
+  - Input validation with required field checks and type constraints
+  - Descriptive field descriptions for AI understanding
 
 ### Fixed
 
@@ -42,6 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Electron's sandboxed preload environment requires CommonJS output, not ES modules
   - This was causing all MCP integrations to disappear from the UI
   - File: `tsconfig.preload.json` (modified line 4)
+
+- **Windows Path Separator Issues in Tools**: Fixed file operations failing on Windows when paths use backslashes
+  - Tool schemas now use forward slashes in examples (cross-platform standard)
+  - Electron IPC handlers normalize paths automatically via `path.resolve()`
+  - File search and content search operations now handle both `/` and `\` separators
+  - Workspace paths normalized before regex operations to prevent pattern matching failures
+  - Files: `src/services/tools/`, `electron/main.ts` IPC handlers
 
 ### Added
 
