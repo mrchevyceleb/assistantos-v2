@@ -7,15 +7,27 @@
  * - edit: Modify without full read/write cycle
  */
 
-import * as pathUtils from 'path-browserify';
 import { useFileLockStore } from '../../stores/fileLockStore';
 
-function resolvePath(inputPath: string, workspacePath: string): string {
+/**
+ * Resolve a path using native Node.js path module (platform-specific)
+ * This fixes mixed path separator issues on Windows (\ vs /)
+ */
+async function resolvePath(inputPath: string, workspacePath: string): Promise<string> {
   if (!inputPath) return workspacePath;
-  if (pathUtils.isAbsolute(inputPath)) {
-    return inputPath;
+
+  const api = window.electronAPI.fs;
+
+  // Check if it's an absolute path using native path module
+  const isAbsolute = await api.isAbsolute(inputPath);
+
+  if (isAbsolute) {
+    // Normalize to fix mixed separators
+    return api.normalizePath(inputPath);
   }
-  return pathUtils.join(workspacePath, inputPath);
+
+  // Join with workspace and normalize to ensure consistent separators
+  return api.joinPath(workspacePath, inputPath);
 }
 
 interface GrepInput {
@@ -45,7 +57,7 @@ interface EditInput {
  * Uses the native fs:grep IPC handler for regex-based content search
  */
 async function executeGrep(input: GrepInput, workspacePath: string): Promise<string> {
-  const searchPath = resolvePath(input.path || '', workspacePath);
+  const searchPath = await resolvePath(input.path || '', workspacePath);
   const maxResults = input.maxResults || 50;
 
   try {
@@ -116,7 +128,7 @@ function buildGrepCommand(input: GrepInput, searchPath: string): string {
  * Execute glob tool - find files by pattern
  */
 async function executeGlob(input: GlobInput, workspacePath: string): Promise<string> {
-  const searchPath = resolvePath(input.cwd || '', workspacePath);
+  const searchPath = await resolvePath(input.cwd || '', workspacePath);
   const maxResults = input.maxResults || 100;
   const defaultIgnore = ['node_modules/**', 'dist/**', '.git/**', 'coverage/**', 'build/**'];
   const ignore = input.ignore || defaultIgnore;
@@ -189,7 +201,7 @@ async function executeEdit(
   agentId?: string,
   agentName?: string
 ): Promise<string> {
-  const filePath = resolvePath(input.path, workspacePath);
+  const filePath = await resolvePath(input.path, workspacePath);
 
   // Validate inputs
   if (!input.old_text) {

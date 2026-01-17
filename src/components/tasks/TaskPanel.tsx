@@ -84,19 +84,19 @@ export function TaskPanel() {
       // File mode: load from workspace
       await loadFileTasks()
     }
-  }, [isCloudEnabled, syncConfig?.syncId, taskStore, settings.selectedProject, loadFileTasks])
+  }, [isCloudEnabled, syncConfig?.syncId, taskStore.loadTasks, settings.selectedProject, loadFileTasks])
 
   // Initialize cloud task store when sync becomes available
   useEffect(() => {
     if (isCloudEnabled && syncConfig?.syncId && !taskStore.syncId) {
       taskStore.initialize(syncConfig.syncId)
     }
-  }, [isCloudEnabled, syncConfig?.syncId, taskStore])
+  }, [isCloudEnabled, syncConfig?.syncId, taskStore.syncId, taskStore.initialize])
 
   // Update taskStore.isCloudEnabled when settings change
   useEffect(() => {
     taskStore.setCloudEnabled(isCloudEnabled)
-  }, [isCloudEnabled, taskStore])
+  }, [isCloudEnabled, taskStore.setCloudEnabled])
 
   // Load on mount and when dependencies change
   useEffect(() => {

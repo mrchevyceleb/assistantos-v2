@@ -416,6 +416,26 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
   }
 })
 
+// =============================================================================
+// Path Utility Handlers (platform-specific path operations)
+// =============================================================================
+
+ipcMain.handle('fs:normalizePath', (_, filePath: string) => {
+  return path.normalize(filePath)
+})
+
+ipcMain.handle('fs:joinPath', (_, ...segments: string[]) => {
+  return path.join(...segments)
+})
+
+ipcMain.handle('fs:resolvePath', (_, ...segments: string[]) => {
+  return path.resolve(...segments)
+})
+
+ipcMain.handle('fs:isAbsolute', (_, filePath: string) => {
+  return path.isAbsolute(filePath)
+})
+
 // IPC Handler for renaming files/folders
 ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
   try {

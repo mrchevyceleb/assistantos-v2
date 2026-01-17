@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Context Usage Not Resetting on Clear Chat**: Fixed context usage indicator showing incorrect token count after clearing chat
+  - Context indicator now properly resets to 0 tokens when trash icon is clicked
+  - Bug was caused by cached `lastSystemPrompt` and `lastTools` state not being cleared
+  - Added reset of cached context values in `handleClearChat()` function
+  - File: `src/components/chat/AgentChatContainer.tsx` (lines 322-323)
+
+- **Preload Script Module Configuration**: Fixed Electron preload script failing to load with "Cannot use import statement outside a module" error
+  - Changed `tsconfig.preload.json` from `"module": "ESNext"` to `"module": "CommonJS"`
+  - Electron's sandboxed preload environment requires CommonJS output, not ES modules
+  - This was causing all MCP integrations to disappear from the UI
+  - File: `tsconfig.preload.json` (modified line 4)
+
 ### Added
 
 #### Document Mentions (@document)

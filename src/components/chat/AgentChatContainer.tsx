@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, X, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain, Mic, MicOff } from 'lucide-react'
+import { Send, X, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain, Mic, MicOff, Square } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { LinkifiedText } from './LinkifiedText'
 
@@ -134,6 +134,54 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   // Esc+Esc tracking for stopping AI response
   const lastEscPressRef = useRef<number>(0)
 
+  // Global Esc+Esc keyboard listener for stopping AI response
+  // Works even when textarea is not focused - enables stopping from anywhere in the chat panel
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Only handle Escape when agent is loading
+      if (e.key !== 'Escape' || !isLoading) return
+
+      const now = Date.now()
+      const timeSinceLastEsc = now - lastEscPressRef.current
+
+      if (timeSinceLastEsc < 500) {
+        // Double Esc detected (within 500ms) - stop response
+        e.preventDefault()
+        e.stopPropagation()
+
+        // Abort the current request
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort()
+          abortControllerRef.current = null
+        }
+
+        // Reset loading state
+        setIsLoading(false)
+        setIsInterrupting(false)
+        partialResponseRef.current = ''
+
+        // Update agent status
+        updateAgentStatus(agentId, 'idle')
+
+        // Reset timer
+        lastEscPressRef.current = 0
+
+        console.log('[AgentChat] Response stopped via Esc+Esc keyboard shortcut')
+      } else {
+        // First Esc - record time
+        lastEscPressRef.current = now
+      }
+    }
+
+    // Add global listener
+    document.addEventListener('keydown', handleGlobalKeyDown)
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown)
+    }
+  }, [isLoading, agentId, updateAgentStatus])
+
   // Context usage tracking
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
   const [showContextTooltip, setShowContextTooltip] = useState(false)
@@ -143,6 +191,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Get messages from agent
   const messages = agent?.messages || []
@@ -318,6 +367,9 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     // Reset active mentions and documents
     setActiveMentions([])
     setActiveDocuments([])
+    // Reset context usage cache to properly reflect empty state
+    setLastSystemPrompt('')
+    setLastTools([])
   }
 
   // Handle input change with mention and slash command detection
@@ -474,12 +526,19 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     }
   }
 
-  // Stop AI response (Esc+Esc) - just stop, no new message
-  const stopResponse = () => {
+  // Stop AI response - abort the request and keep partial response
+  const stopResponse = useCallback(() => {
     if (!isLoading) return
+
+    // Abort the current request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
 
     setIsLoading(false)
     setIsInterrupting(false)
+    updateAgentStatus(agentId, 'idle')
     partialResponseRef.current = ''
 
     // The partial response remains visible as-is
@@ -488,7 +547,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       'AI response stopped.',
       'info'
     )
-  }
+  }, [isLoading, agentId, updateAgentStatus, addNotification])
 
   // Interrupt current AI response and restart with new user message (Claude Code style)
   const interruptAndRestart = async (newMessage: string, _imagesToSend: AttachedImage[]) => {
@@ -497,6 +556,12 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     setIsInterrupting(true)
 
     try {
+      // Abort the current request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+
       // Salvage partial response (let it stand as-is, no interruption marker)
       // The partial response will remain visible and the new user message will follow naturally
 
@@ -675,6 +740,10 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       }
       addMessage(agentId, assistantMessage)
 
+      // Create abort controller for this request
+      abortControllerRef.current = new AbortController()
+      const abortSignal = abortControllerRef.current.signal
+
       // Stream response with optional images
       let firstChunkReceived = false
       for await (const chunk of claudeServiceRef.current.chat(
@@ -682,9 +751,23 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         tools,
         systemPrompt,
         toolExecutor,
-        undefined, // abortSignal
+        abortSignal,
         imagesToSend.length > 0 ? imagesToSend : undefined
       )) {
+        // Handle abort early exit
+        if (chunk.type === 'aborted') {
+          // Keep partial response visible, just stop processing
+          const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''
+          if (currentContent === 'Thinking...') {
+            // No content yet, update with stopped message
+            updateMessage(agentId, assistantMessage.id, {
+              content: '[Response stopped by user]',
+            })
+          }
+          // Status already updated by stopResponse()
+          break
+        }
+
         if (chunk.type === 'text') {
           const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''
 
@@ -750,6 +833,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       addMessage(agentId, errorMessage)
     } finally {
       setIsLoading(false)
+      abortControllerRef.current = null // Clear abort controller
       partialResponseRef.current = '' // Clear partial response tracking
     }
   }
@@ -1347,23 +1431,38 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
           </button>
 
-          {/* Send Button */}
-          <button
-            onClick={() => handleSendMessage()}
-            disabled={isLoading ? isInterrupting : (!input.trim() && attachedImages.length === 0)}
-            title={isLoading ? 'Send new message (or press Esc+Esc to stop)' : 'Send message'}
-            className={`
-              px-4 py-3 rounded-lg
-              text-white transition-all
-              ${isLoading
-                ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600'
-                : 'bg-cyan-500 hover:bg-cyan-600'
-              }
-              disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed
-            `}
-          >
-            <Send className="w-5 h-5" />
-          </button>
+          {/* Stop Button (when loading) / Send Button (when idle) */}
+          {isLoading ? (
+            <button
+              onClick={stopResponse}
+              disabled={isInterrupting}
+              title="Stop response (or press Esc twice)"
+              className={`
+                px-4 py-3 rounded-lg
+                text-white transition-all
+                bg-red-500 hover:bg-red-600
+                border border-red-400/30
+                shadow-lg shadow-red-500/20
+                disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed
+              `}
+            >
+              <Square className="w-5 h-5 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSendMessage()}
+              disabled={!input.trim() && attachedImages.length === 0}
+              title="Send message"
+              className={`
+                px-4 py-3 rounded-lg
+                text-white transition-all
+                bg-cyan-500 hover:bg-cyan-600
+                disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed
+              `}
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 

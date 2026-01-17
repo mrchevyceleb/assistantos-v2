@@ -114,6 +114,27 @@ Zustand store with localStorage persistence (`assistantos-storage`):
 - `MediaViewer.tsx` - Images, video, audio with zoom/fullscreen
 - `AgentChat.tsx` - Chat interface with @mentions, drag-drop files, grouped tool display, customizable avatars
 
+### Stop/Cancel Response (`src/components/chat/AgentChatContainer.tsx`)
+
+The chat supports stopping the AI mid-response:
+
+**Features**:
+- **Stop Button**: Red square button replaces send button when agent is working
+- **Keyboard Shortcut**: Press `Esc` twice quickly (within 500ms) to stop
+- **Partial Response**: Any partial response received before stopping is preserved
+- **Abort Signal**: Uses `AbortController` to properly abort the Claude API request
+
+**Implementation**:
+- `abortControllerRef`: Ref holding current `AbortController` instance
+- `stopResponse()`: Callback that aborts the request and resets UI state
+- ClaudeService handles `abortSignal` and yields `{ type: 'aborted' }` chunk
+
+**UX**:
+- Stop button has red background with shadow for visibility
+- Button is disabled during `isInterrupting` state to prevent double-clicks
+- Agent status updates to `'idle'` when stopped
+- If stopped before any content, message shows `[Response stopped by user]`
+
 ### Profile & Avatars
 Customizable avatars for user and agent in chat messages (Settings > Profile & Avatars):
 
@@ -333,6 +354,7 @@ Tracks context window usage with visual indicator and auto-compaction warning.
 - **Tooltip**: Click indicator to see breakdown (messages, system prompt, tools)
 - **Auto-Compaction Warning**: Banner appears when context exceeds 80%, suggests `/compact`
 - **Manual Compaction**: Use `/compact` command to summarize older messages
+- **Clear Chat Reset**: Context indicator properly resets to 0 when clearing chat
 
 **Token Service Functions**:
 - `estimateTokens(text)` - Simple estimation (~4 chars/token)
@@ -341,6 +363,11 @@ Tracks context window usage with visual indicator and auto-compaction warning.
 - `formatTokenCount(tokens)` - Format as "4.2K" or "1.2M"
 - `getContextUsageColor(percentage)` - Get color based on usage
 - `shouldCompact(percentage)` - Check if compaction recommended (>80%)
+
+**Implementation Notes**:
+- Context usage is cached per agent (`lastSystemPrompt`, `lastTools`)
+- When clearing chat, both cached values are reset to prevent stale context display
+- Clear button resets: messages, conversation history, autosave state, loaded tools, and context cache
 
 **Model Context Limits**:
 | Model | Context Window |
@@ -512,6 +539,16 @@ Tailwind with custom theme: metallic dark + cyan/violet/pink accents, custom sha
 - Shell: PowerShell (Windows), bash (Mac/Linux)
 - Path resolution: `path-browserify`
 - FileTree auto-hides dotfiles (`.git`, `.obsidian`, etc.)
+
+## TypeScript Configuration
+
+**Critical**: `tsconfig.preload.json` must use `"module": "CommonJS"` (NOT "ESNext")
+
+- The Electron preload script (`electron/preload.ts`) runs in a sandboxed environment that requires CommonJS output
+- Using ES modules will cause: `Cannot use import statement outside a module` error
+- This breaks MCP integrations by preventing the preload script from loading
+- File: `tsconfig.preload.json` (line 4)
+- Related: `src/services/claude.ts` uses ESNext modules (this is correct - only preload differs)
 
 ## Path Aliases
 

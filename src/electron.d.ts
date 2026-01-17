@@ -329,6 +329,11 @@ interface ElectronAPI {
       replaced?: number
       charDiff?: number
     }>
+    // Path utilities (uses native Node.js path module for platform-specific handling)
+    normalizePath: (filePath: string) => Promise<string>
+    joinPath: (...segments: string[]) => Promise<string>
+    resolvePath: (...segments: string[]) => Promise<string>
+    isAbsolute: (filePath: string) => Promise<boolean>
   }
   bash: {
     execute: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>

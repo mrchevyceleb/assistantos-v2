@@ -28,7 +28,12 @@ beforeAll(() => {
       getInfo: vi.fn().mockResolvedValue({ success: false }),
       glob: vi.fn().mockResolvedValue([]),
       grep: vi.fn().mockResolvedValue([]),
-      edit: vi.fn().mockResolvedValue({ success: true })
+      edit: vi.fn().mockResolvedValue({ success: true }),
+      // Path utilities (mocked to return simple path operations)
+      normalizePath: vi.fn().mockImplementation((p: string) => Promise.resolve(p)),
+      joinPath: vi.fn().mockImplementation((...segments: string[]) => Promise.resolve(segments.join('/'))),
+      resolvePath: vi.fn().mockImplementation((...segments: string[]) => Promise.resolve(segments.join('/'))),
+      isAbsolute: vi.fn().mockImplementation((p: string) => Promise.resolve(p.startsWith('/') || /^[A-Z]:\\/.test(p)))
     },
     bash: {
       execute: vi.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })

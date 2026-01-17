@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }) => ipcRenderer.invoke('fs:grep', pattern, searchPath, options),
     edit: (filePath: string, oldText: string, newText: string) =>
       ipcRenderer.invoke('fs:edit', filePath, oldText, newText),
+    // Path utilities (uses native Node.js path module for platform-specific handling)
+    normalizePath: (filePath: string) => ipcRenderer.invoke('fs:normalizePath', filePath),
+    joinPath: (...segments: string[]) => ipcRenderer.invoke('fs:joinPath', ...segments),
+    resolvePath: (...segments: string[]) => ipcRenderer.invoke('fs:resolvePath', ...segments),
+    isAbsolute: (filePath: string) => ipcRenderer.invoke('fs:isAbsolute', filePath),
   },
 
   // Bash command execution

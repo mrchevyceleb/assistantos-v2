@@ -1,13 +1,22 @@
-import * as pathUtils from 'path-browserify';
 import { useFileLockStore } from '../../stores/fileLockStore';
 
-function resolvePath(inputPath: string, workspacePath: string): string {
-  // If it's an absolute path, use it directly
-  if (pathUtils.isAbsolute(inputPath)) {
-    return inputPath;
+/**
+ * Resolve a path using native Node.js path module (platform-specific)
+ * This fixes mixed path separator issues on Windows (\ vs /)
+ */
+async function resolvePath(inputPath: string, workspacePath: string): Promise<string> {
+  const api = window.electronAPI.fs;
+
+  // Check if it's an absolute path using native path module
+  const isAbsolute = await api.isAbsolute(inputPath);
+
+  if (isAbsolute) {
+    // Normalize to fix mixed separators
+    return api.normalizePath(inputPath);
   }
-  // Otherwise, resolve relative to workspace
-  return pathUtils.join(workspacePath, inputPath);
+
+  // Join with workspace and normalize to ensure consistent separators
+  return api.joinPath(workspacePath, inputPath);
 }
 
 export async function executeFileTool(
@@ -21,7 +30,7 @@ export async function executeFileTool(
 
   switch (name) {
     case 'read_file': {
-      const filePath = resolvePath(input.path as string, workspacePath);
+      const filePath = await resolvePath(input.path as string, workspacePath);
 
       // Acquire read lock if agent info provided
       let operationId: string | undefined;
@@ -49,7 +58,7 @@ export async function executeFileTool(
     }
 
     case 'write_file': {
-      const filePath = resolvePath(input.path as string, workspacePath);
+      const filePath = await resolvePath(input.path as string, workspacePath);
       const content = input.content as string;
 
       // Acquire write lock if agent info provided
@@ -88,7 +97,7 @@ export async function executeFileTool(
     }
 
     case 'list_directory': {
-      const dirPath = resolvePath(input.path as string, workspacePath);
+      const dirPath = await resolvePath(input.path as string, workspacePath);
       const entries = await api.readDir(dirPath);
       if (entries.length === 0) {
         const exists = await api.exists(dirPath);
@@ -104,13 +113,13 @@ export async function executeFileTool(
     }
 
     case 'file_exists': {
-      const filePath = resolvePath(input.path as string, workspacePath);
+      const filePath = await resolvePath(input.path as string, workspacePath);
       const exists = await api.exists(filePath);
       return exists ? `Path exists: ${filePath}` : `Path does not exist: ${filePath}`;
     }
 
     case 'create_directory': {
-      const dirPath = resolvePath(input.path as string, workspacePath);
+      const dirPath = await resolvePath(input.path as string, workspacePath);
       const success = await api.createDir(dirPath);
       if (!success) {
         throw new Error(`Failed to create directory: ${dirPath}`);
