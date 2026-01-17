@@ -172,13 +172,11 @@ export function ContextMenuContainer({
   minWidth = 200,
   header
 }: ContextMenuContainerProps) {
-  console.log('[Bug-Hunter] ContextMenuContainer rendering', { x, y, header })
   const menuRef = useRef<HTMLDivElement>(null)
   const getAdjustedPosition = useContextMenuPosition(x, y, menuRef)
   useContextMenuClose(onClose, menuRef)
 
   const adjustedPos = getAdjustedPosition()
-  console.log('[Bug-Hunter] ContextMenuContainer adjusted position', adjustedPos)
 
   return createPortal(
     <div

@@ -25,6 +25,12 @@ import { updateCredentialsFile, type GmailOAuthTokens } from './gmailCredentialM
 import { getCalendarEnvVars, updateTokensFile as updateCalendarTokens, type CalendarOAuthTokens } from './calendarCredentialManager.js';
 
 /**
+ * Token refresh lock mechanism to prevent race conditions
+ * Maps integrationId -> Promise of ongoing refresh operation
+ */
+const tokenRefreshLocks = new Map<string, Promise<void>>();
+
+/**
  * Fetch Gmail email address using access token
  */
 async function fetchGmailEmailAddress(accessToken: string): Promise<string> {
@@ -46,7 +52,67 @@ async function fetchGmailEmailAddress(accessToken: string): Promise<string> {
 }
 
 /**
+ * Internal function that performs the actual token refresh
+ * Called only when a lock is acquired
+ */
+async function performTokenRefresh(integrationId: string, manager: MCPManager): Promise<void> {
+  const envVars = manager.getEnvVars(integrationId) || {};
+
+  const refreshToken = envVars['GOOGLE_REFRESH_TOKEN'];
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  const config = {
+    clientId: GOOGLE_OAUTH_CREDENTIALS.clientId,
+    clientSecret: GOOGLE_OAUTH_CREDENTIALS.clientSecret
+  };
+
+  const refreshed = await refreshGoogleToken(refreshToken, config);
+
+  // Update env vars with new token
+  envVars['GOOGLE_ACCESS_TOKEN'] = refreshed.accessToken;
+  envVars['GOOGLE_TOKEN_EXPIRES_AT'] = refreshed.expiresAt.toString();
+  manager.setEnvVars(integrationId, envVars);
+
+  // Update credential files for Gmail accounts
+  const integration = getIntegration(integrationId);
+  if (integration?.isGmailAccount && integration.gmailAccountId) {
+    const gmailTokens: GmailOAuthTokens = {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshToken,
+      expiresAt: refreshed.expiresAt
+    };
+    updateCredentialsFile(integration.gmailAccountId, gmailTokens);
+    console.log(`[OAuth] Updated credential files for ${integrationId}`);
+  }
+
+  // Update tokens file for Calendar
+  if (integrationId === 'calendar') {
+    const calendarTokens: CalendarOAuthTokens = {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshToken,
+      expiresAt: refreshed.expiresAt
+    };
+    updateCalendarTokens(calendarTokens);
+    console.log(`[OAuth] Updated tokens file for calendar`);
+  }
+
+  console.log(`[OAuth] Token refreshed for ${integrationId}`);
+
+  // Restart server to use new token
+  const isRunning = manager.isServerReady(integrationId);
+  if (isRunning) {
+    await manager.stopServer(integrationId);
+    await manager.startServer(integrationId);
+    console.log(`[OAuth] Restarted ${integrationId} with fresh token`);
+  }
+}
+
+/**
  * Check and refresh OAuth tokens if needed (for Google integrations)
+ * Uses a mutex/lock to prevent race conditions when multiple parallel
+ * tool executions detect token expiry simultaneously
  */
 async function refreshOAuthTokenIfNeeded(integrationId: string, manager: MCPManager): Promise<void> {
   const envVars = manager.getEnvVars(integrationId) || {};
@@ -60,58 +126,27 @@ async function refreshOAuthTokenIfNeeded(integrationId: string, manager: MCPMana
 
   if (expiresAt > now + bufferTime) return; // Token still valid
 
-  console.log(`[OAuth] Token expiring soon for ${integrationId}, refreshing...`);
-
-  const refreshToken = envVars['GOOGLE_REFRESH_TOKEN'];
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
+  // Check if there's already a refresh in progress for this integration
+  const existingRefresh = tokenRefreshLocks.get(integrationId);
+  if (existingRefresh) {
+    console.log(`[OAuth] Refresh already in progress for ${integrationId}, waiting...`);
+    await existingRefresh;
+    return;
   }
 
+  console.log(`[OAuth] Token expiring soon for ${integrationId}, refreshing...`);
+
+  // Create a new refresh promise and store it in the lock
+  const refreshPromise = performTokenRefresh(integrationId, manager)
+    .finally(() => {
+      // Always release the lock when done (success or failure)
+      tokenRefreshLocks.delete(integrationId);
+    });
+
+  tokenRefreshLocks.set(integrationId, refreshPromise);
+
   try {
-    const config = {
-      clientId: GOOGLE_OAUTH_CREDENTIALS.clientId,
-      clientSecret: GOOGLE_OAUTH_CREDENTIALS.clientSecret
-    };
-
-    const refreshed = await refreshGoogleToken(refreshToken, config);
-
-    // Update env vars with new token
-    envVars['GOOGLE_ACCESS_TOKEN'] = refreshed.accessToken;
-    envVars['GOOGLE_TOKEN_EXPIRES_AT'] = refreshed.expiresAt.toString();
-    manager.setEnvVars(integrationId, envVars);
-
-    // Update credential files for Gmail accounts
-    const integration = getIntegration(integrationId);
-    if (integration?.isGmailAccount && integration.gmailAccountId) {
-      const gmailTokens: GmailOAuthTokens = {
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshToken,
-        expiresAt: refreshed.expiresAt
-      };
-      updateCredentialsFile(integration.gmailAccountId, gmailTokens);
-      console.log(`[OAuth] Updated credential files for ${integrationId}`);
-    }
-
-    // Update tokens file for Calendar
-    if (integrationId === 'calendar') {
-      const calendarTokens: CalendarOAuthTokens = {
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshToken,
-        expiresAt: refreshed.expiresAt
-      };
-      updateCalendarTokens(calendarTokens);
-      console.log(`[OAuth] Updated tokens file for calendar`);
-    }
-
-    console.log(`[OAuth] Token refreshed for ${integrationId}`);
-
-    // Restart server to use new token
-    const isRunning = manager.isServerReady(integrationId);
-    if (isRunning) {
-      await manager.stopServer(integrationId);
-      await manager.startServer(integrationId);
-      console.log(`[OAuth] Restarted ${integrationId} with fresh token`);
-    }
+    await refreshPromise;
   } catch (error) {
     console.error(`[OAuth] Failed to refresh token for ${integrationId}:`, error);
     throw new Error(`Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

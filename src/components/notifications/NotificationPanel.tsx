@@ -1,7 +1,8 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import { Bell, CheckCheck, Trash2, X, Info, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { Notification, NotificationLevel } from '@/types/notification'
+import { useTabStore } from '@/stores/tabStore'
+import { Notification, NotificationLevel, NotificationAction } from '@/types/notification'
 
 interface NotificationPanelProps {
   isOpen: boolean
@@ -16,6 +17,36 @@ export function NotificationPanel({ isOpen, onClose, anchorRef }: NotificationPa
   const markAllAsRead = useNotificationStore(state => state.markAllAsRead)
   const deleteNotification = useNotificationStore(state => state.deleteNotification)
   const clearAll = useNotificationStore(state => state.clearAll)
+  const setActiveTab = useTabStore(state => state.setActiveTab)
+  const openOrFocusFile = useTabStore(state => state.openOrFocusFile)
+  const openOrFocusAgent = useTabStore(state => state.openOrFocusAgent)
+
+  // Execute notification action
+  const executeAction = useCallback((action: NotificationAction) => {
+    switch (action.type) {
+      case 'openAgent':
+        openOrFocusAgent(action.agentId)
+        onClose()
+        break
+      case 'openFile':
+        openOrFocusFile(action.path)
+        onClose()
+        break
+      case 'openTab':
+        setActiveTab(action.tabId)
+        onClose()
+        break
+      case 'openUrl':
+        window.electronAPI.shell.openExternal(action.url)
+        break
+      case 'runCommand':
+        // For future use - execute a command
+        console.log('[Notification] Run command:', action.command)
+        break
+      default:
+        console.warn('[Notification] Unknown action type:', action)
+    }
+  }, [openOrFocusAgent, openOrFocusFile, setActiveTab, onClose])
 
   // Close on click outside
   useEffect(() => {
@@ -86,8 +117,12 @@ export function NotificationPanel({ isOpen, onClose, anchorRef }: NotificationPa
     }
     // Handle action if provided
     if (notification.actionData) {
-      // TODO: Implement action handling (e.g., open agent, open file)
-      console.log('[Notification Action]', notification.actionData)
+      executeAction(notification.actionData)
+    }
+    // If notification has an agentId but no explicit action, open that agent
+    else if (notification.agentId) {
+      openOrFocusAgent(notification.agentId)
+      onClose()
     }
   }
 

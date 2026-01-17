@@ -124,11 +124,19 @@ export function TaskPanel() {
     const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${effectiveTasksFolder}`
     try {
       // Create tasks folder
-      await window.electronAPI.fs.createDir(tasksPath)
+      const tasksResult = await window.electronAPI.fs.createDir(tasksPath)
+      if (!tasksResult.success) {
+        console.error('Failed to create tasks folder:', tasksResult.error)
+        return
+      }
 
       // Create a default "General" project folder
       const defaultProjectPath = `${tasksPath}/General`
-      await window.electronAPI.fs.createDir(defaultProjectPath)
+      const projectResult = await window.electronAPI.fs.createDir(defaultProjectPath)
+      if (!projectResult.success) {
+        console.error('Failed to create project folder:', projectResult.error)
+        return
+      }
 
       // Create initial tasks.md file
       const initialContent = `# General Tasks
@@ -141,7 +149,11 @@ export function TaskPanel() {
 
 Add any project notes here.
 `
-      await window.electronAPI.fs.writeFile(`${defaultProjectPath}/tasks.md`, initialContent)
+      const fileResult = await window.electronAPI.fs.writeFile(`${defaultProjectPath}/tasks.md`, initialContent)
+      if (!fileResult.success) {
+        console.error('Failed to create tasks file:', fileResult.error)
+        return
+      }
 
       // Reload projects and tasks
       await loadFileProjects()
@@ -152,17 +164,47 @@ Add any project notes here.
   }
 
   // Set custom tasks folder
-  const handleSetCustomFolder = () => {
+  const handleSetCustomFolder = async () => {
     const trimmed = folderInput.trim()
-    if (trimmed) {
-      setKanbanSettings({ customTasksFolder: trimmed })
-    } else {
-      setKanbanSettings({ customTasksFolder: null })
-    }
+    const newFolder = trimmed || null
+
+    // Update settings first
+    setKanbanSettings({ customTasksFolder: newFolder })
+
+    // Close dialogs
     setShowFolderDialog(false)
     setShowFolderDropdown(false)
     setFolderInput('')
-    // Settings change will trigger loadTasks via useEffect
+
+    // Immediately check folder existence and load tasks with new folder
+    // This prevents race condition where state update triggers useEffect before
+    // the new folder value is properly propagated
+    if (workspacePath && window.electronAPI) {
+      const effectiveFolder = newFolder || 'TASKS'
+      const tasksPath = `${workspacePath.replace(/\\/g, '/')}/${effectiveFolder}`
+      const exists = await window.electronAPI.fs.exists(tasksPath)
+      setTasksFolderExists(exists)
+
+      // Explicitly load with the new folder value
+      if (exists) {
+        setLoading(true)
+        try {
+          const parsedTasks = await parseTasksFromWorkspace(
+            workspacePath,
+            settings.selectedProject,
+            newFolder
+          )
+          setFileTasks(parsedTasks)
+
+          const projectList = await getProjectList(workspacePath, newFolder)
+          setFileProjects(projectList)
+        } catch (err) {
+          console.error('Failed to parse tasks:', err)
+        } finally {
+          setLoading(false)
+        }
+      }
+    }
   }
 
   // Close dialog (and reset state)

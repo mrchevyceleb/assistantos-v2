@@ -63,14 +63,11 @@ export function EmailWidget() {
 
       // List available tools to see what we can actually call
       const availableTools = await window.electronAPI?.mcp.getTools([firstAccount.integrationId])
-      console.log('[EmailWidget] Available tools:', availableTools)
 
       // Find the search/list messages tool
       const searchTool = availableTools?.find((t: any) =>
         t.name?.includes('search') && t.name?.includes('email')
       )
-      console.log('[EmailWidget] Using search tool:', searchTool?.name)
-      console.log('[EmailWidget] Search tool schema:', searchTool?.inputSchema)
 
       // Try to get recent messages using the discovered tool
       if (!searchTool) {
@@ -88,8 +85,6 @@ export function EmailWidget() {
         }
       )
 
-      console.log('[EmailWidget] Search result:', messagesResult)
-
       if (messagesResult?.success && messagesResult.result) {
         try {
           // MCP returns: [{ type: "text", text: "..." }]
@@ -98,11 +93,9 @@ export function EmailWidget() {
           // Extract text from MCP format
           if (Array.isArray(messagesData) && messagesData[0]?.type === 'text') {
             const textContent = messagesData[0]?.text || ''
-            console.log('[EmailWidget] Extracted text:', textContent.substring(0, 200))
 
             if (!textContent || !textContent.trim()) {
               // Empty result - inbox zero!
-              console.log('[EmailWidget] Empty search result - inbox zero!')
               setMessages([])
               return
             }
@@ -115,8 +108,6 @@ export function EmailWidget() {
               return
             }
           }
-
-          console.log('[EmailWidget] Parsed messagesData type:', typeof messagesData, Array.isArray(messagesData))
 
           // Helper function to extract header value
           const getHeader = (msg: any, headerName: string): string => {
@@ -131,15 +122,6 @@ export function EmailWidget() {
 
           // Helper function to format message
           const formatMessage = (msg: any): EmailMessage => {
-            console.log('[EmailWidget] Processing message:', {
-              id: msg.id,
-              from: msg.from,
-              subject: msg.subject,
-              hasPayload: !!msg.payload,
-              hasHeaders: !!msg.payload?.headers,
-              headerCount: msg.payload?.headers?.length || 0
-            })
-
             // Try multiple ways to get the 'from' field
             let from = msg.from || getHeader(msg, 'From')
             if (!from || from === '') {
@@ -157,8 +139,6 @@ export function EmailWidget() {
             if (!date) {
               date = new Date().toISOString()
             }
-
-            console.log('[EmailWidget] Formatted message:', { from, subject, date })
 
             return {
               id: msg.id || msg.messageId || Math.random().toString(),
@@ -259,6 +239,7 @@ export function EmailWidget() {
       icon={<Mail className="w-4 h-4" />}
       loading={loading}
       onRefresh={fetchEmails}
+      skeletonRows={5}
     >
       {error ? (
         <div className="text-center py-4">

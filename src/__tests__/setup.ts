@@ -99,6 +99,17 @@ beforeAll(() => {
         preferences: [],
         summaries: []
       })
+    },
+    app: {
+      getVersion: vi.fn().mockResolvedValue('1.5.2'),
+      getHomeDir: vi.fn().mockResolvedValue('/home/test')
+    },
+    anthropic: {
+      validateKey: vi.fn().mockResolvedValue({ valid: true }),
+      createMessage: vi.fn().mockResolvedValue({ success: true, data: { content: [{ type: 'text', text: 'Test response' }] } }),
+      streamMessage: vi.fn().mockResolvedValue({ success: true }),
+      cancelStream: vi.fn().mockResolvedValue({ success: true }),
+      onStreamEvent: vi.fn().mockReturnValue(() => {})
     }
   }
 

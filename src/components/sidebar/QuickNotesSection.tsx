@@ -80,6 +80,7 @@ export function QuickNotesSection() {
           onClick={handleCreateNewNote}
           className="p-1 rounded hover:bg-white/10 text-slate-500 hover:text-amber-400 transition-colors"
           title="Create new note"
+          aria-label="Create new note"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -137,6 +138,7 @@ export function QuickNotesSection() {
                         transition-colors
                       "
                       title="Delete note"
+                      aria-label="Delete note"
                     >
                       <X className="w-3 h-3" />
                     </button>

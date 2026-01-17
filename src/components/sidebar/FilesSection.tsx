@@ -2,9 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, FileText, Star, RefreshCw, Plus, Maximize2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { useTabStore } from '../../stores/tabStore'
+import { useAgentStore } from '../../stores/agentStore'
 // isMediaFile imported if needed for future media handling
 import { FileSearch, FileSearchHandle } from './FileSearch'
 import { FileContextMenu } from '../filetree/FileContextMenu'
+import { FileRenameDialog } from '../filetree/FileRenameDialog'
+import { DeleteConfirmDialog } from '../filetree/DeleteConfirmDialog'
 
 interface FileEntry {
   name: string
@@ -109,6 +112,7 @@ function FileItem({
                 : 'opacity-0 group-hover:opacity-100 text-slate-500 hover:text-amber-400'
               }
             `}
+            aria-label={starred ? `Remove ${entry.name} from starred` : `Add ${entry.name} to starred`}
           >
             <Star className={`w-3 h-3 ${starred ? 'fill-current' : ''}`} />
           </button>
@@ -141,12 +145,26 @@ export interface FilesSectionHandle {
   focusSearch: () => void
 }
 
+interface RenameDialogState {
+  path: string
+  name: string
+  isDirectory: boolean
+}
+
+interface DeleteDialogState {
+  path: string
+  name: string
+  isDirectory: boolean
+}
+
 export function FilesSection() {
   const [isCollapsed, setIsCollapsed] = useState(true)  // Collapsed by default
   const [files, setFiles] = useState<FileEntry[]>([])
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [renameDialog, setRenameDialog] = useState<RenameDialogState | null>(null)
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null)
 
   const searchRef = useRef<FileSearchHandle>(null)
 
@@ -158,6 +176,8 @@ export function FilesSection() {
 
   const openOrFocusFile = useTabStore(state => state.openOrFocusFile)
   const openOrFocusFiles = useTabStore(state => state.openOrFocusFiles)
+  const getActiveTab = useTabStore(state => state.getActiveTab)
+  const addAgentMessage = useAgentStore(state => state.addMessage)
 
   // Global keyboard shortcut for search
   useEffect(() => {
@@ -294,6 +314,71 @@ export function FilesSection() {
     }
   }
 
+  // Handle rename confirmation
+  const handleRenameConfirm = async (newName: string) => {
+    if (!renameDialog) return
+
+    try {
+      const parentDir = renameDialog.path.substring(0, renameDialog.path.lastIndexOf('\\') + 1) ||
+                        renameDialog.path.substring(0, renameDialog.path.lastIndexOf('/') + 1)
+      const newPath = parentDir + newName
+
+      await window.electronAPI.fs.rename(renameDialog.path, newPath)
+
+      // Reload files to reflect the change
+      await loadFiles()
+    } catch (error) {
+      console.error('Failed to rename:', error)
+    } finally {
+      setRenameDialog(null)
+    }
+  }
+
+  // Handle delete confirmation
+  const handleDeleteConfirm = async () => {
+    if (!deleteDialog) return
+
+    try {
+      await window.electronAPI.fs.delete(deleteDialog.path)
+
+      // Reload files to reflect the change
+      await loadFiles()
+    } catch (error) {
+      console.error('Failed to delete:', error)
+    } finally {
+      setDeleteDialog(null)
+    }
+  }
+
+  // Handle send to chat - reads file content and adds to active agent's chat
+  const handleSendToChat = async (path: string, name: string) => {
+    const activeTab = getActiveTab()
+
+    // Check if we have an active agent tab
+    if (!activeTab || activeTab.type !== 'agent') {
+      console.warn('No active agent tab to send file to')
+      return
+    }
+
+    try {
+      // Read file content
+      const content = await window.electronAPI.fs.readFile(path)
+
+      // Create a message with the file content
+      const fileMessage = `Here's the content of \`${name}\`:\n\n\`\`\`\n${content}\n\`\`\``
+
+      // Add as a user message to the active agent
+      addAgentMessage(activeTab.agentId!, {
+        id: `file-${Date.now()}`,
+        role: 'user',
+        content: fileMessage,
+        timestamp: new Date()
+      })
+    } catch (error) {
+      console.error('Failed to send file to chat:', error)
+    }
+  }
+
   // Count starred files in current workspace
   const starredCount = starredPaths.filter(p =>
     workspacePath && p.startsWith(workspacePath)
@@ -411,17 +496,45 @@ export function FilesSection() {
           isDirectory={contextMenu.entry.isDirectory}
           onClose={() => setContextMenu(null)}
           onRename={() => {
-            // TODO: Add rename support
+            setRenameDialog({
+              path: contextMenu.entry.path,
+              name: contextMenu.entry.name,
+              isDirectory: contextMenu.entry.isDirectory
+            })
             setContextMenu(null)
           }}
           onDelete={() => {
-            // TODO: Add delete support
+            setDeleteDialog({
+              path: contextMenu.entry.path,
+              name: contextMenu.entry.name,
+              isDirectory: contextMenu.entry.isDirectory
+            })
             setContextMenu(null)
           }}
           onSendToChat={() => {
-            // TODO: Add send to chat support
+            handleSendToChat(contextMenu.entry.path, contextMenu.entry.name)
             setContextMenu(null)
           }}
+        />
+      )}
+
+      {/* Rename Dialog */}
+      {renameDialog && (
+        <FileRenameDialog
+          currentName={renameDialog.name}
+          isDirectory={renameDialog.isDirectory}
+          onConfirm={handleRenameConfirm}
+          onCancel={() => setRenameDialog(null)}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteDialog && (
+        <DeleteConfirmDialog
+          name={deleteDialog.name}
+          isDirectory={deleteDialog.isDirectory}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteDialog(null)}
         />
       )}
     </div>

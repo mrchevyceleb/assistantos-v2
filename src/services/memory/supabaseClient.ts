@@ -7,19 +7,29 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { MEMORY_SUPABASE_URL, MEMORY_SUPABASE_ANON_KEY } from './constants'
+import { getMemorySupabaseUrl, getMemorySupabaseKey, isMemoryConfigured } from './constants'
 
 let supabaseClient: SupabaseClient | null = null
 
 /**
- * Initialize or get the Supabase client (uses hardcoded credentials)
+ * Initialize or get the Supabase client
+ * Throws error if credentials are not configured
  */
-export function getSupabaseClient(): SupabaseClient {
+export async function getSupabaseClient(): Promise<SupabaseClient> {
   if (supabaseClient) {
     return supabaseClient
   }
 
-  supabaseClient = createClient(MEMORY_SUPABASE_URL, MEMORY_SUPABASE_ANON_KEY, {
+  if (!(await isMemoryConfigured())) {
+    throw new Error(
+      'Memory system not configured. Please set MEMORY_SUPABASE_URL and MEMORY_SUPABASE_ANON_KEY in your .env file'
+    )
+  }
+
+  const url = await getMemorySupabaseUrl()
+  const key = await getMemorySupabaseKey()
+
+  supabaseClient = createClient(url, key, {
     auth: {
       persistSession: false, // We don't use auth sessions
       autoRefreshToken: false,
@@ -34,7 +44,7 @@ export function getSupabaseClient(): SupabaseClient {
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    const client = getSupabaseClient()
+    const client = await getSupabaseClient()
     // Try a simple query to test connection
     const { error } = await client.from('memory_users').select('id').limit(1)
     return !error

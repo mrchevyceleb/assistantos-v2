@@ -45,30 +45,22 @@ export async function executeTool(
   // Try MCP tools - check if there's an integration that handles this tool
   // Tools use prefixed names like gmail_search_emails, calendar_list_events, etc.
   try {
-    console.log(`[executeTool] Looking for integration for tool: ${name}`);
     const integrationId = await window.electronAPI.mcp.findIntegrationForTool(name);
-    console.log(`[executeTool] findIntegrationForTool returned:`, integrationId);
 
     if (integrationId) {
-      console.log(`[executeTool] Executing tool ${name} on integration ${integrationId}`, input);
       const result = await window.electronAPI.mcp.executeTool(integrationId, name, input);
-      console.log(`[executeTool] executeTool returned:`, result);
 
       if (result.success) {
         const formattedResult = typeof result.result === 'string'
           ? result.result
           : JSON.stringify(result.result, null, 2);
-        console.log(`[executeTool] SUCCESS - returning formatted result`);
         return formattedResult;
       } else {
-        console.error(`[executeTool] FAILED - result.success = false`, result.error);
         throw new Error(result.error || 'MCP tool execution failed');
       }
-    } else {
-      console.error(`[executeTool] No integration found for tool: ${name}`);
     }
   } catch (error) {
-    console.error('[executeTool] MCP tool execution error:', error);
+    console.error('[Tool] MCP execution error:', error);
     throw error;
   }
 

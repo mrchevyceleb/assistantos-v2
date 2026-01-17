@@ -121,10 +121,8 @@ export function TabBar() {
 
   // Handle right-click context menu (only for agent tabs)
   const handleContextMenu = (e: React.MouseEvent, tab: TabType) => {
-    console.log('[Bug-Hunter] TabBar handleContextMenu called', { type: tab.type, title: tab.title })
     if (tab.type !== 'agent') return // Only show context menu for agent tabs
     e.preventDefault()
-    console.log('[Bug-Hunter] TabBar contextMenu state will be set', { x: e.clientX, y: e.clientY })
     setContextMenu({ x: e.clientX, y: e.clientY, tab })
   }
 
@@ -195,7 +193,6 @@ export function TabBar() {
       {/* Context Menu */}
       {contextMenu && (
         <>
-          {console.log('[Bug-Hunter] TabBar rendering TabContextMenu', contextMenu)}
           <TabContextMenu
             x={contextMenu.x}
             y={contextMenu.y}

@@ -1,4 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk'
+/**
+ * AI Fallback Intent Classifier
+ *
+ * Uses Claude Haiku to classify ambiguous user intent.
+ * Uses secure IPC to make API calls from main process.
+ */
 
 const CLASSIFICATION_PROMPT = `You are an intent classifier for an AI assistant. Given a user message, determine which external services (if any) are needed.
 
@@ -50,22 +55,25 @@ export async function aiClassifyIntent(
   enabledIntegrations: string[]
 ): Promise<string[]> {
   try {
-    const client = new Anthropic({
+    // Use secure IPC to make API call from main process
+    const result = await window.electronAPI.anthropic.createMessage({
       apiKey,
-      dangerouslyAllowBrowser: true
-    })
-
-    const response = await client.messages.create({
       model: 'claude-3-5-haiku-20241022', // Fast and cheap (~$0.0001/request)
-      max_tokens: 100,
+      maxTokens: 100,
       messages: [{
         role: 'user',
         content: `${CLASSIFICATION_PROMPT}\n\n"${message}"`
       }]
     })
 
+    if (!result.success || !result.data) {
+      console.error('[AI Fallback] Classification failed:', result.error)
+      return []
+    }
+
+    const response = result.data as { content: Array<{ type: string; text?: string }> }
     const content = response.content[0]
-    if (content.type === 'text') {
+    if (content.type === 'text' && content.text) {
       // Parse JSON response
       const text = content.text.trim()
 

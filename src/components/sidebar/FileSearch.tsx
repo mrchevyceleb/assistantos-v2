@@ -232,6 +232,7 @@ export const FileSearch = forwardRef<FileSearchHandle, FileSearchProps>(function
               inputRef.current?.focus()
             }}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-white/10 transition-colors"
+            aria-label="Clear search"
           >
             <X className="w-3.5 h-3.5 text-slate-500" />
           </button>

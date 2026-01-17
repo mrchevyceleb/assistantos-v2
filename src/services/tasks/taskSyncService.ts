@@ -55,7 +55,7 @@ export async function fetchTasks(
   syncId: string,
   projectFilter?: string
 ): Promise<SyncTask[]> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   let query = client
     .from('sync_tasks')
@@ -81,7 +81,7 @@ export async function fetchTasks(
  * Fetch distinct project names for a sync namespace
  */
 export async function fetchProjects(syncId: string): Promise<string[]> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   const { data, error } = await client
     .from('sync_tasks')
@@ -108,7 +108,7 @@ export async function fetchProjects(syncId: string): Promise<string[]> {
  * Fetch a single task by ID
  */
 export async function fetchTask(taskId: string): Promise<SyncTask | null> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   const { data, error } = await client
     .from('sync_tasks')
@@ -138,7 +138,7 @@ export async function createTask(
   syncId: string,
   task: NewSyncTask
 ): Promise<SyncTask> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   // Get max sort_order for this project/status
   const { data: maxData } = await client
@@ -176,7 +176,7 @@ export async function updateTask(
   taskId: string,
   updates: UpdateSyncTask
 ): Promise<SyncTask> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   const row = syncTaskToRow(updates)
 
@@ -203,7 +203,7 @@ export async function updateTaskStatus(
   status: TaskStatus,
   sortOrder?: number
 ): Promise<void> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   const updates: Record<string, unknown> = { status }
   if (sortOrder !== undefined) {
@@ -225,7 +225,7 @@ export async function updateTaskStatus(
  * Delete a task
  */
 export async function deleteTask(taskId: string): Promise<void> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   const { error } = await client.from('sync_tasks').delete().eq('id', taskId)
 
@@ -241,7 +241,7 @@ export async function deleteTask(taskId: string): Promise<void> {
 export async function reorderTasks(
   taskOrders: Array<{ id: string; sortOrder: number }>
 ): Promise<void> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   // Use a transaction-like approach with batch updates
   const promises = taskOrders.map(({ id, sortOrder }) =>
@@ -266,11 +266,11 @@ let activeChannel: RealtimeChannel | null = null
 /**
  * Subscribe to real-time task changes for a sync namespace
  */
-export function subscribeToTasks(
+export async function subscribeToTasks(
   syncId: string,
   callbacks: TaskSyncCallbacks
-): () => void {
-  const client = getSupabaseClient()
+): Promise<() => void> {
+  const client = await getSupabaseClient()
 
   // Unsubscribe from previous channel if exists
   if (activeChannel) {
@@ -379,7 +379,7 @@ export async function importFileBasedTasks(
  * Check if tasks have been migrated for a sync namespace
  */
 export async function hasMigratedTasks(syncId: string): Promise<boolean> {
-  const client = getSupabaseClient()
+  const client = await getSupabaseClient()
 
   const { count, error } = await client
     .from('sync_tasks')

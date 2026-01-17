@@ -6,6 +6,27 @@ import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import App from './App'
 import './index.css'
 
+// =============================================================================
+// Global Error Handlers (Renderer Process)
+// =============================================================================
+
+/**
+ * Handle unhandled promise rejections in the renderer process
+ * Prevents silent failures and logs errors for debugging
+ */
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Renderer] Unhandled Promise Rejection:', event.reason)
+  // Prevent the default browser behavior (logging to console twice)
+  // event.preventDefault()
+})
+
+/**
+ * Handle global errors in the renderer process
+ */
+window.addEventListener('error', (event) => {
+  console.error('[Renderer] Global Error:', event.error || event.message)
+})
+
 // Configure Monaco environment with proper workers for Electron/Vite
 window.MonacoEnvironment = {
   getWorker: function (_workerId: string, _label: string) {

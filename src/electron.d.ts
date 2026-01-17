@@ -285,9 +285,9 @@ interface ElectronAPI {
     readDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
     readFile: (filePath: string) => Promise<string | null>
     readFileBase64: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>
-    writeFile: (filePath: string, content: string) => Promise<boolean>
+    writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
     selectFolder: () => Promise<string | null>
-    createDir: (dirPath: string) => Promise<boolean>
+    createDir: (dirPath: string) => Promise<{ success: boolean; error?: string }>
     exists: (filePath: string) => Promise<boolean>
     searchFiles: (workspacePath: string, searchTerm: string) => Promise<Array<{ name: string; path: string; relativePath: string; isDirectory: boolean }>>
     searchContent: (workspacePath: string, query: string) => Promise<{
@@ -431,6 +431,34 @@ interface ElectronAPI {
     deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>
     // Event listeners
     onEvent: (callback: (event: SyncEvent) => void) => () => void
+  }
+  safeStorage?: {
+    setCredential: (key: string, value: string) => Promise<{ success: boolean; error?: string }>
+    getCredential: (key: string) => Promise<{ success: boolean; value?: string | null; error?: string }>
+    deleteCredential: (key: string) => Promise<{ success: boolean; error?: string }>
+    listKeys: () => Promise<{ success: boolean; keys?: string[]; error?: string }>
+  }
+  anthropic: {
+    validateKey: (apiKey: string) => Promise<{ valid: boolean; error?: string }>
+    createMessage: (params: {
+      apiKey: string
+      model: string
+      maxTokens: number
+      messages: Array<{ role: string; content: unknown }>
+      system?: string
+      tools?: unknown[]
+    }) => Promise<{ success: boolean; data?: unknown; error?: string }>
+    streamMessage: (params: {
+      streamId: string
+      apiKey: string
+      model: string
+      maxTokens: number
+      messages: Array<{ role: string; content: unknown }>
+      system?: string
+      tools?: unknown[]
+    }) => Promise<{ success: boolean; error?: string }>
+    cancelStream: (streamId: string) => Promise<{ success: boolean; error?: string }>
+    onStreamEvent: (streamId: string, callback: (data: { type: string; event?: unknown; message?: unknown; error?: string }) => void) => () => void
   }
 }
 

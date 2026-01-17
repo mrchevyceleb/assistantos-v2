@@ -65,6 +65,7 @@ export function IntegrationsModal({ isOpen, onClose }: IntegrationsModalProps) {
     removeGmailAccount,
     setGmailAccountEnabled
   } = useAppStore()
+  const addNotification = useNotificationStore((state) => state.addNotification)
   const [integrations, setIntegrations] = useState<MCPIntegration[]>([])
   const [activeCategory, setActiveCategory] = useState<string>('browser')
   const [status, setStatus] = useState<Record<string, MCPServerStatus>>({})
@@ -100,13 +101,31 @@ export function IntegrationsModal({ isOpen, onClose }: IntegrationsModalProps) {
     await window.electronAPI.mcp.configure(integrationId, envVars)
   }
 
-  const handleToggleEnabled = (integrationId: string, enabled: boolean) => {
-    // Just update the enabled state - servers start on-demand when @mentioned
+  const handleToggleEnabled = async (integrationId: string, enabled: boolean) => {
+    // Update the enabled state - servers start on-demand when @mentioned
     setIntegrationEnabled(integrationId, enabled)
 
     // If disabling, stop any running server
     if (!enabled) {
-      window.electronAPI.mcp.stop(integrationId).catch(console.error)
+      try {
+        const result = await window.electronAPI.mcp.stop(integrationId)
+        if (!result.success) {
+          // Rollback on failure
+          setIntegrationEnabled(integrationId, true)
+          addNotification(
+            'Disconnect Failed',
+            `Failed to stop integration: ${result.error || 'Unknown error'}`,
+            'error'
+          )
+        }
+      } catch (error) {
+        setIntegrationEnabled(integrationId, true)
+        addNotification(
+          'Disconnect Failed',
+          `Failed to stop integration: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'error'
+        )
+      }
     }
   }
 
@@ -493,11 +512,41 @@ function GmailAccountsSection({
   }
 
   const handleToggle = async (account: GmailAccount, enabled: boolean) => {
+    // Optimistically update UI
     setGmailAccountEnabled(account.id, enabled)
-    if (enabled) {
-      await window.electronAPI.mcp.start(account.integrationId)
-    } else {
-      await window.electronAPI.mcp.stop(account.integrationId)
+
+    try {
+      if (enabled) {
+        const result = await window.electronAPI.mcp.start(account.integrationId)
+        if (!result.success) {
+          // Rollback on failure
+          setGmailAccountEnabled(account.id, false)
+          addNotification(
+            'Connection Failed',
+            `Failed to enable Gmail account "${account.label}": ${result.error || 'Unknown error'}`,
+            'error'
+          )
+        }
+      } else {
+        const result = await window.electronAPI.mcp.stop(account.integrationId)
+        if (!result.success) {
+          // Rollback on failure
+          setGmailAccountEnabled(account.id, true)
+          addNotification(
+            'Disconnect Failed',
+            `Failed to disable Gmail account "${account.label}": ${result.error || 'Unknown error'}`,
+            'error'
+          )
+        }
+      }
+    } catch (error) {
+      // Rollback on exception
+      setGmailAccountEnabled(account.id, !enabled)
+      addNotification(
+        enabled ? 'Connection Failed' : 'Disconnect Failed',
+        `Failed to ${enabled ? 'enable' : 'disable'} Gmail account: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'error'
+      )
     }
   }
 

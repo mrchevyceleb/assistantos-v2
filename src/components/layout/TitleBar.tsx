@@ -101,18 +101,21 @@ export function TitleBar() {
         <button
           onClick={handleMinimize}
           className="p-2 rounded-lg transition-colors hover:bg-white/5"
+          aria-label="Minimize window"
         >
           <Minus className="w-4 h-4 text-slate-400" />
         </button>
         <button
           onClick={handleMaximize}
           className="p-2 rounded-lg transition-colors hover:bg-white/5"
+          aria-label="Maximize window"
         >
           <Square className="w-3.5 h-3.5 text-slate-400" />
         </button>
         <button
           onClick={handleClose}
           className="p-2 rounded-lg hover:bg-red-500/20 transition-colors group"
+          aria-label="Close window"
         >
           <X className="w-4 h-4 text-slate-400 group-hover:text-red-400" />
         </button>

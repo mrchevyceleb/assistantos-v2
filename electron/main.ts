@@ -1,3 +1,7 @@
+// Load environment variables first
+import { config } from 'dotenv'
+config()
+
 import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, session } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -9,8 +13,37 @@ import { registerMCPHandlers, cleanupMCPHandlers } from './mcp/ipcHandlers.js'
 import { registerMemoryHandlers, cleanupMemoryHandlers } from './memory/ipcHandlers.js'
 import { registerSyncHandlers, cleanupSyncHandlers } from './services/sync/ipcHandlers.js'
 import { initAutoUpdater, checkForUpdates, getUpdateStatus, installUpdate } from './services/autoUpdater.js'
+import { registerSafeStorageHandlers, cleanupSafeStorageHandlers } from './security/safeStorageHandlers.js'
+import { registerAnthropicHandlers, cleanupAnthropicHandlers } from './api/anthropicHandlers.js'
 
 const execAsync = promisify(exec)
+
+// =============================================================================
+// Global Error Handlers
+// =============================================================================
+
+/**
+ * Handle unhandled promise rejections in the main process
+ * Prevents silent failures and logs errors for debugging
+ */
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Main] Unhandled Promise Rejection:')
+  console.error('  Promise:', promise)
+  console.error('  Reason:', reason)
+  // In production, you might want to send this to a crash reporting service
+})
+
+/**
+ * Handle uncaught exceptions in the main process
+ * Logs the error but keeps the app running if possible
+ */
+process.on('uncaughtException', (error, origin) => {
+  console.error('[Main] Uncaught Exception:')
+  console.error('  Error:', error)
+  console.error('  Origin:', origin)
+  // In production, you might want to send this to a crash reporting service
+  // For critical errors, you may want to exit: process.exit(1)
+})
 
 // =============================================================================
 // Security: Path Validation
@@ -107,7 +140,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false,
+      sandbox: true, // Enabled for security - restricts preload script to Electron APIs
       webviewTag: true,
     },
   })
@@ -151,9 +184,16 @@ app.whenReady().then(() => {
   createWindow()
 
   // Register handlers with mainWindow reference (for OAuth flow)
-  registerMCPHandlers(mainWindow)
-  registerMemoryHandlers()
-  registerSyncHandlers(mainWindow)
+  try {
+    registerMCPHandlers(mainWindow)
+    registerMemoryHandlers()
+    registerSyncHandlers(mainWindow)
+    registerSafeStorageHandlers()
+    registerAnthropicHandlers()
+    console.log('[Main] All IPC handlers registered')
+  } catch (error) {
+    console.error('[Main] Failed to register IPC handlers:', error)
+  }
 
   // Configure webview session for browser panel
   const browserSession = session.fromPartition('persist:browser')
@@ -215,6 +255,8 @@ app.on('before-quit', async () => {
   await cleanupMCPHandlers()
   cleanupMemoryHandlers()
   await cleanupSyncHandlers()
+  cleanupSafeStorageHandlers()
+  cleanupAnthropicHandlers()
 })
 
 // IPC Handlers for window controls
@@ -264,9 +306,23 @@ ipcMain.handle('app:getHomeDir', () => {
   return os.homedir()
 })
 
+// IPC Handler for getting environment variables (whitelist only)
+ipcMain.handle('app:getEnv', (_, key: string) => {
+  // Only expose specific safe environment variables
+  const allowedKeys = ['MEMORY_SUPABASE_URL', 'MEMORY_SUPABASE_ANON_KEY']
+  if (!allowedKeys.includes(key)) {
+    return null
+  }
+  return process.env[key] || null
+})
+
 // IPC Handlers for file system
 ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
   try {
+    if (!validatePath(dirPath)) {
+      console.error('Path validation failed for readDir:', dirPath)
+      return []
+    }
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
     const result = entries.map(entry => ({
       name: entry.name,
@@ -286,6 +342,10 @@ ipcMain.handle('fs:readDir', async (_, dirPath: string) => {
 
 ipcMain.handle('fs:readFile', async (_, filePath: string) => {
   try {
+    if (!validatePath(filePath)) {
+      console.error('Path validation failed for readFile:', filePath)
+      return null
+    }
     const content = await fs.promises.readFile(filePath, 'utf-8')
     return content
   } catch (error) {
@@ -297,6 +357,10 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
 // IPC Handler for reading files as base64 (for media files)
 ipcMain.handle('fs:readFileBase64', async (_, filePath: string) => {
   try {
+    if (!validatePath(filePath)) {
+      console.error('Path validation failed for readFileBase64:', filePath)
+      return { success: false, error: 'Invalid path - operation not allowed' }
+    }
     const buffer = await fs.promises.readFile(filePath)
     const base64 = buffer.toString('base64')
     return { success: true, data: base64 }
@@ -308,11 +372,16 @@ ipcMain.handle('fs:readFileBase64', async (_, filePath: string) => {
 
 ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
   try {
+    if (!validatePath(filePath)) {
+      console.error('Path validation failed for writeFile:', filePath)
+      return { success: false, error: 'Invalid path - operation not allowed' }
+    }
     await fs.promises.writeFile(filePath, content, 'utf-8')
-    return true
+    return { success: true }
   } catch (error) {
     console.error('Error writing file:', error)
-    return false
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
   }
 })
 
@@ -325,11 +394,16 @@ ipcMain.handle('fs:selectFolder', async () => {
 
 ipcMain.handle('fs:createDir', async (_, dirPath: string) => {
   try {
+    if (!validatePath(dirPath)) {
+      console.error('Path validation failed for createDir:', dirPath)
+      return { success: false, error: 'Invalid path - operation not allowed' }
+    }
     await fs.promises.mkdir(dirPath, { recursive: true })
-    return true
+    return { success: true }
   } catch (error) {
     console.error('Error creating directory:', error)
-    return false
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
   }
 })
 
@@ -345,6 +419,12 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
 // IPC Handler for renaming files/folders
 ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
   try {
+    // Validate paths
+    if (!validatePath(oldPath) || !validatePath(newPath)) {
+      console.error('Path validation failed for rename:', oldPath, '->', newPath)
+      return { success: false, error: 'Invalid path - operation not allowed' }
+    }
+
     // Check if source exists
     try {
       await fs.promises.access(oldPath)
@@ -385,6 +465,11 @@ ipcMain.handle('fs:rename', async (_, oldPath: string, newPath: string) => {
 // IPC Handler for deleting files/folders
 ipcMain.handle('fs:delete', async (_, targetPath: string) => {
   try {
+    if (!validatePath(targetPath)) {
+      console.error('Path validation failed for delete:', targetPath)
+      return { success: false, error: 'Invalid path - operation not allowed' }
+    }
+
     const stat = await fs.promises.stat(targetPath)
     if (stat.isDirectory()) {
       await fs.promises.rm(targetPath, { recursive: true, force: true })
@@ -539,6 +624,9 @@ async function searchDirectoryRecursively(
 
     for (const entry of entries) {
       if (results.length >= FILE_SEARCH_MAX_RESULTS) break
+
+      // Skip symlinks to prevent infinite loops
+      if (entry.isSymbolicLink()) continue
 
       const isHiddenDir = entry.name.startsWith('.') && entry.isDirectory()
       const isExcludedDir = entry.isDirectory() && EXCLUDED_DIRECTORIES.has(entry.name)
@@ -859,6 +947,9 @@ async function searchDirectoryContents(
     for (const entry of entries) {
       if (results.length >= CONTENT_SEARCH_MAX_RESULTS) break
 
+      // Skip symlinks to prevent infinite loops
+      if (entry.isSymbolicLink()) continue
+
       // Skip hidden and excluded directories
       if (entry.name.startsWith('.') || EXCLUDED_DIRECTORIES.has(entry.name)) continue
 
@@ -974,6 +1065,9 @@ async function findFilesRecursively(
 
     for (const entry of entries) {
       if (results.length >= maxResults) break
+
+      // Skip symlinks to prevent infinite loops
+      if (entry.isSymbolicLink()) continue
 
       const fullPath = path.join(dirPath, entry.name)
       const relativePath = path.relative(basePath, fullPath).replace(/\\/g, '/')
@@ -1095,6 +1189,9 @@ async function grepDirectoryContents(
     for (const entry of entries) {
       if (results.length >= maxResults) break
 
+      // Skip symlinks to prevent infinite loops
+      if (entry.isSymbolicLink()) continue
+
       // Skip hidden and excluded directories
       if (entry.name.startsWith('.') || EXCLUDED_DIRECTORIES.has(entry.name)) continue
 
@@ -1183,6 +1280,11 @@ ipcMain.handle('fs:edit', async (
   newText: string
 ) => {
   try {
+    if (!validatePath(filePath)) {
+      console.error('Path validation failed for edit:', filePath)
+      return { success: false, error: 'Invalid path - operation not allowed' }
+    }
+
     // Validate inputs
     if (!oldText) {
       return { success: false, error: 'old_text is required and cannot be empty' }

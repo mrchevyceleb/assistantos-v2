@@ -138,6 +138,7 @@ function AgentItem({
           opacity-0 group-hover:opacity-100
           p-1 rounded hover:bg-white/10 transition-opacity
         "
+        aria-label="Agent options menu"
       >
         <MoreHorizontal className="w-3.5 h-3.5" />
       </button>
@@ -266,6 +267,7 @@ export function AgentSection() {
             }
           `}
           title={canCreate ? 'New Agent (Ctrl+T)' : `Maximum ${MAX_AGENTS} agents`}
+          aria-label={canCreate ? 'Create new agent' : `Maximum ${MAX_AGENTS} agents reached`}
         >
           <Plus className="w-4 h-4" />
         </button>

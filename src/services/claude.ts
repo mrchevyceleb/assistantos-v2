@@ -253,6 +253,20 @@ export function buildMessageContent(
   return content;
 }
 
+/**
+ * ClaudeService - Agent SDK Implementation
+ *
+ * Uses the Anthropic Agent SDK for streaming responses with tool use.
+ * The Agent SDK runs in the renderer process for real-time streaming.
+ *
+ * Security Note: The `dangerouslyAllowBrowser: true` flag is required because
+ * this runs in Electron's renderer process. In a real browser, this would be
+ * a security concern, but in Electron with proper security settings
+ * (contextIsolation: true, nodeIntegration: false), the risk is mitigated.
+ *
+ * Simpler API calls (title generation, intent classification, key validation)
+ * are routed through IPC to the main process for enhanced security.
+ */
 export class ClaudeService {
   private client: Anthropic;
   private conversationHistory: MessageParam[] = [];
@@ -260,6 +274,8 @@ export class ClaudeService {
   private maxTokens: number;
 
   constructor(apiKey: string, model: string = 'claude-sonnet-4-20250514', maxTokens: number = 8192) {
+    // Agent SDK requires browser mode for streaming in Electron renderer
+    // See security note above for mitigations
     this.client = new Anthropic({
       apiKey,
       dangerouslyAllowBrowser: true

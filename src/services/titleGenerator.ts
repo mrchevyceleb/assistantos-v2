@@ -3,9 +3,8 @@
  *
  * Generates short, descriptive titles for chat conversations
  * using Claude Haiku for speed and cost efficiency.
+ * Uses secure IPC to make API calls from main process.
  */
-
-import Anthropic from '@anthropic-ai/sdk'
 
 /**
  * Generate a 2-4 word title for a chat based on the first message
@@ -26,15 +25,11 @@ export async function generateChatTitle(
   }
 
   try {
-    const anthropic = new Anthropic({
+    // Use secure IPC to make API call from main process
+    const result = await window.electronAPI.anthropic.createMessage({
       apiKey,
-      dangerouslyAllowBrowser: true,
-    })
-
-    // Use Haiku for speed and cost efficiency
-    const response = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
-      max_tokens: 20,
+      maxTokens: 20,
       messages: [{
         role: 'user',
         content: `Generate a 2-4 word title that summarizes this chat request. Be concise and descriptive. Only output the title, no quotes or punctuation.
@@ -45,9 +40,15 @@ Title:`,
       }],
     })
 
+    if (!result.success || !result.data) {
+      console.error('Failed to generate chat title:', result.error)
+      return fallbackTitle
+    }
+
     // Extract text from response
+    const response = result.data as { content: Array<{ type: string; text?: string }> }
     const content = response.content[0]
-    if (content.type === 'text') {
+    if (content.type === 'text' && content.text) {
       const title = content.text.trim()
         // Remove any quotes that might have been added
         .replace(/^["']|["']$/g, '')

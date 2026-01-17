@@ -6,6 +6,22 @@ Guidance for Claude Code working with this repository.
 
 AssistantOS is an Electron desktop app - a personal AI executive assistant with file system and shell access. Built with React, TypeScript, Vite, and Tailwind CSS.
 
+## CRITICAL: Claude Agent SDK Requirement
+
+**This app MUST use the Claude Agent SDK pattern - NEVER the normal Anthropic messages API.**
+
+- The main chat uses `client.messages.stream()` with tool use in an agentic loop
+- Location: `src/services/claude.ts` - ClaudeService class
+- Pattern: streaming + tool_use blocks + tool execution + feed results back + repeat
+- **DO NOT** replace this with simple `client.messages.create()` calls
+- **DO NOT** implement IPC wrappers that bypass the Agent SDK streaming pattern
+- For simple non-streaming API calls (title generation, intent classification, API key validation), IPC to main process is acceptable
+
+The Agent SDK pattern is essential for:
+1. Real-time streaming responses to the user
+2. Tool use detection and execution in an agentic loop
+3. Multi-iteration conversations with tools
+
 ## Dev Commands
 
 **Running**: `npm run dev` (Vite + Electron), `npm run dev:vite`, `npm run dev:electron`
@@ -25,9 +41,12 @@ AssistantOS is an Electron desktop app - a personal AI executive assistant with 
 Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context bridge.
 
 ### Claude Agent (`src/services/claude.ts`)
-- Streaming chat with tool use via Anthropic SDK
+**MUST use Claude Agent SDK pattern - see CRITICAL section above**
+- Streaming chat with tool use via `client.messages.stream()`
 - Agentic loop: detect tool_use → execute → feed results → repeat (max 20 iterations)
 - Manages conversation history
+- `dangerouslyAllowBrowser: true` required for Electron renderer (acceptable with contextIsolation)
+- **NEVER replace with simple messages.create() calls - this breaks the entire agent pattern**
 
 ### System Prompt (`src/services/systemPrompt.ts`, `src/services/contextService.ts`)
 3-layer prompt assembly at runtime:

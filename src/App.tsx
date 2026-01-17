@@ -43,7 +43,6 @@ function App() {
       if (customIntegrations.length > 0 && window.electronAPI?.mcp?.loadCustomIntegrations) {
         try {
           await window.electronAPI.mcp.loadCustomIntegrations(customIntegrations)
-          console.log(`[App] Loaded ${customIntegrations.length} custom integrations`)
         } catch (error) {
           console.warn('[App] Failed to load custom integrations:', error)
         }
@@ -63,8 +62,6 @@ function App() {
         return
       }
 
-      console.log(`[App] Initializing ${gmailAccounts.length} Gmail accounts`)
-
       for (const account of gmailAccounts) {
         try {
           // CRITICAL: Re-register virtual integration FIRST (before writing credentials)
@@ -75,7 +72,6 @@ function App() {
               account.label,
               account.email
             )
-            console.log(`[App] Re-registered virtual integration: ${account.integrationId}`)
           }
 
           // Write credential files for this account
@@ -96,8 +92,6 @@ function App() {
               })
             }
           }
-
-          console.log(`[App] Initialized Gmail account: ${account.label} (${account.integrationId})`)
         } catch (error) {
           console.warn(`[App] Failed to initialize Gmail account ${account.label}:`, error)
         }
@@ -105,7 +99,6 @@ function App() {
 
       // Mark initialization as complete
       setGmailInitComplete(true)
-      console.log('[App] Gmail account initialization complete')
     }
     initializeGmailAccounts()
   }, [gmailAccounts])
@@ -146,11 +139,9 @@ function App() {
       }
 
       const hasEnabled = Object.values(mergedConfigs).some(c => c.enabled)
-      console.log('[App] Pre-start mergedConfigs keys:', Object.keys(mergedConfigs).filter(k => mergedConfigs[k].enabled))
       if (hasEnabled && window.electronAPI?.mcp?.preStartEnabled) {
         try {
           await window.electronAPI.mcp.preStartEnabled(mergedConfigs)
-          console.log('[App] MCP servers pre-started')
         } catch (error) {
           console.warn('[App] Failed to pre-start MCP servers:', error)
         }

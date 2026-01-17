@@ -68,11 +68,8 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
       return
     }
 
-    const oldStatus = task.status
     const statusLabel = TASK_STATUS_CONFIG[newStatus].label
     const taskTitle = isSyncTask(task) ? task.title : task.text
-
-    console.log(`[Kanban] Moving task "${taskTitle}" from ${oldStatus} to ${newStatus}`)
 
     setUpdating(true)
     try {
@@ -80,8 +77,6 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
 
       if (isSyncTask(task)) {
         // Cloud mode: update via taskStore
-        console.log(`[Kanban] Updating cloud task ${task.id}`)
-
         // Calculate new sort order (put at end of target column)
         const tasksInTargetColumn = tasks.filter(t => t.status === newStatus)
         const maxSortOrder = tasksInTargetColumn.length > 0
@@ -92,12 +87,10 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
         success = await taskStore.updateTaskStatus(task.id, newStatus, newSortOrder)
       } else {
         // File mode: update via taskParser
-        console.log(`[Kanban] Task file: ${task.filePath}, line: ${task.lineNumber}`)
         success = await updateFileTaskStatus(task.filePath, task.lineNumber, newStatus)
       }
 
       if (success) {
-        console.log(`[Kanban] Task status updated successfully`)
         // Refresh the task list (for file mode; cloud mode updates optimistically)
         if (!isSyncTask(task)) {
           onTaskUpdate()
@@ -207,7 +200,10 @@ export function KanbanBoard({ tasks, settings, onTaskUpdate }: KanbanBoardProps)
         const projectPath = `${tasksPath}/${projectName}`
         const projectExists = await window.electronAPI.fs.exists(projectPath)
         if (!projectExists) {
-          await window.electronAPI.fs.createDir(projectPath)
+          const dirResult = await window.electronAPI.fs.createDir(projectPath)
+          if (!dirResult.success) {
+            console.error('Failed to create project folder:', dirResult.error)
+          }
         }
 
         // Create task file with filename convention: "ProjectName - Task Title - Due YYYY-MM-DD.md"
@@ -230,13 +226,13 @@ Add task description here...
 
 `
 
-        const success = await window.electronAPI.fs.writeFile(filePath, content)
-        if (success) {
+        const result = await window.electronAPI.fs.writeFile(filePath, content)
+        if (result.success) {
           // Refresh the task list
           onTaskUpdate()
           setShowNewTaskDialog(false)
         } else {
-          console.error('Failed to create task file')
+          console.error('Failed to create task file:', result.error)
         }
       }
     } catch (err) {

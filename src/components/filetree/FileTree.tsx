@@ -221,7 +221,6 @@ export function FileTree() {
 
   // Handle right-click context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
-    console.log('[Bug-Hunter] FileTree handleContextMenu called', { x: e.clientX, y: e.clientY, entry: entry.name })
     e.preventDefault()
     e.stopPropagation()
     setSelectedPath(entry.path)
@@ -230,7 +229,6 @@ export function FileTree() {
       y: e.clientY,
       entry
     })
-    console.log('[Bug-Hunter] FileTree contextMenu state set')
   }, [])
 
   // Handle drag start for file/folder entries
@@ -314,16 +312,16 @@ export function FileTree() {
     const newPath = path.join(newItemState.parentPath, name)
 
     if (newItemState.type === 'folder') {
-      const success = await window.electronAPI.fs.createDir(newPath)
-      if (success) {
+      const result = await window.electronAPI.fs.createDir(newPath)
+      if (result.success) {
         // Expand parent folder
         setExpandedPaths(prev => new Set([...prev, newItemState.parentPath]))
         await loadWorkspace()
       }
     } else {
       // Create empty file
-      const success = await window.electronAPI.fs.writeFile(newPath, '')
-      if (success) {
+      const result = await window.electronAPI.fs.writeFile(newPath, '')
+      if (result.success) {
         // Expand parent folder and open new file
         setExpandedPaths(prev => new Set([...prev, newItemState.parentPath]))
         await loadWorkspace()
@@ -558,7 +556,6 @@ export function FileTree() {
       {/* Context Menu */}
       {contextMenu && (
         <>
-          {console.log('[Bug-Hunter] FileTree rendering FileContextMenu', contextMenu)}
           <FileContextMenu
             x={contextMenu.x}
             y={contextMenu.y}

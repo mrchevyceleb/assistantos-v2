@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Square, X, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain, Mic, MicOff } from 'lucide-react'
+import { Send, X, Bot, User, Settings2, Sparkles, Terminal, ChevronDown, ChevronRight, Trash2, Brain, Mic, MicOff } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { LinkifiedText } from './LinkifiedText'
 
@@ -71,15 +71,12 @@ interface AttachedImage {
  * Convert a File to AttachedImage format
  */
 async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
-  console.log('[fileToAttachedImage] Processing:', file.name, file.type, file.size)
-
   // Validate file type (be lenient for Windows clipboard)
   const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
   const isValidMime = validTypes.includes(file.type)
   const hasImageExtension = /\.(png|jpe?g|gif|webp)$/i.test(file.name)
 
   if (!isValidMime && !hasImageExtension) {
-    console.warn('[fileToAttachedImage] Unsupported image type:', file.type, file.name)
     return null
   }
 
@@ -92,13 +89,11 @@ async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
     else if (ext === 'gif') mediaType = 'image/gif'
     else if (ext === 'webp') mediaType = 'image/webp'
     else mediaType = 'image/png' // default fallback
-    console.log('[fileToAttachedImage] Inferred media type:', mediaType)
   }
 
   // Size validation (max 10MB to prevent memory issues)
   const maxSize = 10 * 1024 * 1024
   if (file.size > maxSize) {
-    console.warn('[fileToAttachedImage] File too large:', file.size, 'bytes')
     return null
   }
 
@@ -109,7 +104,6 @@ async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
       try {
         const dataUrl = e.target?.result as string
         if (!dataUrl) {
-          console.error('[fileToAttachedImage] No data URL generated')
           resolve(null)
           return
         }
@@ -118,7 +112,6 @@ async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
         const base64Data = dataUrl.split(',')[1]
 
         if (!base64Data) {
-          console.error('[fileToAttachedImage] Failed to extract base64 data')
           resolve(null)
           return
         }
@@ -131,16 +124,15 @@ async function fileToAttachedImage(file: File): Promise<AttachedImage | null> {
           name: file.name || 'pasted-image.png'
         }
 
-        console.log('[fileToAttachedImage] Success:', image.name, 'size:', base64Data.length)
         resolve(image)
       } catch (err) {
-        console.error('[fileToAttachedImage] Error in onload:', err)
+        console.error('[Image] Error processing file:', err)
         resolve(null)
       }
     }
 
     reader.onerror = (err) => {
-      console.error('[fileToAttachedImage] FileReader error:', err)
+      console.error('[Image] FileReader error:', err)
       resolve(null)
     }
 
@@ -201,7 +193,6 @@ function sanitizeMCPTools(tools: any[]): { tools: any[], nameMap: Map<string, st
       const originalName = tool.name
       const sanitizedName = sanitizeToolName(tool.name)
       nameMap.set(sanitizedName, originalName)
-      console.log(`[Tool Sanitizer] Renamed tool.name: ${originalName} → ${sanitizedName}`)
       return { ...tool, name: sanitizedName }
     }
 
@@ -210,7 +201,6 @@ function sanitizeMCPTools(tools: any[]): { tools: any[], nameMap: Map<string, st
       const originalName = tool.custom.name
       const sanitizedName = sanitizeToolName(tool.custom.name)
       nameMap.set(sanitizedName, originalName)
-      console.log(`[Tool Sanitizer] Renamed tool.custom.name: ${originalName} → ${sanitizedName}`)
       return {
         ...tool,
         custom: { ...tool.custom, name: sanitizedName }
@@ -224,43 +214,8 @@ function sanitizeMCPTools(tools: any[]): { tools: any[], nameMap: Map<string, st
 }
 
 /**
- * Prepare tools for a message - SELECTIVE loading based on @mentions
- * Only loads MCP tools when that integration is @mentioned
- */
-async function prepareToolsForMessage(
-  message: string,
-  integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>,
-  workspacePath: string | null = null
-) {
-  // Always include core tools
-  const tools = [...allTools]
-
-  // Parse @mentions from message
-  const { mentions: mentionedIntegrationIds } = await parseMessage(message, workspacePath)
-
-  // Filter to only enabled integrations that were @mentioned
-  const enabledMentionedIds = mentionedIntegrationIds.filter(id =>
-    integrationConfigs[id]?.enabled
-  )
-
-  if (enabledMentionedIds.length === 0) {
-    return tools
-  }
-
-  try {
-    const mcpTools = await getCachedMCPTools(enabledMentionedIds)
-    const { tools: sanitizedTools } = sanitizeMCPTools(mcpTools)
-    console.log(`[AgentChatContainer] Loaded ${sanitizedTools.length} tools for @mentioned integrations: ${enabledMentionedIds.join(', ')}`)
-    return [...tools, ...sanitizedTools]
-  } catch (e) {
-    console.error('Failed to load MCP tools:', e)
-    return tools
-  }
-}
-
-/**
  * Prepare ALL enabled tools for context usage calculation
- * Unlike prepareToolsForMessage, this loads all enabled integrations regardless of @mentions
+ * This loads all enabled integrations regardless of @mentions
  */
 async function prepareAllEnabledTools(
   integrationConfigs: Record<string, { enabled: boolean; envVars: Record<string, string> }>
@@ -351,11 +306,10 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const claudeServiceRef = useRef<ClaudeService | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Helper function to show notifications
+  // Helper function to show notifications (placeholder - integrate with app notification system)
   const addNotification = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error') => {
-    // Simple console notification for now (can be extended with a proper notification system)
-    console.log(`[${type.toUpperCase()}] ${title}: ${message}`)
     // TODO: Integrate with app notification system if available
+    void { title, message, type }
   }
 
   // Get messages from agent
@@ -387,7 +341,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         setAgentConversationIdStore(agentId, result.conversationId)
         // Also update the chat history service mapping
         setAgentConversationId(agentId, result.conversationId)
-        console.log('[AgentChat] Autosaved conversation:', result.conversationId)
       }
     },
   })
@@ -411,10 +364,9 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   // Load skills from ~/.claude/skills and ~/.claude/commands on mount
   useEffect(() => {
     loadAllSkills().then(skills => {
-      console.log(`[AgentChatContainer] Loaded ${skills.length} skills from disk`)
       setLoadedSkills(skills)
     }).catch(err => {
-      console.error('[AgentChatContainer] Error loading skills:', err)
+      console.error('[Skills] Error loading skills:', err)
     })
   }, [setLoadedSkills])
 
@@ -498,12 +450,9 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
   // Initialize Web Speech API (ONCE - no dependencies to avoid recreation)
   useEffect(() => {
-    console.log('[Bug-Hunter] Initializing Web Speech API')
-
     // Check for browser support
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
-      console.warn('[Bug-Hunter] Web Speech API not supported in this browser')
       return
     }
 
@@ -513,29 +462,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     recognition.interimResults = true // Get partial results while speaking
     recognition.lang = 'en-US' // Default to English
 
-    console.log('[Bug-Hunter] Recognition instance created:', {
-      continuous: recognition.continuous,
-      interimResults: recognition.interimResults,
-      lang: recognition.lang
-    })
-
-    // Handle start event
-    recognition.onstart = () => {
-      console.log('[Bug-Hunter] Recognition STARTED - now listening for speech')
-    }
-
     // Handle results
     recognition.onresult = (event: any) => {
-      console.log('[Bug-Hunter] onresult fired! Event:', {
-        resultIndex: event.resultIndex,
-        resultsLength: event.results.length,
-        results: Array.from(event.results).map((r: any) => ({
-          transcript: r[0].transcript,
-          isFinal: r.isFinal,
-          confidence: r[0].confidence
-        }))
-      })
-
       let interimText = ''
       let finalText = ''
 
@@ -543,10 +471,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         const transcript = event.results[i][0].transcript
         if (event.results[i].isFinal) {
           finalText += transcript + ' '
-          console.log('[Bug-Hunter] Final text captured:', transcript)
         } else {
           interimText += transcript
-          console.log('[Bug-Hunter] Interim text captured:', transcript)
         }
       }
 
@@ -555,14 +481,11 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
       // Append final results to input
       if (finalText) {
-        console.log('[Bug-Hunter] Appending final text to input:', finalText)
         setInput(prevInput => {
           const baseInput = recordingStartInputRef.current
           const currentFinalText = prevInput.slice(baseInput.length).trim()
           const newFinalText = (currentFinalText + ' ' + finalText).trim()
-          const result = baseInput + (baseInput && newFinalText ? ' ' : '') + newFinalText
-          console.log('[Bug-Hunter] Input updated:', { prevInput, baseInput, newFinalText, result })
-          return result
+          return baseInput + (baseInput && newFinalText ? ' ' : '') + newFinalText
         })
         setInterimTranscript('')
       }
@@ -570,7 +493,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
     // Handle errors
     recognition.onerror = (event: any) => {
-      console.error('[Bug-Hunter] Speech recognition error:', event.error, event)
+      console.error('[Voice] Speech recognition error:', event.error)
 
       if (event.error === 'not-allowed' || event.error === 'permission-denied') {
         addNotification(
@@ -579,7 +502,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           'error'
         )
       } else if (event.error === 'no-speech') {
-        console.warn('[Bug-Hunter] No speech detected - but this is normal, not stopping recording')
         // Don't stop recording on no-speech - let user decide when to stop
         return
       } else if (event.error === 'network') {
@@ -601,30 +523,21 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       setInterimTranscript('')
     }
 
-    // Handle end of recognition
+    // Handle end of recognition - restart if still recording
     recognition.onend = () => {
-      console.log('[Bug-Hunter] Recognition ended. isRecordingRef.current:', isRecordingRef.current)
-
-      // Use ref instead of state to avoid stale closure
       if (isRecordingRef.current) {
-        console.log('[Bug-Hunter] Still recording, restarting recognition...')
         try {
           recognition.start()
-          console.log('[Bug-Hunter] Recognition restarted successfully')
-        } catch (e) {
-          console.log('[Bug-Hunter] Recognition already started or error:', e)
+        } catch {
+          // Recognition already started or error - ignore
         }
-      } else {
-        console.log('[Bug-Hunter] Recording stopped, not restarting')
       }
     }
 
     recognitionRef.current = recognition
-    console.log('[Bug-Hunter] Recognition instance stored in ref')
 
     // Cleanup
     return () => {
-      console.log('[Bug-Hunter] Cleanup: stopping recognition')
       if (recognitionRef.current) {
         recognitionRef.current.stop()
       }
@@ -633,10 +546,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
   // Start voice recording
   const startVoiceRecording = async () => {
-    console.log('[Bug-Hunter] startVoiceRecording called')
-
     if (!recognitionRef.current) {
-      console.error('[Bug-Hunter] No recognition instance available')
       addNotification(
         'Voice Input Not Supported',
         'Your browser does not support voice input. Try Chrome or Edge.',
@@ -648,16 +558,13 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     try {
       // Store current input so we can append to it
       recordingStartInputRef.current = input
-      console.log('[Bug-Hunter] Stored base input:', input)
 
       // Set BOTH state and ref (ref for onend handler)
       setIsRecording(true)
       isRecordingRef.current = true
       setInterimTranscript('')
 
-      console.log('[Bug-Hunter] Calling recognition.start()...')
       recognitionRef.current.start()
-      console.log('[Bug-Hunter] recognition.start() called successfully')
 
       addNotification(
         'Voice Recording Started',
@@ -665,7 +572,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         'info'
       )
     } catch (error) {
-      console.error('[Bug-Hunter] Error starting recognition:', error)
+      console.error('[Voice] Error starting recognition:', error)
       addNotification(
         'Recording Failed',
         'Could not start voice recording. Please try again.',
@@ -678,10 +585,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
   // Stop voice recording
   const stopVoiceRecording = () => {
-    console.log('[Bug-Hunter] stopVoiceRecording called')
-
     if (recognitionRef.current) {
-      console.log('[Bug-Hunter] Calling recognition.stop()...')
       recognitionRef.current.stop()
     }
 
@@ -689,8 +593,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     setIsRecording(false)
     isRecordingRef.current = false
     setInterimTranscript('')
-
-    console.log('[Bug-Hunter] Recording stopped')
 
     addNotification(
       'Voice Recording Stopped',
@@ -808,10 +710,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
   // Handle clipboard paste for images
   const handlePaste = async (e: React.ClipboardEvent) => {
-    console.log('[Paste] Clipboard event triggered')
-    console.log('[Paste] Items:', Array.from(e.clipboardData.items).map(i => ({ type: i.type, kind: i.kind })))
-    console.log('[Paste] Files:', Array.from(e.clipboardData.files).map(f => ({ name: f.name, type: f.type, size: f.size })))
-
     // Strategy 1: Check clipboard items (works for most browsers)
     const items = Array.from(e.clipboardData.items)
     const imageItems = items.filter(item => item.type.startsWith('image/'))
@@ -823,12 +721,10 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     const hasImages = imageItems.length > 0 || imageFiles.length > 0
 
     if (!hasImages) {
-      console.log('[Paste] No images detected in clipboard')
       return // Let default paste behavior handle text
     }
 
     e.preventDefault() // Prevent pasting image as text/filename
-    console.log('[Paste] Processing images:', { itemCount: imageItems.length, fileCount: imageFiles.length })
 
     const newImages: AttachedImage[] = []
     let failedCount = 0
@@ -837,13 +733,10 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       // Process clipboard items first (inline image data)
       for (const item of imageItems) {
         try {
-          console.log('[Paste] Processing item:', item.type)
           const image = await clipboardToAttachedImage(item)
           if (image) {
             newImages.push(image)
-            console.log('[Paste] Item processed successfully:', image.name)
           } else {
-            console.warn('[Paste] Item returned null:', item.type)
             failedCount++
           }
         } catch (err) {
@@ -854,16 +747,12 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
       // Process files if items didn't work (Windows fallback)
       if (newImages.length === 0 && imageFiles.length > 0) {
-        console.log('[Paste] Falling back to file-based paste')
         for (const file of imageFiles) {
           try {
-            console.log('[Paste] Processing file:', file.name, file.type)
             const image = await fileToAttachedImage(file)
             if (image) {
               newImages.push(image)
-              console.log('[Paste] File processed successfully:', image.name)
             } else {
-              console.warn('[Paste] File returned null:', file.name)
               failedCount++
             }
           } catch (err) {
@@ -876,7 +765,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       // Update state and notify user
       if (newImages.length > 0) {
         setAttachedImages(prev => [...prev, ...newImages])
-        console.log('[Paste] Successfully attached images:', newImages.length)
 
         // Success notification
         addNotification(
@@ -893,14 +781,13 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       if (failedCount > 0) {
         addNotification(
           'Partial Paste Failure',
-          `${failedCount} image${failedCount > 1 ? 's' : ''} could not be processed. Check console for details.`,
+          `${failedCount} image${failedCount > 1 ? 's' : ''} could not be processed.`,
           'warning'
         )
       }
 
       // Error notification if all failed
       if (newImages.length === 0 && (imageItems.length > 0 || imageFiles.length > 0)) {
-        console.error('[Paste] All images failed to process')
         addNotification(
           'Paste Failed',
           'Could not process clipboard images. Try drag & drop or the file picker instead.',
@@ -921,7 +808,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const stopResponse = () => {
     if (!isLoading) return
 
-    console.log('[Stop] User stopped AI response with Esc+Esc')
     setIsLoading(false)
     setIsInterrupting(false)
     partialResponseRef.current = ''
@@ -935,21 +821,16 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   }
 
   // Interrupt current AI response and restart with new user message (Claude Code style)
-  const interruptAndRestart = async (newMessage: string, imagesToSend: AttachedImage[]) => {
+  const interruptAndRestart = async (newMessage: string, _imagesToSend: AttachedImage[]) => {
     if (!isLoading || isInterrupting) return
 
-    console.log('[Interrupt] User sending new message during AI response')
     setIsInterrupting(true)
 
     try {
-      // Step 1: Salvage partial response (let it stand as-is, no interruption marker)
-      const partialResponse = partialResponseRef.current || ''
-      console.log('[Interrupt] Salvaged partial response:', partialResponse.substring(0, 100))
-
-      // Step 2: Just keep the partial response as-is (no "[Interrupted...]" marker)
+      // Salvage partial response (let it stand as-is, no interruption marker)
       // The partial response will remain visible and the new user message will follow naturally
 
-      // Step 3: Clear state and prepare for new message
+      // Clear state and prepare for new message
       setInput('')
       setAttachedImages([])
       setMentionSuggestions([])
@@ -957,23 +838,21 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       setActiveDocuments([])
       setIsLoading(false)
       if (isToolExecuting) {
-        console.warn('[Interrupt] Redirecting during tool execution')
         setIsToolExecuting(false)
       }
       partialResponseRef.current = ''
 
-      // Step 4: Brief delay for state to settle
+      // Brief delay for state to settle
       await new Promise(resolve => setTimeout(resolve, 100))
 
-      // Step 5: Send new message (conversation naturally continues)
-      console.log('[Interrupt] Sending new message:', newMessage.substring(0, 50))
+      // Send new message (conversation naturally continues)
       setInput(newMessage)
       await new Promise(resolve => setTimeout(resolve, 30))
       // Call handleSendMessage with skipInterruptCheck=true to avoid loop
       await handleSendMessage(true)
 
     } catch (err) {
-      console.error('[Interrupt] Error during redirect:', err)
+      console.error('[Chat] Error during interrupt redirect:', err)
       addNotification(
         'Redirect Failed',
         'Could not send new message. Please try again.',
@@ -992,7 +871,6 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
     // INTERRUPT LOGIC: If AI is currently responding, interrupt it and restart with new context
     if (!skipInterruptCheck && isLoading && !isInterrupting) {
-      console.log('[Interrupt] User sent message during AI response - triggering interrupt')
       await interruptAndRestart(input.trim(), attachedImages)
       return
     }
@@ -1081,9 +959,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
               name: int.name,
               description: int.description
             }))
-          console.log(`[AgentChatContainer] Loaded integrations for agent ${agent.id}:`, loadedIntegrationIds)
         } catch (e) {
-          console.error('Failed to fetch integration metadata:', e)
+          console.error('[MCP] Failed to fetch integration metadata:', e)
         }
       }
 
@@ -1104,31 +981,16 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       const toolExecutor = async (name: string, input: Record<string, unknown>) => {
         // Check if this is a sanitized name that needs translation
         const originalName = nameMap.get(name) || name
-        if (originalName !== name) {
-          console.log(`[Tool Executor] Translating: ${name} → ${originalName}`)
-        }
-
-        console.log(`[Tool Executor] Executing tool: ${originalName}`, {
-          sanitizedName: name,
-          originalName,
-          input,
-          wasTranslated: originalName !== name
-        })
 
         const integrationId = extractIntegrationId(originalName)
         if (integrationId) {
-          console.log(`[Tool Executor] Extracted integrationId: ${integrationId}`)
           markToolUsed(agent.id, integrationId)
-        } else {
-          console.log(`[Tool Executor] No integrationId extracted from: ${originalName}`)
         }
 
         try {
-          const result = await baseToolExecutor(originalName, input)
-          console.log(`[Tool Executor] SUCCESS for ${originalName}`, result)
-          return result
+          return await baseToolExecutor(originalName, input)
         } catch (error) {
-          console.error(`[Tool Executor] FAILED for ${originalName}`, error)
+          console.error(`[Tool] Failed: ${originalName}`, error)
           throw error
         }
       }
@@ -1451,10 +1313,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
           {/* Settings */}
           <button
-            onClick={() => {
-              console.log('Settings button clicked')
-              setShowSettingsModal(true)
-            }}
+            onClick={() => setShowSettingsModal(true)}
             className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
             title="Settings"
             type="button"

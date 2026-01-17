@@ -105,8 +105,8 @@ export function MarkdownEditor() {
   const handleSave = async () => {
     if (!currentFile || !window.electronAPI || !hasChanges) return
     setIsSaving(true)
-    const success = await window.electronAPI.fs.writeFile(currentFile, content)
-    if (success) {
+    const result = await window.electronAPI.fs.writeFile(currentFile, content)
+    if (result.success) {
       setOriginalContent(content)
     }
     setIsSaving(false)

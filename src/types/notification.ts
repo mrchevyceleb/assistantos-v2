@@ -1,5 +1,13 @@
 export type NotificationLevel = 'info' | 'success' | 'warning' | 'error'
 
+// Action types for notification interactions
+export type NotificationAction =
+  | { type: 'openAgent'; agentId: string }
+  | { type: 'openFile'; path: string }
+  | { type: 'openTab'; tabId: string }
+  | { type: 'openUrl'; url: string }
+  | { type: 'runCommand'; command: string }
+
 export interface Notification {
   id: string
   title: string
@@ -9,7 +17,7 @@ export interface Notification {
   read: boolean
   agentId?: string // Optional: link to specific agent
   actionLabel?: string // Optional: button label (e.g., "View", "Open")
-  actionData?: any // Optional: data for the action
+  actionData?: NotificationAction // Optional: typed action data
 }
 
 export interface NotificationFilter {

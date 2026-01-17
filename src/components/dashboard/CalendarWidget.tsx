@@ -56,13 +56,11 @@ export function CalendarWidget() {
 
       // List available tools
       const availableTools = await window.electronAPI?.mcp.getTools(['calendar'])
-      console.log('[CalendarWidget] Available tools:', availableTools)
 
       // Find the list-events tool
       const listEventsTool = availableTools?.find((t: any) =>
         t.name?.includes('list') && t.name?.includes('event')
       )
-      console.log('[CalendarWidget] Using tool:', listEventsTool?.name)
 
       const result = await window.electronAPI?.mcp.executeTool(
         'calendar',
@@ -75,7 +73,6 @@ export function CalendarWidget() {
       )
 
       if (result?.success && result.result) {
-        console.log('[CalendarWidget] Raw result:', JSON.stringify(result.result, null, 2).substring(0, 1000))
 
         // Helper to extract datetime string from various formats
         const extractDateTime = (dateObj: any): string => {
@@ -110,7 +107,6 @@ export function CalendarWidget() {
 
           // Now eventsData should be { events: [...], totalCount: 0 }
           const eventsList = eventsData.events || eventsData
-          console.log('[CalendarWidget] Parsed events:', eventsList)
 
           if (Array.isArray(eventsList)) {
             setEvents(eventsList.map((event: any) => ({
@@ -128,7 +124,6 @@ export function CalendarWidget() {
           setEvents([])
         }
       } else {
-        console.log('[CalendarWidget] No result or unsuccessful:', result)
         setEvents([])
       }
     } catch (err) {
@@ -173,6 +168,7 @@ export function CalendarWidget() {
       icon={<Calendar className="w-4 h-4" />}
       loading={loading}
       onRefresh={fetchEvents}
+      skeletonRows={4}
     >
       {error ? (
         <p className="text-sm text-red-400">{error}</p>

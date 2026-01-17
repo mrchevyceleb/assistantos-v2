@@ -451,8 +451,8 @@ export async function updateTaskStatus(
     lines[lineIndex] = line.replace(/- \[[ xXo>?]\]/, `- [${newCheckmark}]`)
 
     // Write back
-    await window.electronAPI.fs.writeFile(filePath, lines.join('\n'))
-    return true
+    const result = await window.electronAPI.fs.writeFile(filePath, lines.join('\n'))
+    return result.success
   } catch (err) {
     console.error('Error updating task status:', err)
     return false
@@ -501,7 +501,11 @@ export async function deleteTask(
     lines.splice(lineIndex, 1)
 
     // Write back
-    await window.electronAPI.fs.writeFile(filePath, lines.join('\n'))
+    const writeResult = await window.electronAPI.fs.writeFile(filePath, lines.join('\n'))
+    if (!writeResult.success) {
+      console.error('[taskParser] Failed to write updated file:', writeResult.error)
+      return false
+    }
     console.log('[taskParser] Line-level task deleted at line:', lineNumber)
     return true
   } catch (err) {
@@ -550,7 +554,11 @@ export async function createTaskFile(
     // Ensure tasks folder exists
     const exists = await window.electronAPI.fs.exists(tasksPath)
     if (!exists) {
-      await window.electronAPI.fs.createDir(tasksPath)
+      const dirResult = await window.electronAPI.fs.createDir(tasksPath)
+      if (!dirResult.success) {
+        console.error('[taskParser] Failed to create tasks folder:', dirResult.error)
+        return null
+      }
     }
 
     const filename = generateTaskFilename(projectName, taskTitle, dueDate)
@@ -578,7 +586,11 @@ export async function createTaskFile(
 ${description ? `---\n\n## Notes\n\n${description}\n` : ''}
 `
 
-    await window.electronAPI.fs.writeFile(filePath, content)
+    const writeResult = await window.electronAPI.fs.writeFile(filePath, content)
+    if (!writeResult.success) {
+      console.error('[taskParser] Failed to write task file:', writeResult.error)
+      return null
+    }
     return filePath
   } catch (err) {
     console.error('Error creating task file:', err)
@@ -649,7 +661,11 @@ export async function createProject(
     // Create TASKS folder if it doesn't exist
     const tasksExists = await window.electronAPI.fs.exists(tasksPath)
     if (!tasksExists) {
-      await window.electronAPI.fs.createDir(tasksPath)
+      const tasksDirResult = await window.electronAPI.fs.createDir(tasksPath)
+      if (!tasksDirResult.success) {
+        console.error('[taskParser] Failed to create tasks folder:', tasksDirResult.error)
+        return false
+      }
     }
 
     // Create project folder
@@ -659,7 +675,11 @@ export async function createProject(
       return false
     }
 
-    await window.electronAPI.fs.createDir(projectPath)
+    const projectDirResult = await window.electronAPI.fs.createDir(projectPath)
+    if (!projectDirResult.success) {
+      console.error('[taskParser] Failed to create project folder:', projectDirResult.error)
+      return false
+    }
 
     // Create initial tasks.md file
     const initialContent = `# ${projectName} Tasks
@@ -672,7 +692,11 @@ export async function createProject(
 
 Add any project notes here.
 `
-    await window.electronAPI.fs.writeFile(`${projectPath}/tasks.md`, initialContent)
+    const fileResult = await window.electronAPI.fs.writeFile(`${projectPath}/tasks.md`, initialContent)
+    if (!fileResult.success) {
+      console.error('[taskParser] Failed to create tasks.md:', fileResult.error)
+      return false
+    }
 
     return true
   } catch (err) {

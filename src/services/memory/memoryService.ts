@@ -53,7 +53,7 @@ export class MemoryService {
       return false
     }
 
-    this.client = getSupabaseClient() as SupabaseClientType
+    this.client = await getSupabaseClient() as SupabaseClientType
 
     // Ensure we have an anonymous ID
     if (!this.config.userId) {

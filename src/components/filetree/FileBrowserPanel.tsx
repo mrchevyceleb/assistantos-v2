@@ -233,12 +233,15 @@ export function FileBrowserPanel() {
     const newPath = path.join(newItemState.parentPath, name)
 
     if (window.electronAPI) {
+      let result
       if (newItemState.type === 'folder') {
-        await window.electronAPI.fs.createDir(newPath)
+        result = await window.electronAPI.fs.createDir(newPath)
       } else {
-        await window.electronAPI.fs.writeFile(newPath, '')
+        result = await window.electronAPI.fs.writeFile(newPath, '')
       }
-      loadCurrentDirectory()
+      if (result.success) {
+        loadCurrentDirectory()
+      }
     }
 
     setNewItemState(null)

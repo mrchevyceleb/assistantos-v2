@@ -174,6 +174,7 @@ export function ChatHistorySection({
                                 transition-colors
                               "
                               title="Open in new tab"
+                              aria-label="Open conversation in new tab"
                             >
                               <ExternalLink className="w-3 h-3" />
                             </button>
@@ -185,6 +186,7 @@ export function ChatHistorySection({
                                 transition-colors
                               "
                               title="Delete conversation"
+                              aria-label="Delete conversation"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>

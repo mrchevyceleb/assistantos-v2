@@ -542,28 +542,26 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setApiKeyError(null)
 
     try {
-      // Simple test: try to create a minimal message
-      const { Anthropic } = await import('@anthropic-ai/sdk')
-      const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+      // Use secure IPC to validate API key from main process
+      const result = await window.electronAPI.anthropic.validateKey(apiKey)
 
-      // Make a minimal request to test the key
-      await client.messages.create({
-        model: 'claude-3-5-haiku-20241022',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'test' }]
-      })
-
-      setApiKeyStatus('valid')
+      if (result.valid) {
+        setApiKeyStatus('valid')
+      } else {
+        setApiKeyStatus('invalid')
+        const errorMessage = result.error || 'Invalid API key'
+        if (errorMessage.includes('401') || errorMessage.toLowerCase().includes('invalid')) {
+          setApiKeyError('Invalid API key. Please check your key and try again.')
+        } else if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('rate')) {
+          setApiKeyError('Rate limited. Your API key is valid but you\'ve exceeded your quota.')
+        } else {
+          setApiKeyError(errorMessage)
+        }
+      }
     } catch (error) {
       setApiKeyStatus('invalid')
-      const err = error as { status?: number; message?: string }
-      if (err.status === 401) {
-        setApiKeyError('Invalid API key. Please check your key and try again.')
-      } else if (err.status === 429) {
-        setApiKeyError('Rate limited. Your API key is valid but you\'ve exceeded your quota.')
-      } else {
-        setApiKeyError(err.message || 'Failed to connect to Anthropic API')
-      }
+      const err = error as { message?: string }
+      setApiKeyError(err.message || 'Failed to connect to Anthropic API')
     }
   }
 

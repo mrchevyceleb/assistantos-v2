@@ -50,7 +50,7 @@ interface TaskStoreActions {
   reorderTasks: (taskOrders: Array<{ id: string; sortOrder: number }>) => Promise<void>
 
   // Real-time
-  subscribeToChanges: () => () => void
+  subscribeToChanges: () => Promise<() => void>
 
   // Migration
   importFromFiles: (
@@ -95,7 +95,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       set({ projects, loading: false })
 
       // Start real-time subscription
-      get().subscribeToChanges()
+      await get().subscribeToChanges()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to initialize'
       set({ error: message, loading: false })
@@ -263,11 +263,11 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   // Real-time Subscriptions
   // -------------------------------------------------------------------------
 
-  subscribeToChanges: () => {
+  subscribeToChanges: async () => {
     const { syncId } = get()
     if (!syncId) return () => {}
 
-    return taskSyncService.subscribeToTasks(syncId, {
+    const unsubscribe = await taskSyncService.subscribeToTasks(syncId, {
       onInsert: (task) => {
         set((state) => {
           // Avoid duplicates
@@ -295,6 +295,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         }))
       },
     })
+    return unsubscribe
   },
 
   // -------------------------------------------------------------------------

@@ -58,6 +58,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.90.1",
     "@tailwindcss/typography": "^0.5.19",
+    "dotenv": "^17.2.3",
     "electron-updater": "^6.7.3",
     "js-tiktoken": "^1.0.21",
     "lucide-react": "^0.562.0",

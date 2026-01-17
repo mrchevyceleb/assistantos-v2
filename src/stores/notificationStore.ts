@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Notification, NotificationLevel } from '@/types/notification'
+import { Notification, NotificationLevel, NotificationAction } from '@/types/notification'
 
 interface NotificationStore {
   notifications: Notification[]
@@ -14,7 +14,7 @@ interface NotificationStore {
     options?: {
       agentId?: string
       actionLabel?: string
-      actionData?: any
+      actionData?: NotificationAction
     }
   ) => void
   markAsRead: (id: string) => void

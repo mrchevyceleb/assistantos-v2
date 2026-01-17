@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     getHomeDir: () => ipcRenderer.invoke('app:getHomeDir'),
+    getEnv: (key: string) => ipcRenderer.invoke('app:getEnv', key),
   },
 
   // Workspace management (for security validation)
@@ -202,6 +203,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('sync:event', (_, event) => callback(event))
       return () => ipcRenderer.removeAllListeners('sync:event')
     }
+  },
+
+  // Secure Credential Storage (safeStorage)
+  safeStorage: {
+    isAvailable: () => ipcRenderer.invoke('safeStorage:isAvailable'),
+    setCredential: (key: string, value: string) => ipcRenderer.invoke('safeStorage:setCredential', key, value),
+    getCredential: (key: string) => ipcRenderer.invoke('safeStorage:getCredential', key),
+    deleteCredential: (key: string) => ipcRenderer.invoke('safeStorage:deleteCredential', key),
+    listKeys: () => ipcRenderer.invoke('safeStorage:listKeys'),
+  },
+
+  // Anthropic API (secure main process calls)
+  anthropic: {
+    validateKey: (apiKey: string) => ipcRenderer.invoke('anthropic:validateKey', apiKey),
+    createMessage: (params: {
+      apiKey: string
+      model: string
+      maxTokens: number
+      messages: Array<{ role: string; content: unknown }>
+      system?: string
+      tools?: unknown[]
+    }) => ipcRenderer.invoke('anthropic:messages:create', params),
+    streamMessage: (params: {
+      streamId: string
+      apiKey: string
+      model: string
+      maxTokens: number
+      messages: Array<{ role: string; content: unknown }>
+      system?: string
+      tools?: unknown[]
+    }) => ipcRenderer.invoke('anthropic:messages:stream', params),
+    cancelStream: (streamId: string) => ipcRenderer.invoke('anthropic:stream:cancel', streamId),
+    onStreamEvent: (streamId: string, callback: (data: { type: string; event?: unknown; message?: unknown; error?: string }) => void) => {
+      const channel = `anthropic:stream:${streamId}`
+      const handler = (_: unknown, data: { type: string; event?: unknown; message?: unknown; error?: string }) => callback(data)
+      ipcRenderer.on(channel, handler)
+      return () => ipcRenderer.removeListener(channel, handler)
+    },
   },
 })
 
@@ -421,6 +460,8 @@ declare global {
       close: () => Promise<void>
       app: {
         getVersion: () => Promise<string>
+        getHomeDir: () => Promise<string>
+        getEnv: (key: string) => Promise<string | null>
       }
       fs: {
         readDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDirectory: boolean }>>
@@ -541,6 +582,35 @@ declare global {
         deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>
         // Event listeners
         onEvent: (callback: (event: SyncEvent) => void) => () => void
+      }
+      safeStorage: {
+        isAvailable: () => Promise<boolean>
+        setCredential: (key: string, value: string) => Promise<{ success: boolean; error?: string }>
+        getCredential: (key: string) => Promise<{ success: boolean; value?: string | null; error?: string }>
+        deleteCredential: (key: string) => Promise<{ success: boolean; error?: string }>
+        listKeys: () => Promise<{ success: boolean; keys?: string[]; error?: string }>
+      }
+      anthropic: {
+        validateKey: (apiKey: string) => Promise<{ valid: boolean; error?: string }>
+        createMessage: (params: {
+          apiKey: string
+          model: string
+          maxTokens: number
+          messages: Array<{ role: string; content: unknown }>
+          system?: string
+          tools?: unknown[]
+        }) => Promise<{ success: boolean; data?: unknown; error?: string }>
+        streamMessage: (params: {
+          streamId: string
+          apiKey: string
+          model: string
+          maxTokens: number
+          messages: Array<{ role: string; content: unknown }>
+          system?: string
+          tools?: unknown[]
+        }) => Promise<{ success: boolean; error?: string }>
+        cancelStream: (streamId: string) => Promise<{ success: boolean; error?: string }>
+        onStreamEvent: (streamId: string, callback: (data: { type: string; event?: unknown; message?: unknown; error?: string }) => void) => () => void
       }
     }
   }

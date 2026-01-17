@@ -72,9 +72,6 @@ export async function getToolsForMessage(
     .filter(([_, config]) => config.enabled)
     .map(([id]) => id)
 
-  // DEBUG: Log enabled integrations to verify Gmail accounts are included
-  console.log('[Tool Manager] Enabled integrations:', enabledIds)
-
   // Always start with core tools
   const tools: Tool[] = [...coreTools]
 
@@ -103,15 +100,12 @@ export async function getToolsForMessage(
       .filter(m => m.confidence >= 0.4 && m.confidence <= 0.7)
 
     if (mediumConfidence.length > 0 && config.enableAIFallback) {
-      console.log('[Intent] Medium confidence matches, using AI fallback:', mediumConfidence.map(m => m.integrationId))
       try {
         const aiMatches = await aiClassifyIntent(message, apiKey, enabledIds)
         intentsToLoad.push(...aiMatches)
       } catch (error) {
-        console.error('[Intent] AI fallback failed, skipping:', error)
+        console.error('[Intent] AI fallback failed:', error)
       }
-    } else if (mediumConfidence.length > 0) {
-      console.log('[Intent] Medium confidence matches but AI fallback disabled:', mediumConfidence.map(m => m.integrationId))
     }
   }
 
@@ -129,7 +123,6 @@ export async function getToolsForMessage(
     if (id === 'gmail') {
       const gmailAccounts = enabledIds.filter(eid => eid.startsWith('gmail-'))
       if (gmailAccounts.length > 0) {
-        console.log(`[Tool Manager] Mapping 'gmail' to ALL multi-accounts:`, gmailAccounts)
         mappedIntents.push(...gmailAccounts)
         continue
       }
@@ -140,7 +133,6 @@ export async function getToolsForMessage(
     if (id === 'calendar') {
       const calendarAccounts = enabledIds.filter(eid => eid.startsWith('calendar-'))
       if (calendarAccounts.length > 0) {
-        console.log(`[Tool Manager] Mapping 'calendar' to ALL multi-accounts:`, calendarAccounts)
         mappedIntents.push(...calendarAccounts)
         continue
       }
@@ -165,7 +157,6 @@ export async function getToolsForMessage(
   if (finalIntents.length > config.maxLoadedTools) {
     // Sort by last used (most recent first)
     finalIntents = finalIntents.slice(0, config.maxLoadedTools)
-    console.log(`[Tool Manager] Enforcing max loaded tools (${config.maxLoadedTools}), keeping:`, finalIntents)
   }
 
   // Step 4: Load tools if needed
@@ -176,8 +167,6 @@ export async function getToolsForMessage(
       JSON.stringify(currentIds.sort()) !== JSON.stringify(finalIntents.sort())
 
     if (needsReload) {
-      console.log(`[Tool Manager] Loading tools for agent ${agentId}:`, finalIntents)
-
       try {
         const mcpTools = await getCachedMCPTools(finalIntents)
         tools.push(...mcpTools)
@@ -215,7 +204,6 @@ export async function getToolsForMessage(
         currentState.messagesSinceUse.set(id, 0)
       }
       currentState.lastUsed = Date.now()
-      console.log(`[Tool Manager] Reusing loaded tools for agent ${agentId}:`, finalIntents)
     }
   }
 
@@ -227,7 +215,6 @@ export async function getToolsForMessage(
 
         // Check if we should enter cooldown
         if (count + 1 >= config.idleThreshold) {
-          console.log(`[Tool Manager] Integration ${id} reached idle threshold (${config.idleThreshold}), entering cooldown`)
           startCooldownTimer(agentId, id, config.cooldownPeriod)
         }
       }
@@ -256,7 +243,6 @@ export function markToolUsed(agentId: string, integrationId: string): void {
       if (timer) {
         clearTimeout(timer)
         timers.delete(integrationId)
-        console.log(`[Tool Manager] Tool ${integrationId} used, cooldown cancelled`)
       }
     }
   }
@@ -269,7 +255,6 @@ export function pinIntegration(agentId: string, integrationId: string): void {
   const state = agentToolState.get(agentId)
   if (state) {
     state.pinnedIntegrations.add(integrationId)
-    console.log(`[Tool Manager] Integration ${integrationId} pinned for agent ${agentId}`)
   }
 }
 
@@ -280,7 +265,6 @@ export function unpinIntegration(agentId: string, integrationId: string): void {
   const state = agentToolState.get(agentId)
   if (state) {
     state.pinnedIntegrations.delete(integrationId)
-    console.log(`[Tool Manager] Integration ${integrationId} unpinned for agent ${agentId}`)
   }
 }
 
@@ -315,7 +299,6 @@ export async function manuallyLoadIntegration(
       })
     }
 
-    console.log(`[Tool Manager] Manually loaded ${integrationId} for agent ${agentId}`)
   } catch (error) {
     console.error(`[Tool Manager] Failed to manually load ${integrationId}:`, error)
   }
@@ -341,8 +324,6 @@ export function manuallyUnloadIntegration(agentId: string, integrationId: string
         timers.delete(integrationId)
       }
     }
-
-    console.log(`[Tool Manager] Manually unloaded ${integrationId} for agent ${agentId}`)
   }
 }
 
@@ -367,8 +348,6 @@ export function clearAgentTools(agentId: string): void {
     }
     cooldownTimers.delete(agentId)
   }
-
-  console.log(`[Tool Manager] Cleared tools for agent ${agentId}`)
 }
 
 /**
