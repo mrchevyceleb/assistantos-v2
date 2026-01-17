@@ -15,7 +15,9 @@ import {
   type GmailOAuthTokens
 } from './gmailCredentialManager.js';
 import {
-  credentialFilesExist as calendarCredentialsExist
+  credentialFilesExist as calendarCredentialsExist,
+  getCalendarEnvVars,
+  type CalendarOAuthTokens
 } from './calendarCredentialManager.js';
 
 export interface MCPTool {
@@ -99,6 +101,22 @@ export class MCPManager {
         console.log(`[MCPManager] Gmail credential files prepared for ${integrationId}`);
       } else {
         throw new Error(`Gmail account ${integrationId} missing OAuth tokens`);
+      }
+    } else if (integrationId === 'calendar') {
+      // Calendar MCP server expects credential files like Gmail
+      const tokens = configuredVars as any;
+      if (tokens.GOOGLE_ACCESS_TOKEN && tokens.GOOGLE_REFRESH_TOKEN && tokens.GOOGLE_TOKEN_EXPIRES_AT) {
+        const calendarTokens: CalendarOAuthTokens = {
+          accessToken: tokens.GOOGLE_ACCESS_TOKEN,
+          refreshToken: tokens.GOOGLE_REFRESH_TOKEN,
+          expiresAt: parseInt(tokens.GOOGLE_TOKEN_EXPIRES_AT, 10)
+        };
+
+        // Write credential files and get file paths as env vars
+        envVars = getCalendarEnvVars(calendarTokens);
+        console.log(`[MCPManager] Calendar credential files prepared`);
+      } else {
+        throw new Error(`Calendar integration missing OAuth tokens. Please connect Google Calendar in Settings.`);
       }
     } else {
       // Standard integration: Apply defaults first, then override with configured values
