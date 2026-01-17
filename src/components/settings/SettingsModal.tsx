@@ -1746,6 +1746,22 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         checking: false,
                         error: result.error || 'Update check failed'
                       }))
+                    } else {
+                      // Success - fetch the actual status
+                      const status = await window.electronAPI?.updater?.getStatus()
+                      if (status) {
+                        setUpdateStatus(prev => ({
+                          ...prev,
+                          checking: false,
+                          available: status.available || false,
+                          downloaded: status.downloaded || false,
+                          version: status.version || null,
+                          error: null
+                        }))
+                      } else {
+                        // No status returned, just clear checking
+                        setUpdateStatus(prev => ({ ...prev, checking: false }))
+                      }
                     }
                   } catch (error) {
                     // [Bug Fix] Also handle exceptions
