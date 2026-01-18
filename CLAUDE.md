@@ -43,7 +43,8 @@ Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context
 ### Claude Agent (`src/services/claude.ts`)
 **MUST use Claude Agent SDK pattern - see CRITICAL section above**
 - Streaming chat with tool use via `client.messages.stream()`
-- Agentic loop: detect tool_use → execute → feed results → repeat (max 20 iterations)
+- Agentic loop: detect tool_use → execute → feed results → repeat (max 30 iterations)
+- When iteration limit reached, shows helpful message: "say 'continue' to proceed"
 - Manages conversation history
 - `dangerouslyAllowBrowser: true` required for Electron renderer (acceptable with contextIsolation)
 - **NEVER replace with simple messages.create() calls - this breaks the entire agent pattern**
@@ -85,6 +86,12 @@ Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context
 - Real-time sync across devices via Supabase subscriptions
 - Input validation: required fields checked, dates parsed, status validated
 - Output formatted as Markdown with task details (ID, status, priority, due date, tags)
+
+**Memory Tools**: `remember_preference`
+- Saves user preferences to custom instructions when they say "always remember...", "from now on...", etc.
+- Implementation: `src/services/tools/memoryTools.ts`
+- Preferences stored in "Remembered Preferences" section of custom instructions
+- Persists across all future conversations
 
 **Other Tools**: `bash`, `create_mcp_integration`
 
@@ -287,6 +294,27 @@ When agent creates HTML files via `write_file`:
 - Status indicators: ● idle, ◐ working, ○ queued, ✕ error
 - Auto-naming via Claude Haiku
 - File lock store prevents conflicts (queue-based locking)
+
+**Message Type** (`src/stores/agentStore.ts`):
+```typescript
+interface Message {
+  id: string
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  timestamp: Date
+  toolName?: string
+  toolResult?: string
+  bookmarked?: boolean
+  images?: MessageImage[]  // Attached images (for user messages)
+}
+
+interface MessageImage {
+  preview: string    // data URL for display
+  mediaType: string  // e.g., 'image/png'
+}
+```
+- Images pasted/attached are stored with messages for display in chat history
+- Images are sent to Claude API as base64-encoded content
 
 **LUDICROUS MODE**: Grid view of all agents (`Ctrl+L`)
 

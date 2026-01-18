@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Tool, MessageParam, ContentBlock, ToolResultBlockParam, ImageBlockParam, TextBlockParam } from '@anthropic-ai/sdk/resources/messages';
 
 export interface ChatChunk {
-  type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'iteration_boundary' | 'aborted' | 'context_overflow';
+  type: 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'iteration_boundary' | 'aborted' | 'context_overflow' | 'iteration_limit';
   text?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
@@ -11,6 +11,8 @@ export interface ChatChunk {
   error?: string;
   /** For context_overflow type - indicates if recovery is possible */
   recoveryPossible?: boolean;
+  /** For iteration_limit type - iterations completed */
+  iterationsCompleted?: number;
 }
 
 /**
@@ -511,7 +513,7 @@ export class ClaudeService {
     });
 
     let continueLoop = true;
-    const maxIterations = 20; // Safety limit
+    const maxIterations = 30; // Safety limit - increased from 20 for complex multi-step tasks
     let iterations = 0;
 
     while (continueLoop && iterations < maxIterations) {
@@ -731,7 +733,11 @@ export class ClaudeService {
     }
 
     if (iterations >= maxIterations) {
-      yield { type: 'error', error: `Maximum iterations (${maxIterations}) reached. The task may be too complex for a single request.` };
+      yield {
+        type: 'iteration_limit',
+        error: `Reached ${maxIterations} tool iterations. To continue, just say "continue" or "keep going" and I'll pick up where I left off.`,
+        iterationsCompleted: iterations
+      };
     }
 
     yield { type: 'done' };

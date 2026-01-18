@@ -392,4 +392,27 @@ export const taskTools: Tool[] = [
   }
 ];
 
-export const allTools: Tool[] = [...fileTools, ...efficientTools, ...taskTools, bashTool, createIntegrationTool];
+/**
+ * Memory tool for saving user preferences to custom instructions
+ */
+export const rememberPreferenceTool: Tool = {
+  name: 'remember_preference',
+  description: 'Save a user preference to their custom instructions. Use this when the user says things like "always remember...", "from now on...", "I prefer...", "keep in mind that...", or explicitly asks you to remember something about their preferences. The preference will persist across all future conversations.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      preference: {
+        type: 'string',
+        description: 'The preference to save, written as a clear instruction (e.g., "Always use TypeScript instead of JavaScript", "Prefer functional components over class components")'
+      },
+      category: {
+        type: 'string',
+        enum: ['coding', 'communication', 'workflow', 'general'],
+        description: 'Category for organizing the preference. Use "coding" for programming preferences, "communication" for how you should respond, "workflow" for process preferences, "general" for everything else.'
+      }
+    },
+    required: ['preference']
+  }
+};
+
+export const allTools: Tool[] = [...fileTools, ...efficientTools, ...taskTools, bashTool, createIntegrationTool, rememberPreferenceTool];

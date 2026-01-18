@@ -82,6 +82,18 @@ You're a general-purpose assistant who excels at:
 | \`create_directory\` | Create new directories (with parent creation) |
 | \`bash\` | Execute shell commands (PowerShell on Windows, bash on Mac/Linux) |
 | \`create_mcp_integration\` | Create a custom MCP integration from an npm package |
+| \`remember_preference\` | Save user preferences to custom instructions for future conversations |
+
+## Remembering User Preferences
+
+When the user says things like:
+- "Remember that I prefer..."
+- "Always do X from now on"
+- "From now on, I want..."
+- "Keep in mind that..."
+- "Don't forget that I like..."
+
+Use the \`remember_preference\` tool to save this to their custom instructions. These preferences will persist across all future conversations. The preference should be written as a clear instruction.
 
 ## Custom MCP Integrations
 
@@ -211,6 +223,33 @@ function buildCapabilitySection(loadedIntegrations: EnabledIntegration[]): strin
     .map(int => `- **${int.name}**: ${int.description}`)
     .join('\n')
 
+  // Build integration-specific default behaviors
+  const integrationDefaults: string[] = []
+
+  // Gmail defaults - prioritize recent unread inbox
+  if (loadedIntegrations.some(int => int.id.startsWith('gmail'))) {
+    integrationDefaults.push(`### Gmail Defaults
+When checking email without specific criteria:
+- ALWAYS use query: \`in:inbox is:unread\` to show only unread inbox messages
+- For "recent emails" requests, add \`newer_than:7d\` to limit to last 7 days
+- Use \`maxResults: 10\` unless user explicitly asks for more
+- Prioritize showing the most recent messages first
+- If user asks for "all emails" or "old emails", adjust the query accordingly`)
+  }
+
+  // Calendar defaults
+  if (loadedIntegrations.some(int => int.id.startsWith('calendar'))) {
+    integrationDefaults.push(`### Calendar Defaults
+When checking schedule:
+- Default to today and the next 7 days
+- For "what's on my calendar" or similar, show today's events first
+- Include event times, titles, and locations when available`)
+  }
+
+  const defaultsSection = integrationDefaults.length > 0
+    ? `\n\n## Integration Behavior Defaults\n\n${integrationDefaults.join('\n\n')}`
+    : ''
+
   return `## Currently Available Integrations
 
 The following external service tools are loaded and ready to use right now:
@@ -224,7 +263,7 @@ These tools were loaded based on your request or conversation context. Use them 
 
 **Note**: Other integrations can be loaded by:
 1. User @mentioning them explicitly (e.g., "@gmail check email")
-2. Natural conversation that requires them (system will auto-detect and load)`
+2. Natural conversation that requires them (system will auto-detect and load)${defaultsSection}`
 }
 
 

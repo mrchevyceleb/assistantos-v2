@@ -3,6 +3,7 @@ import { executeBashTool } from './bashTool';
 import { executeCreateIntegration } from './integrationTool';
 import { executeEfficientTool } from './efficientTools';
 import { executeTaskTool } from './taskTools';
+import { executeMemoryTool } from './memoryTools';
 import { allTools } from './schemas';
 
 export { allTools } from './schemas';
@@ -10,9 +11,10 @@ export { allTools } from './schemas';
 const FILE_TOOLS = ['read_file', 'write_file', 'list_directory', 'file_exists', 'create_directory'];
 const EFFICIENT_TOOLS = ['grep', 'glob', 'edit'];
 const TASK_TOOLS = ['create_task', 'update_task', 'delete_task', 'get_task', 'list_tasks'];
+const MEMORY_TOOLS = ['remember_preference'];
 
 // Local tools that are always available
-const LOCAL_TOOLS = new Set([...FILE_TOOLS, ...EFFICIENT_TOOLS, ...TASK_TOOLS, 'bash', 'create_mcp_integration']);
+const LOCAL_TOOLS = new Set([...FILE_TOOLS, ...EFFICIENT_TOOLS, ...TASK_TOOLS, ...MEMORY_TOOLS, 'bash', 'create_mcp_integration']);
 
 /**
  * Execute a tool - routes to local handler or MCP server
@@ -37,6 +39,11 @@ export async function executeTool(
   // Handle task tools (create_task, update_task, delete_task, get_task, list_tasks)
   if (TASK_TOOLS.includes(name)) {
     return executeTaskTool(name, input);
+  }
+
+  // Handle memory tools (remember_preference)
+  if (MEMORY_TOOLS.includes(name)) {
+    return executeMemoryTool(name, input);
   }
 
   // Handle bash

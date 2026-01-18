@@ -678,15 +678,21 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
 
     const isFirstMessage = messages.length === 0
 
-    // Create user message (include image count in display)
+    // Create user message (include image count in display and store images for rendering)
     const displayContent = hasImages && !expandedInput.trim()
       ? `[${attachedImages.length} image${attachedImages.length > 1 ? 's' : ''} attached]`
-      : userInput
+      : hasImages
+        ? `${userInput}\n\n[${attachedImages.length} image${attachedImages.length > 1 ? 's' : ''} attached]`
+        : userInput
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
       content: displayContent,
       timestamp: new Date(),
+      images: hasImages ? attachedImages.map(img => ({
+        preview: img.preview,
+        mediaType: img.mediaType
+      })) : undefined
     }
 
     addMessage(agentId, userMessage)
@@ -881,6 +887,13 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
           setStatusMessage(null)
           updateMessage(agentId, assistantMessage.id, {
             content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + `\n\nError: ${chunk.error}`,
+          })
+        } else if (chunk.type === 'iteration_limit') {
+          // Hit the iteration limit - show a helpful message
+          setStatusMessage(null)
+          const currentContent = useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || ''
+          updateMessage(agentId, assistantMessage.id, {
+            content: currentContent + `\n\n---\n\n**Paused after ${chunk.iterationsCompleted} iterations.** ${chunk.error}`,
           })
         }
       }
@@ -1277,6 +1290,19 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
                 return (
                   <div key={message.id} className="flex gap-3 justify-end">
                     <div className="max-w-[80%] rounded-lg px-4 py-2 bg-cyan-500/20 text-white">
+                      {/* Render attached images */}
+                      {message.images && message.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {message.images.map((img, idx) => (
+                            <img
+                              key={idx}
+                              src={img.preview}
+                              alt={`Attached image ${idx + 1}`}
+                              className="max-w-[200px] max-h-[200px] rounded-lg object-contain border border-white/10"
+                            />
+                          ))}
+                        </div>
+                      )}
                       <div className="prose prose-invert prose-sm max-w-none">
                         <ReactMarkdown
                           components={{

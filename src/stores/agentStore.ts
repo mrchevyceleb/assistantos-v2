@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import { ModelId, DEFAULT_MODEL } from './appStore'
 
+// Image attachment stored with message for display
+export interface MessageImage {
+  preview: string          // data URL for display
+  mediaType: string        // e.g., 'image/png', 'image/jpeg'
+}
+
 // Message type - matches the existing Message interface in AgentChat
 export interface Message {
   id: string
@@ -10,6 +16,7 @@ export interface Message {
   toolName?: string
   toolResult?: string
   bookmarked?: boolean
+  images?: MessageImage[]  // Attached images (for user messages)
 }
 
 // Agent status indicators
