@@ -84,6 +84,12 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const pendingChatInput = useAppStore(state => state.pendingChatInput)
   const setPendingChatInput = useAppStore(state => state.setPendingChatInput)
 
+  // Chat font size
+  const chatFontSize = useAppStore(state => state.chatFontSize)
+  const increaseChatFontSize = useAppStore(state => state.increaseChatFontSize)
+  const decreaseChatFontSize = useAppStore(state => state.decreaseChatFontSize)
+  const setChatFontSize = useAppStore(state => state.setChatFontSize)
+
   // Agent store (per-agent state)
   const agent = useAgentStore(state => state.getAgent(agentId))
   const addMessage = useAgentStore(state => state.addMessage)
@@ -104,6 +110,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isInterrupting, setIsInterrupting] = useState(false)
   const [isToolExecuting, setIsToolExecuting] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const partialResponseRef = useRef<string>('') // Track partial AI response for interrupts
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -181,6 +188,46 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       document.removeEventListener('keydown', handleGlobalKeyDown)
     }
   }, [isLoading, agentId, updateAgentStatus])
+
+  // Chat zoom keyboard shortcuts (Ctrl+Plus/Minus/0)
+  useEffect(() => {
+    const handleZoomKeyDown = (e: KeyboardEvent) => {
+      // Only handle Ctrl/Cmd + Plus/Minus/0
+      if (!e.ctrlKey && !e.metaKey) return
+
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault()
+        e.stopPropagation()
+        increaseChatFontSize()
+      } else if (e.key === '-') {
+        e.preventDefault()
+        e.stopPropagation()
+        decreaseChatFontSize()
+      } else if (e.key === '0') {
+        e.preventDefault()
+        e.stopPropagation()
+        setChatFontSize(14) // Reset to default 14px
+      }
+    }
+
+    document.addEventListener('keydown', handleZoomKeyDown)
+    return () => document.removeEventListener('keydown', handleZoomKeyDown)
+  }, [increaseChatFontSize, decreaseChatFontSize, setChatFontSize])
+
+  // Auto-open HTML files in browser when agent creates them
+  useEffect(() => {
+    const handleHtmlPreview = (e: Event) => {
+      const customEvent = e as CustomEvent<{ path: string }>
+      const filePath = customEvent.detail.path
+      // Convert to file:// URL with forward slashes
+      const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`
+      // Open in browser tab using tab store
+      useTabStore.getState().openOrFocusBrowser(fileUrl)
+    }
+
+    window.addEventListener('open-html-preview', handleHtmlPreview)
+    return () => window.removeEventListener('open-html-preview', handleHtmlPreview)
+  }, [])
 
   // Context usage tracking
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null)
@@ -447,6 +494,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     }
 
     e.preventDefault() // Prevent pasting image as text/filename
+    setStatusMessage('Processing image...')
 
     const newImages: AttachedImage[] = []
     let failedCount = 0
@@ -523,6 +571,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         'An unexpected error occurred while pasting images.',
         'error'
       )
+    } finally {
+      setStatusMessage(null)
     }
   }
 
@@ -648,15 +698,20 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
     try {
       // Generate title from first message
       if (isFirstMessage) {
+        setStatusMessage('Generating title...')
         generateChatTitle(userInput, apiKey).then(title => {
           updateAgentName(agentId, title)
           if (activeTab?.type === 'agent' && activeTab.agentId === agentId) {
             updateTab(activeTab.id, { title })
           }
-        }).catch(console.error)
+        }).catch(console.error).finally(() => {
+          // Clear status only if it's still the title generation message
+          setStatusMessage(prev => prev === 'Generating title...' ? null : prev)
+        })
       }
 
       // Read document context
+      setStatusMessage('Preparing context...')
       const documentContext = await readDocumentContext(activeDocuments)
       const messageWithContext = userInput + documentContext
 
@@ -670,6 +725,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       }
 
       // Intelligent tool loading: detect intent and load tools dynamically
+      setStatusMessage('Loading tools...')
       const { tools: rawTools, loadedIntegrations: loadedIntegrationIds } = await getToolsForMessage(
         agent.id,
         userInput,
@@ -730,6 +786,9 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         }
       }
 
+      // Clear status message as we're about to start streaming
+      setStatusMessage('Thinking...')
+
       // Create assistant message placeholder with "Thinking..." content
       // This will be replaced by actual streaming content as it arrives
       const assistantMessage: Message = {
@@ -777,6 +836,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
             : currentContent + (chunk.text || '')
 
           firstChunkReceived = true
+          // Clear status message when first content arrives
+          setStatusMessage(null)
           updateMessage(agentId, assistantMessage.id, {
             content: newContent,
           })
@@ -793,6 +854,8 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         } else if (chunk.type === 'tool_use' && chunk.toolName && chunk.toolInput) {
           // Only handle tool_use chunks that have full input data
           // (The streaming API emits an early chunk without toolInput which we skip)
+          // Show status for tool execution
+          setStatusMessage(`Running ${chunk.toolName}...`)
           // Insert tool message BEFORE the assistant message so grouping works correctly
           // Tools should appear above the assistant's text response in the UI
           const toolMessage: Message = {
@@ -812,16 +875,21 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
               toolResult: typeof chunk.result === 'string' ? chunk.result : JSON.stringify(chunk.result),
             })
           }
+          // Clear tool status, go back to thinking
+          setStatusMessage('Thinking...')
         } else if (chunk.type === 'error') {
+          setStatusMessage(null)
           updateMessage(agentId, assistantMessage.id, {
             content: (useAgentStore.getState().getAgent(agentId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + `\n\nError: ${chunk.error}`,
           })
         }
       }
 
+      setStatusMessage(null)
       updateAgentStatus(agentId, 'idle')
     } catch (error) {
       console.error('Chat error:', error)
+      setStatusMessage(null) // Clear status on error
       updateAgentStatus(agentId, 'error', error instanceof Error ? error.message : 'Unknown error')
 
       const errorMessage: Message = {
@@ -833,6 +901,7 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
       addMessage(agentId, errorMessage)
     } finally {
       setIsLoading(false)
+      setStatusMessage(null) // Ensure status is cleared
       abortControllerRef.current = null // Clear abort controller
       partialResponseRef.current = '' // Clear partial response tracking
     }
@@ -1077,8 +1146,31 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
         </div>
       </div>
 
+      {/* Dynamic chat font size styles */}
+      <style>{`
+        .chat-messages .prose {
+          font-size: ${chatFontSize}px !important;
+          line-height: 1.6;
+        }
+        .chat-messages .prose h1 {
+          font-size: ${Math.round(chatFontSize * 2)}px !important;
+        }
+        .chat-messages .prose h2 {
+          font-size: ${Math.round(chatFontSize * 1.5)}px !important;
+        }
+        .chat-messages .prose h3 {
+          font-size: ${Math.round(chatFontSize * 1.25)}px !important;
+        }
+        .chat-messages .prose code {
+          font-size: ${Math.round(chatFontSize * 0.9)}px !important;
+        }
+        .chat-messages .prose pre {
+          font-size: ${Math.round(chatFontSize * 0.85)}px !important;
+        }
+      `}</style>
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="chat-messages flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Sparkles className="w-10 h-10 text-cyan-400/50 mb-4" />
@@ -1391,6 +1483,14 @@ export function AgentChatContainer({ agentId }: AgentChatContainerProps) {
                 "{interimTranscript}"
               </span>
             )}
+          </div>
+        )}
+
+        {/* Status Indicator */}
+        {statusMessage && (
+          <div className="flex items-center gap-2 px-2 py-1 text-sm text-cyan-400">
+            <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="animate-pulse">{statusMessage}</span>
           </div>
         )}
 

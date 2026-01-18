@@ -48,6 +48,15 @@ Exposes `window.electronAPI` with: `fs`, `bash`, `shell`, `mcp` APIs via context
 - `dangerouslyAllowBrowser: true` required for Electron renderer (acceptable with contextIsolation)
 - **NEVER replace with simple messages.create() calls - this breaks the entire agent pattern**
 
+**Tool Result Truncation**:
+- Default limit: 8K chars (head/tail truncation)
+- Tool-specific limits for better context retention:
+  - `read_file`: 16K (file content is critical)
+  - `grep`, `glob`: 12K (search results need context)
+  - `bash`, `edit`: 10K (command/edit output needs more space)
+  - `perplexity_search`, `brave_web_search`: 12K (research results)
+- Uses head/tail truncation: preserves start and end, omits middle
+
 ### System Prompt (`src/services/systemPrompt.ts`, `src/services/contextService.ts`)
 3-layer prompt assembly at runtime:
 1. **Core Identity** - Built-in constant (capabilities, policies, guidelines)
@@ -178,9 +187,30 @@ Customizable avatars for user and agent in chat messages (Settings > Profile & A
 
 **Keyboard Shortcuts**:
 - Global: `Ctrl+T` (new agent), `Ctrl+W` (close), `Ctrl+Tab` (next), `Ctrl+L` (LUDICROUS MODE), `Ctrl+P` (file search)
-- Chat: `Esc+Esc` (stop agent response - press twice within 500ms), `Enter` (send), `Shift+Enter` (new line)
+- Chat: `Esc+Esc` (stop agent response - press twice within 500ms), `Enter` (send), `Shift+Enter` (new line), `Ctrl+Plus/Minus` (zoom text), `Ctrl+0` (reset zoom)
 - Editor: `Ctrl+S` (save), `Ctrl+B/I` (bold/italic), `Ctrl+K` (link), `Ctrl+±` (font), `Ctrl+Shift+S` (strikethrough)
 - FileTree: `Enter` (open), `F2` (rename), `Delete` (delete), `Ctrl+C` (copy path)
+
+### Chat Text Zoom
+- **State**: `chatFontSize` in appStore (default: 14px, range: 10-28px)
+- **Controls**: `Ctrl+Plus` (increase), `Ctrl+Minus` (decrease), `Ctrl+0` (reset to 14px)
+- **Implementation**: Dynamic CSS injection via `<style>` tag for prose elements
+- **Scaling**: h1 (2x), h2 (1.5x), h3 (1.25x), code (0.9x), pre (0.85x)
+
+### Loading Status Indicators
+Status messages displayed above input area during async operations:
+- "Generating title..." - First message title generation
+- "Preparing context..." - Document context loading
+- "Loading tools..." - MCP integration tool loading
+- "Thinking..." - Waiting for Claude response
+- "Running [toolname]..." - Tool execution
+- "Processing image..." - Clipboard image paste
+
+### HTML Auto-Preview
+When agent creates HTML files via `write_file`:
+- Files with `.html` or `.htm` extension auto-open in browser tab
+- Uses custom event `open-html-preview` to trigger browser tab
+- Browser tab opens with `file://` URL to the created file
 
 ### Dashboard Panel (`src/components/dashboard/`)
 - `Dashboard.tsx` - Greeting header, widget grid

@@ -144,9 +144,17 @@ async function executeGlob(input: GlobInput, workspacePath: string): Promise<str
       return `No files found matching pattern: ${input.pattern}`;
     }
 
-    // Format as relative paths
+    // Format as relative paths - normalize separators for consistent matching and clickability
+    const normalizedWorkspace = workspacePath.replace(/\\/g, '/');
     const formatted = result.slice(0, maxResults).map((filePath: string) => {
-      return filePath.replace(workspacePath, '').replace(/^[/\\]/, '');
+      const normalizedFile = filePath.replace(/\\/g, '/');
+      // Remove workspace prefix and leading slash to get relative path
+      // Use forward slashes for consistent regex matching in LinkifiedText
+      if (normalizedFile.startsWith(normalizedWorkspace)) {
+        return normalizedFile.slice(normalizedWorkspace.length).replace(/^\//, '');
+      }
+      // Ensure forward slashes even if not matched
+      return normalizedFile;
     }).join('\n');
 
     const truncated = result.length > maxResults
@@ -232,7 +240,13 @@ async function executeEdit(
       useFileLockStore.getState().releaseOperation(operationId);
     }
 
-    const relativePath = filePath.replace(workspacePath, '').replace(/^[/\\]/, '');
+    // Normalize path separators for consistent path display and clickability
+    const normalizedWorkspace = workspacePath.replace(/\\/g, '/');
+    const normalizedFile = filePath.replace(/\\/g, '/');
+    // Use forward slashes for consistent regex matching in LinkifiedText
+    const relativePath = normalizedFile.startsWith(normalizedWorkspace)
+      ? normalizedFile.slice(normalizedWorkspace.length).replace(/^\//, '')
+      : normalizedFile;
     const changeSize = Math.abs(result.charDiff || 0);
     const changeType = (result.charDiff || 0) > 0 ? 'added' : 'removed';
     const occurrences = result.occurrences || 1;

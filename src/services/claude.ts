@@ -37,30 +37,71 @@ function estimateTokens(text: string): number {
 /**
  * Tool result truncation settings
  * Claude Code uses similar limits to keep context manageable
+ *
+ * Different tools get different limits based on importance:
+ * - read_file: Higher limit (16K) since file content is often critical
+ * - grep/glob: Higher limit (12K) since search results provide important context
+ * - bash: Medium limit (10K) for command output
+ * - list_directory, search: Standard limit (8K)
  */
 const TOOL_RESULT_LIMITS = {
-  /** Maximum characters for tool results stored in history */
+  /** Default maximum characters for tool results stored in history */
   MAX_RESULT_CHARS: 8000,
   /** Characters to keep from start when truncating */
   HEAD_CHARS: 5000,
   /** Characters to keep from end when truncating */
   TAIL_CHARS: 2000,
   /** Tools that commonly produce large output */
-  LARGE_OUTPUT_TOOLS: ['bash', 'read_file', 'list_directory', 'perplexity_search', 'brave_web_search']
+  LARGE_OUTPUT_TOOLS: ['bash', 'read_file', 'list_directory', 'perplexity_search', 'brave_web_search'],
+  /** Per-tool maximum limits - higher for critical tools */
+  TOOL_SPECIFIC_LIMITS: {
+    'read_file': 16000,      // File content is often critical for understanding
+    'grep': 12000,           // Search results provide important context
+    'glob': 12000,           // File listings help with navigation
+    'bash': 10000,           // Command output often needs more context
+    'edit': 10000,           // Edit results should show full diff
+    'perplexity_search': 12000,  // Research results need more space
+    'brave_web_search': 12000,   // Search results need more space
+  } as Record<string, number>
 };
+
+/**
+ * Get the maximum character limit for a specific tool
+ */
+function getToolLimit(toolName: string): number {
+  // Check for exact match
+  if (TOOL_RESULT_LIMITS.TOOL_SPECIFIC_LIMITS[toolName]) {
+    return TOOL_RESULT_LIMITS.TOOL_SPECIFIC_LIMITS[toolName];
+  }
+  // Check for prefix matches (e.g., gmail_search_emails uses default)
+  for (const [key, limit] of Object.entries(TOOL_RESULT_LIMITS.TOOL_SPECIFIC_LIMITS)) {
+    if (toolName.startsWith(key + '_') || toolName === key) {
+      return limit;
+    }
+  }
+  return TOOL_RESULT_LIMITS.MAX_RESULT_CHARS;
+}
 
 /**
  * Truncate a tool result to prevent context bloat
  * Uses head/tail truncation similar to Claude Code
+ * Tool-specific limits preserve more context for important tools
  */
 function truncateToolResult(result: string, toolName: string): string {
-  if (result.length <= TOOL_RESULT_LIMITS.MAX_RESULT_CHARS) {
+  const maxChars = getToolLimit(toolName);
+
+  if (result.length <= maxChars) {
     return result;
   }
 
-  const head = result.slice(0, TOOL_RESULT_LIMITS.HEAD_CHARS);
-  const tail = result.slice(-TOOL_RESULT_LIMITS.TAIL_CHARS);
-  const omittedChars = result.length - TOOL_RESULT_LIMITS.HEAD_CHARS - TOOL_RESULT_LIMITS.TAIL_CHARS;
+  // Scale head/tail proportionally to the limit
+  const ratio = maxChars / TOOL_RESULT_LIMITS.MAX_RESULT_CHARS;
+  const headChars = Math.floor(TOOL_RESULT_LIMITS.HEAD_CHARS * ratio);
+  const tailChars = Math.floor(TOOL_RESULT_LIMITS.TAIL_CHARS * ratio);
+
+  const head = result.slice(0, headChars);
+  const tail = result.slice(-tailChars);
+  const omittedChars = result.length - headChars - tailChars;
   const omittedTokens = Math.ceil(omittedChars / 4);
 
   return `${head}\n\n[... ${omittedChars.toLocaleString()} characters (~${omittedTokens.toLocaleString()} tokens) truncated from ${toolName} output ...]\n\n${tail}`;

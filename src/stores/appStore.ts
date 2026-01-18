@@ -214,6 +214,12 @@ interface AppState {
   increaseEditorFontSize: () => void
   decreaseEditorFontSize: () => void
 
+  // Chat Font Settings
+  chatFontSize: number
+  setChatFontSize: (size: number) => void
+  increaseChatFontSize: () => void
+  decreaseChatFontSize: () => void
+
   // Prompt Shortcuts (user-defined and built-in)
   shortcuts: PromptShortcut[]
   // File-loaded skills (from ~/.claude/skills and ~/.claude/commands)
@@ -479,6 +485,16 @@ export const useAppStore = create<AppState>()(
         editorFontSize: Math.max(12, state.editorFontSize - 2)
       })),
 
+      // Chat Font Settings
+      chatFontSize: 14, // default 14px (prose-sm)
+      setChatFontSize: (size) => set({ chatFontSize: Math.min(28, Math.max(10, size)) }),
+      increaseChatFontSize: () => set((state) => ({
+        chatFontSize: Math.min(28, state.chatFontSize + 2)
+      })),
+      decreaseChatFontSize: () => set((state) => ({
+        chatFontSize: Math.max(10, state.chatFontSize - 2)
+      })),
+
       // Prompt Shortcuts
       shortcuts: DEFAULT_SHORTCUTS,
       loadedSkills: [],
@@ -642,6 +658,7 @@ export const useAppStore = create<AppState>()(
         memoryUserId: state.memoryUserId,
         memoryOpenaiKey: state.memoryOpenaiKey,
         editorFontSize: state.editorFontSize,
+        chatFontSize: state.chatFontSize,
         shortcuts: state.shortcuts,
         dashboardSettings: state.dashboardSettings,
         quickNotes: state.quickNotes,

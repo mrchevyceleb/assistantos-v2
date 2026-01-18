@@ -83,6 +83,14 @@ export async function executeFileTool(
           useFileLockStore.getState().releaseOperation(operationId);
         }
 
+        // Auto-open HTML files in browser for preview
+        const ext = filePath.toLowerCase().split('.').pop();
+        if (ext === 'html' || ext === 'htm') {
+          window.dispatchEvent(new CustomEvent('open-html-preview', {
+            detail: { path: filePath }
+          }));
+        }
+
         return `Successfully wrote ${content.length} characters to ${filePath}`;
       } catch (error) {
         // Release lock with error
