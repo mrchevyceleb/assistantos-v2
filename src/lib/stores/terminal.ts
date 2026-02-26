@@ -49,6 +49,8 @@ export function addTerminal(cwd: string, dock: TerminalDock = "bottom"): string 
     activeRightTerminalId.set(id);
   } else if (dock === "left") {
     activeLeftTerminalId.set(id);
+  } else if (dock === "tab") {
+    openTerminalTab(id, title);
   }
 
   return id;

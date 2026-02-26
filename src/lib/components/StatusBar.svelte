@@ -8,13 +8,17 @@
   import { settings, settingsVisible } from "$lib/stores/settings";
 
   function toggleTerminal() {
-    const bottomCount = get(bottomTerminals).length;
-    if (bottomCount === 0) {
-      // No terminals exist — spawn one
-      addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock);
+    const dock = get(settings).defaultTerminalDock;
+    if (dock === "bottom") {
+      const bottomCount = get(bottomTerminals).length;
+      if (bottomCount === 0) {
+        addTerminal(get(workspacePath) || "", "bottom");
+      } else {
+        terminalVisible.update((v) => !v);
+      }
     } else {
-      // Toggle panel visibility
-      terminalVisible.update((v) => !v);
+      // For tab/right/left, always spawn a new terminal
+      addTerminal(get(workspacePath) || "", dock);
     }
   }
 
