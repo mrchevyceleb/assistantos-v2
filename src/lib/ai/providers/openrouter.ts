@@ -90,6 +90,10 @@ export async function streamCompletion(
     cleanupFns.push(await errorUnlisten);
 
     // Start the stream via Rust backend
+    // If aiChatStream rejects (Rust returned Err), the event listeners may also fire.
+    // Catch donePromise rejection to avoid unhandled promise rejection.
+    donePromise.catch(() => {}); // handled below via aiChatStream rejection
+
     await aiChatStream(requestId, settings.baseUrl, settings.apiKey, bodyJson);
 
     // Wait for completion

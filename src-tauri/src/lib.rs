@@ -800,17 +800,31 @@ async fn ai_chat_stream(
     api_key: String,
     body_json: String,
 ) -> Result<(), String> {
-    let client = reqwest::Client::new();
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let api_key = api_key.trim().to_string();
 
+    // Parse body JSON so we can use .json() which properly sets content-type
+    let body: serde_json::Value = serde_json::from_str(&body_json)
+        .map_err(|e| format!("Invalid request body: {}", e))?;
+
+    // Build client with default headers to ensure they survive redirects
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("HTTP-Referer", reqwest::header::HeaderValue::from_static("https://assistantos.app"));
+    headers.insert("X-Title", reqwest::header::HeaderValue::from_static("AssistantOS"));
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
+            .map_err(|e| format!("Invalid API key format: {}", e))?,
+    );
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
     let response = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .header("HTTP-Referer", "https://assistantos.app")
-        .header("X-Title", "AssistantOS")
-        .body(body_json)
+        .json(&body)
         .send()
         .await
         .map_err(|e| {
@@ -905,15 +919,25 @@ async fn ai_chat_stream(
 
 #[tauri::command]
 async fn ai_fetch_models(base_url: String, api_key: String) -> Result<String, String> {
-    let client = reqwest::Client::new();
     let url = format!("{}/models", base_url.trim_end_matches('/'));
     let api_key = api_key.trim().to_string();
 
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("HTTP-Referer", reqwest::header::HeaderValue::from_static("https://assistantos.app"));
+    headers.insert("X-Title", reqwest::header::HeaderValue::from_static("AssistantOS"));
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
+            .map_err(|e| format!("Invalid API key format: {}", e))?,
+    );
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
     let response = client
         .get(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("HTTP-Referer", "https://assistantos.app")
-        .header("X-Title", "AssistantOS")
         .send()
         .await
         .map_err(|e| format!("Failed to fetch models: {}", e))?;

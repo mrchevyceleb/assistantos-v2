@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
   import ChatMessage from './ChatMessage.svelte';
   import ChatInput from './ChatInput.svelte';
@@ -69,7 +69,6 @@
               r.isError,
             );
           }
-          // Finalize current message and start a new streaming message for next iteration
           finalizeMessage(currentStreamingId);
           currentStreamingId = addStreamingMessage();
           scrollToBottom();
@@ -87,8 +86,6 @@
       },
       onDone: (_fullContent: string) => {
         if (currentStreamingId) {
-          // If the streaming message is empty (e.g. created by onToolResult but AI had no more text),
-          // remove it instead of leaving an empty bubble
           const msgs = get(chatMessages);
           const msg = msgs.find(m => m.id === currentStreamingId);
           if (msg && !msg.content && msg.toolCalls.length === 0) {
@@ -105,7 +102,6 @@
           const msgs = get(chatMessages);
           const msg = msgs.find(m => m.id === currentStreamingId);
           if (msg && !msg.content) {
-            // Provide friendlier messages for common errors, but include details
             let friendlyError = error;
             if (error.includes('401') || error.toLowerCase().includes('unauthorized') || error.toLowerCase().includes('authentication')) {
               friendlyError = 'Authentication failed. Check your API key in Settings > AI Chat.\n\n' + error;
@@ -130,21 +126,18 @@
 
   async function handleSend(message: string) {
     if (!message.trim()) return;
-    if (get(chatIsLoading)) return; // prevent sending while streaming
+    if (get(chatIsLoading)) return;
 
     const aiSettings = getAISettings();
     if (!aiSettings.apiKey) return;
 
-    // Initialize engine if needed
     if (!engine) {
       engine = initEngine();
     }
     engine.updateSettings(getAISettings());
 
-    // Add user message to UI
     addUIMessage('user', message);
 
-    // Start streaming response
     chatIsLoading.set(true);
     currentStreamingId = addStreamingMessage();
     scrollToBottom();
@@ -184,35 +177,40 @@
     }
   }
 
-  // Cleanup engine on component destroy
   onDestroy(() => {
     if (engine) {
       engine.abort();
     }
   });
 
-  // Auto-scroll when messages change
   $effect(() => {
     $chatMessages;
     scrollToBottom();
   });
+
+  function modelDisplayName(model: string): string {
+    return model.split('/').pop() || model;
+  }
 </script>
 
-<div class="flex flex-col h-full bg-bg-primary/60 backdrop-blur-sm">
+<div class="flex flex-col h-full bg-bg-tertiary">
   <!-- Header -->
-  <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
-    <div class="flex items-center gap-2">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-accent shrink-0">
-        <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
-      </svg>
+  <div class="flex items-center justify-between px-4 h-12 shrink-0 border-b border-border/40 bg-bg-secondary/60 backdrop-blur-sm">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent">
+          <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
+        </svg>
+      </div>
       <!-- Model quick switcher -->
-      <div class="relative">
+      <div class="relative min-w-0">
         <button
-          class="flex items-center gap-1 text-text-primary text-sm font-medium hover:text-accent transition-colors"
+          class="flex items-center gap-1.5 text-[14px] font-medium hover:text-accent transition-colors min-w-0
+            {modelSwitcherOpen ? 'text-accent' : 'text-text-secondary'}"
           onclick={() => modelSwitcherOpen = !modelSwitcherOpen}
         >
-          <span class="truncate max-w-[180px]">{$settings.aiModel.split('/').pop()}</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 text-text-muted">
+          <span class="truncate">{modelDisplayName($settings.aiModel)}</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="shrink-0 opacity-50">
             <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
@@ -220,31 +218,33 @@
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="fixed inset-0 z-40" onclick={() => modelSwitcherOpen = false}></div>
-          <div class="absolute top-full left-0 mt-1 z-50 min-w-[220px] max-w-[300px] bg-bg-secondary border border-border/60 rounded-lg shadow-xl overflow-hidden">
+          <div class="absolute top-full left-0 mt-2 z-50 min-w-[240px] max-w-[320px]
+            bg-bg-secondary border border-border/50 rounded-lg shadow-2xl shadow-black/40 overflow-hidden">
             {#if $settings.aiFavoriteModels.length > 0}
-              <div class="px-2.5 pt-2 pb-1 text-text-muted text-[10px] uppercase tracking-wider">Favorites</div>
+              <div class="px-3 pt-2.5 pb-1 text-text-muted text-[11px] uppercase tracking-wider font-medium">Favorites</div>
               {#each $settings.aiFavoriteModels as fav}
                 <button
-                  class="w-full text-left px-3 py-1.5 text-[12px] font-mono hover:bg-bg-hover transition-colors truncate
-                    {fav === $settings.aiModel ? 'text-accent bg-accent/10' : 'text-text-primary'}"
+                  class="w-full text-left px-3 py-2.5 text-[13px] font-mono hover:bg-bg-hover transition-colors truncate
+                    {fav === $settings.aiModel ? 'text-accent bg-accent/8' : 'text-text-secondary hover:text-text-primary'}"
                   onclick={() => { updateSetting("aiModel", fav); modelSwitcherOpen = false; }}
                 >
                   {fav}
                 </button>
               {/each}
             {:else}
-              <div class="px-3 py-2 text-text-muted text-[11px]">Star models in Settings to add favorites</div>
+              <div class="px-3 py-3 text-text-muted text-[11px]">Star models in Settings to add favorites</div>
             {/if}
           </div>
         {/if}
       </div>
     </div>
     <button
-      class="text-text-muted hover:text-text-primary transition-colors p-1 rounded hover:bg-bg-hover"
+      class="w-8 h-8 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all
+        flex items-center justify-center"
       onclick={handleNewChat}
       title="New Chat"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/>
         <line x1="5" y1="12" x2="19" y2="12"/>
       </svg>
@@ -253,35 +253,50 @@
 
   <!-- Messages -->
   <div
-    class="flex-1 overflow-y-auto px-5 py-5 space-y-4"
+    class="flex-1 overflow-y-auto"
     bind:this={messagesContainer}
   >
     {#if $chatMessages.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-text-muted text-sm gap-3">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="opacity-30">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        </svg>
-        <span>Ask anything about your workspace</span>
+      <div class="flex flex-col items-center justify-center h-full text-center px-8 gap-5">
+        <div class="w-14 h-14 rounded-2xl bg-accent/8 border border-accent/15 flex items-center justify-center">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" class="text-accent/50">
+            <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
+          </svg>
+        </div>
+        <div class="space-y-2">
+          <div class="text-text-secondary text-[15px] font-medium">Ask about your workspace</div>
+          <div class="text-text-muted text-[13px] leading-relaxed max-w-[240px]">
+            Read files, search code, edit files, and run commands
+          </div>
+        </div>
       </div>
     {:else}
-      {#each $chatMessages as message (message.id)}
-        <ChatMessage {message} />
-      {/each}
+      <div class="py-3">
+        {#each $chatMessages as message (message.id)}
+          <ChatMessage {message} />
+        {/each}
+      </div>
     {/if}
   </div>
 
   <!-- Confirmation banner -->
   {#if $pendingConfirmation}
-    <div class="mx-4 mb-2 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
-      <div class="text-text-primary text-sm font-medium mb-1">Confirm: {$pendingConfirmation.toolName}</div>
-      <div class="text-text-muted text-xs font-mono mb-2 max-h-20 overflow-auto">{$pendingConfirmation.arguments}</div>
-      <div class="flex gap-2">
+    <div class="mx-3 mb-2 p-3 rounded-lg border border-warning/25 bg-warning/8">
+      <div class="flex items-center gap-2 mb-1.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-warning shrink-0">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span class="text-text-primary text-[12px] font-medium">{$pendingConfirmation.toolName}</span>
+      </div>
+      <div class="text-text-muted text-[11px] font-mono mb-2.5 max-h-20 overflow-auto pl-[22px]">{$pendingConfirmation.arguments}</div>
+      <div class="flex gap-2 pl-[22px]">
         <button
-          class="px-3 py-1 text-xs rounded bg-accent text-bg-primary font-medium hover:opacity-90 transition-opacity"
+          class="px-3 py-1.5 text-[11px] rounded-md bg-accent text-bg-primary font-medium hover:opacity-90 transition-opacity"
           onclick={() => handleConfirm(true)}
         >Allow</button>
         <button
-          class="px-3 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary hover:border-text-muted transition-colors"
+          class="px-3 py-1.5 text-[11px] rounded-md border border-border/60 text-text-muted hover:text-text-primary hover:border-border transition-colors"
           onclick={() => handleConfirm(false)}
         >Deny</button>
       </div>

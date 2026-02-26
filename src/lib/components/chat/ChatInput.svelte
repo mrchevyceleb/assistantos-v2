@@ -27,7 +27,6 @@
     const text = inputText.trim();
     if (!text) return;
     inputText = '';
-    // Reset textarea height
     if (textarea) textarea.style.height = 'auto';
     onSend(text);
   }
@@ -35,7 +34,7 @@
   function autoResize() {
     if (textarea) {
       textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+      textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
     }
   }
 
@@ -45,48 +44,63 @@
   });
 </script>
 
-<div class="px-4 py-4 border-t border-border/40">
+<div class="px-3 pb-3 pt-2">
   {#if disabled}
-    <div class="text-text-muted text-[13px] text-center py-3 bg-bg-secondary/60 rounded-xl border border-border/30">
-      Set your API key in Settings &rarr; AI Chat to get started
+    <div class="text-text-muted text-[13px] text-center py-4 bg-bg-secondary/40 rounded-xl border border-border/20">
+      Set your API key in Settings to get started
     </div>
   {:else}
-    <div class="flex gap-3 items-end bg-bg-secondary/80 border border-border/40 rounded-xl px-4 py-3 focus-within:border-accent/40 transition-colors">
+    <div class="bg-bg-secondary/60 border border-border/30 rounded-xl
+      focus-within:border-accent/30 focus-within:shadow-[0_0_12px_rgba(88,180,208,0.06)]
+      transition-all duration-200">
       <textarea
         bind:this={textarea}
         bind:value={inputText}
         onkeydown={handleKeydown}
         placeholder="Ask about your workspace..."
-        rows="1"
-        class="flex-1 bg-transparent text-text-primary text-[14px] resize-none outline-none leading-[1.4]
-          placeholder:text-text-muted/60"
-        style="min-height: 1.4em;"
+        rows="2"
+        class="w-full bg-transparent text-text-primary text-[15px] resize-none outline-none leading-[1.6]
+          placeholder:text-text-muted/50 px-4 pt-3 pb-2"
+        style="min-height: 3.2em;"
         disabled={isLoading}
       ></textarea>
-      {#if isLoading}
-        <button
-          onclick={onStop}
-          class="shrink-0 w-9 h-9 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-colors"
-          title="Stop (Escape)"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="1"/>
-          </svg>
-        </button>
-      {:else}
-        <button
-          onclick={send}
-          disabled={!inputText.trim()}
-          class="shrink-0 w-9 h-9 rounded-lg bg-accent/20 text-accent flex items-center justify-center
-            hover:bg-accent/30 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-          title="Send (Enter)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="22" y1="2" x2="11" y2="13"/>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-          </svg>
-        </button>
-      {/if}
+      <!-- Bottom action bar -->
+      <div class="flex items-center justify-between px-3 pb-2.5">
+        <div class="text-[11px] text-text-muted/40 select-none">
+          {#if isLoading}
+            Generating...
+          {:else}
+            Enter to send
+          {/if}
+        </div>
+        {#if isLoading}
+          <button
+            onclick={onStop}
+            class="w-8 h-8 rounded-lg bg-error/15 border border-error/25 text-error/80
+              flex items-center justify-center hover:bg-error/25 hover:text-error transition-all"
+            title="Stop (Escape)"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+          </button>
+        {:else}
+          <button
+            onclick={send}
+            disabled={!inputText.trim()}
+            class="w-8 h-8 rounded-lg flex items-center justify-center transition-all
+              {inputText.trim()
+                ? 'bg-accent/20 text-accent hover:bg-accent/30 border border-accent/25'
+                : 'text-text-muted/30 cursor-default'}"
+            title="Send (Enter)"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>

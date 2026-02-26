@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { workspacePath } from '$lib/stores/workspace';
+import { readFileText } from '$lib/utils/tauri';
 import { streamCompletion } from '../providers/openrouter';
 import { executeTool } from '../tools/tool-executor';
 import { TOOL_DEFINITIONS, WRITE_TOOLS } from '../tools/tool-definitions';
@@ -7,12 +8,17 @@ import { SYSTEM_PROMPT } from '../constants';
 import { ChatSession } from './session';
 import type { ChatMessage, ToolCall, ToolResult, StreamChunk, AIChatSettings, ChatEngineCallbacks } from '../types';
 
+/** File names to look for as workspace instructions (checked in order). */
+const INSTRUCTION_FILES = ['AGENTS.MD', 'AGENTS.md', 'agents.md', 'CLAUDE.md', 'CLAUDE.MD', 'claude.md'];
+
 export class ChatEngine {
   private session: ChatSession;
   private settings: AIChatSettings;
   private callbacks: ChatEngineCallbacks;
   private abortController: AbortController | null = null;
   private isRunning = false;
+  private workspaceInstructions: string | null = null;
+  private instructionsLoaded = false;
 
   constructor(session: ChatSession, settings: AIChatSettings, callbacks: ChatEngineCallbacks) {
     this.session = session;
@@ -37,12 +43,38 @@ export class ChatEngine {
     return this.session;
   }
 
+  /** Try to load AGENTS.MD / CLAUDE.md from the workspace root. Caches the result. */
+  private async loadWorkspaceInstructions(): Promise<void> {
+    if (this.instructionsLoaded) return;
+    this.instructionsLoaded = true;
+
+    const wsPath = get(workspacePath);
+    if (!wsPath) return;
+
+    const sep = wsPath.includes('\\') ? '\\' : '/';
+
+    for (const name of INSTRUCTION_FILES) {
+      try {
+        const content = await readFileText(`${wsPath}${sep}${name}`);
+        if (content && content.trim()) {
+          this.workspaceInstructions = content.trim();
+          return;
+        }
+      } catch {
+        // File doesn't exist, try next
+      }
+    }
+  }
+
   async sendMessage(userContent: string): Promise<void> {
     if (this.isRunning) return;
     this.isRunning = true;
     this.abortController = new AbortController();
 
     try {
+      // Load workspace instructions on first message
+      await this.loadWorkspaceInstructions();
+
       // Add user message
       this.session.addMessage({ role: 'user', content: userContent });
 
@@ -184,9 +216,16 @@ export class ChatEngine {
 
   private buildMessages(): ChatMessage[] {
     const wsPath = get(workspacePath) || 'No workspace open';
+
+    let systemContent = `${SYSTEM_PROMPT}\n\nCurrent workspace: ${wsPath}`;
+
+    if (this.workspaceInstructions) {
+      systemContent += `\n\n## Workspace Instructions\nThe following instructions were loaded from the workspace root. Follow them when working in this project:\n\n${this.workspaceInstructions}`;
+    }
+
     const systemMessage: ChatMessage = {
       role: 'system',
-      content: `${SYSTEM_PROMPT}\n\nCurrent workspace: ${wsPath}`,
+      content: systemContent,
     };
 
     return [systemMessage, ...this.session.getMessages()];
