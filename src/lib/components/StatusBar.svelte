@@ -5,13 +5,13 @@
   import { workspacePath } from "$lib/stores/workspace";
   import { formatFileSize } from "$lib/utils/file-types";
   import { uiZoom } from "$lib/stores/ui";
-  import { settingsVisible } from "$lib/stores/settings";
+  import { settings, settingsVisible } from "$lib/stores/settings";
 
   function toggleTerminal() {
     const bottomCount = get(bottomTerminals).length;
     if (bottomCount === 0) {
       // No terminals exist — spawn one
-      addTerminal(get(workspacePath) || "", "bottom");
+      addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock);
     } else {
       // Toggle panel visibility
       terminalVisible.update((v) => !v);

@@ -216,13 +216,13 @@
       { label: "", separator: true, action: () => {} },
       { label: "Close All", action: () => closeAllTabs(), danger: true },
       { label: "", separator: true, action: () => {} },
-      { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", "bottom") },
+      { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
     ];
   }
 
   function getBarContextMenuItems(): MenuItem[] {
     return [
-      { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", "bottom") },
+      { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
       ...(get(tabs).length > 0 ? [
         { label: "", separator: true, action: () => {} },
         { label: "Close All Tabs", action: () => closeAllTabs(), danger: true },
