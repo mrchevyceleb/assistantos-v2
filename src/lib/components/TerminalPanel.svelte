@@ -4,8 +4,10 @@
     terminalInstances,
     activeTerminalId,
     activeRightTerminalId,
+    activeLeftTerminalId,
     bottomTerminals,
     rightTerminals,
+    leftTerminals,
     addTerminal,
     removeTerminal,
     moveTerminal,
@@ -13,9 +15,11 @@
   } from "$lib/stores/terminal";
   import { workspacePath } from "$lib/stores/workspace";
   import { uiZoom } from "$lib/stores/ui";
+  import { settings } from "$lib/stores/settings";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
+  import { WebglAddon } from "@xterm/addon-webgl";
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
 
@@ -25,7 +29,33 @@
 
   let { dock = "bottom" }: Props = $props();
 
-  const BASE_TERM_FONT_SIZE = 13;
+  // Use settings for base font size (the zoom effect multiplies this)
+  let BASE_TERM_FONT_SIZE = $derived($settings.terminalFontSize);
+
+  const TERM_THEME = {
+    background: "#0c0c14",
+    foreground: "#cdd6f4",
+    cursor: "#89b4fa",
+    cursorAccent: "#0c0c14",
+    selectionBackground: "#585b7066",
+    selectionForeground: "#cdd6f4",
+    black: "#45475a",
+    red: "#f38ba8",
+    green: "#a6e3a1",
+    yellow: "#f9e2af",
+    blue: "#89b4fa",
+    magenta: "#f5c2e7",
+    cyan: "#94e2d5",
+    white: "#bac2de",
+    brightBlack: "#585b70",
+    brightRed: "#f38ba8",
+    brightGreen: "#a6e3a1",
+    brightYellow: "#f9e2af",
+    brightBlue: "#89b4fa",
+    brightMagenta: "#f5c2e7",
+    brightCyan: "#94e2d5",
+    brightWhite: "#a6adc8",
+  };
 
   let terminals: Map<string, Terminal> = new Map();
   let fitAddons: Map<string, FitAddon> = new Map();
@@ -37,12 +67,22 @@
   let unlistenClosed: (() => void) | null = null;
 
   // Select the right list and active ID based on dock position
-  let instances = $derived(dock === "right" ? $rightTerminals : $bottomTerminals);
-  let currentActiveId = $derived(dock === "right" ? $activeRightTerminalId : $activeTerminalId);
+  let instances = $derived(
+    dock === "right" ? $rightTerminals :
+    dock === "left" ? $leftTerminals :
+    $bottomTerminals
+  );
+  let currentActiveId = $derived(
+    dock === "right" ? $activeRightTerminalId :
+    dock === "left" ? $activeLeftTerminalId :
+    $activeTerminalId
+  );
 
   function setActiveId(id: string) {
     if (dock === "right") {
       activeRightTerminalId.set(id);
+    } else if (dock === "left") {
+      activeLeftTerminalId.set(id);
     } else {
       activeTerminalId.set(id);
     }
@@ -70,8 +110,6 @@
   }
 
   function handleMove(id: string, target: TerminalDock) {
-    // The terminal xterm instance needs to be re-attached after moving
-    // Dispose the current DOM attachment — it will re-init in the new container
     const term = terminals.get(id);
     if (term) {
       term.dispose();
@@ -85,32 +123,21 @@
     if (terminals.has(id)) return;
 
     const term = new Terminal({
-      theme: {
-        background: "#11111b",
-        foreground: "#cdd6f4",
-        cursor: "#89b4fa",
-        selectionBackground: "#45475a",
-        black: "#45475a",
-        red: "#f38ba8",
-        green: "#a6e3a1",
-        yellow: "#f9e2af",
-        blue: "#89b4fa",
-        magenta: "#f5c2e7",
-        cyan: "#94e2d5",
-        white: "#bac2de",
-        brightBlack: "#585b70",
-        brightRed: "#f38ba8",
-        brightGreen: "#a6e3a1",
-        brightYellow: "#f9e2af",
-        brightBlue: "#89b4fa",
-        brightMagenta: "#f5c2e7",
-        brightCyan: "#94e2d5",
-        brightWhite: "#a6adc8",
-      },
+      theme: TERM_THEME,
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
-      fontSize: Math.round(BASE_TERM_FONT_SIZE * $uiZoom),
+      fontSize: Math.round($settings.terminalFontSize * $uiZoom),
+      fontWeight: "400",
+      fontWeightBold: "600",
+      lineHeight: 1.2,
+      letterSpacing: 0,
       cursorBlink: true,
+      cursorStyle: $settings.terminalCursorStyle,
+      cursorWidth: 2,
+      scrollback: 5000,
+      drawBoldTextInBrightColors: true,
+      minimumContrastRatio: 1,
       convertEol: false,
+      allowTransparency: true,
     });
 
     const fitAddon = new FitAddon();
@@ -118,6 +145,16 @@
     term.loadAddon(new WebLinksAddon());
 
     term.open(el);
+
+    // Try loading WebGL renderer for smoother rendering
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => { webglAddon.dispose(); });
+      term.loadAddon(webglAddon);
+    } catch {
+      // WebGL not available — canvas renderer is fine
+    }
+
     fitAddon.fit();
 
     terminals.set(id, term);
@@ -136,8 +173,6 @@
     });
 
     // Only spawn a new PTY if we haven't already spawned one for this ID.
-    // When switching tabs or re-docking, the xterm.js Terminal gets disposed
-    // but the Rust PTY session stays alive. We just need to re-attach.
     if (!spawnedIds.has(id)) {
       const inst = $terminalInstances.find((t) => t.id === id);
       if (inst) {
@@ -146,10 +181,9 @@
         const cols = term.cols;
 
         try {
-          await spawnTerminal(id, cwd, rows, cols);
+          await spawnTerminal(id, cwd, rows, cols, $settings.defaultShell);
           spawnedIds.add(id);
         } catch (err) {
-          // Rust returned "already exists" — the PTY is still alive, just reconnect
           const errStr = String(err);
           if (errStr.includes("already exists")) {
             spawnedIds.add(id);
@@ -162,7 +196,6 @@
         }
       }
     } else {
-      // Already spawned — just resize to fit the new container
       try {
         await resizeTerminal(id, term.rows, term.cols);
       } catch { /* ok */ }
@@ -236,79 +269,89 @@
     if (unlistenOutput) unlistenOutput();
     if (unlistenClosed) unlistenClosed();
 
-    // Only dispose xterm.js instances — do NOT kill PTY sessions.
-    // The component may be unmounted temporarily (e.g. toggling terminal panel visibility)
-    // and we want the PTY to survive. PTY sessions are only killed explicitly
-    // via handleCloseTerminal or when the app fully shuts down.
     for (const [, term] of terminals.entries()) {
       term.dispose();
     }
     terminals.clear();
     fitAddons.clear();
-    // Do NOT clear spawnedIds — the Rust PTY sessions are still alive
   });
 </script>
 
-<div class="flex flex-col h-full bg-bg-tertiary" bind:this={termContainerEl}>
+<div class="term-panel flex flex-col h-full" bind:this={termContainerEl}>
   <!-- Terminal tab bar -->
-  <div class="flex items-center bg-bg-secondary border-b border-border" style="min-height: 40px;">
+  <div class="term-tabbar flex items-center">
     {#each instances as inst (inst.id)}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div
-        class="flex items-center gap-2.5 border-r border-border transition-colors group cursor-pointer"
-        style="padding: 8px 16px; font-size: 13px;"
-        class:bg-bg-tertiary={currentActiveId === inst.id}
-        class:text-text-primary={currentActiveId === inst.id}
-        class:bg-bg-secondary={currentActiveId !== inst.id}
-        class:text-text-muted={currentActiveId !== inst.id}
+        class="term-tab group"
+        class:active={currentActiveId === inst.id}
         onclick={() => setActiveId(inst.id)}
         role="tab"
         tabindex="0"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="term-tab-icon">
           <polyline points="4 17 10 11 4 5"/>
           <line x1="12" y1="19" x2="20" y2="19"/>
         </svg>
-        {inst.title}
+        <span class="term-tab-label">{inst.title}</span>
 
         <!-- Dock move buttons (visible on hover) -->
-        <span class="flex items-center gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <span class="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {#if dock !== "bottom"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <span
-              class="p-0.5 rounded hover:bg-bg-active cursor-pointer"
+              class="term-tab-action"
               onclick={(e) => { e.stopPropagation(); handleMove(inst.id, "bottom"); }}
               title="Move to bottom panel"
               role="button"
               tabindex="0"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/>
                 <line x1="3" y1="15" x2="21" y2="15"/>
               </svg>
             </span>
           {/if}
-          {#if dock !== "right"}
+          {#if dock !== "left"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <span
-              class="p-0.5 rounded hover:bg-bg-active cursor-pointer"
+              class="term-tab-action"
+              onclick={(e) => { e.stopPropagation(); handleMove(inst.id, "left"); }}
+              title="Move to left panel"
+              role="button"
+              tabindex="0"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </span>
+          {/if}
+          {#if dock !== "right"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <span
+              class="term-tab-action"
               onclick={(e) => { e.stopPropagation(); handleMove(inst.id, "right"); }}
               title="Move to right panel"
               role="button"
               tabindex="0"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/>
                 <line x1="15" y1="3" x2="15" y2="21"/>
               </svg>
             </span>
           {/if}
           {#if dock !== "tab"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <span
-              class="p-0.5 rounded hover:bg-bg-active cursor-pointer"
+              class="term-tab-action"
               onclick={(e) => { e.stopPropagation(); handleMove(inst.id, "tab"); }}
               title="Open as tab"
               role="button"
               tabindex="0"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/>
                 <line x1="3" y1="9" x2="21" y2="9"/>
               </svg>
@@ -317,13 +360,14 @@
         </span>
 
         <!-- Close button -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <span
-          class="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active transition-opacity cursor-pointer"
+          class="term-tab-close"
           onclick={(e) => { e.stopPropagation(); handleCloseTerminal(inst.id); }}
           role="button"
           tabindex="0"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
             <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
@@ -332,12 +376,11 @@
     {/each}
 
     <button
-      class="text-text-muted hover:text-text-primary transition-colors"
-      style="padding: 8px 14px;"
+      class="term-new-btn"
       onclick={handleNewTerminal}
       title="New Terminal"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="12" y1="5" x2="12" y2="19"/>
         <line x1="5" y1="12" x2="19" y2="12"/>
       </svg>
@@ -345,21 +388,162 @@
   </div>
 
   <!-- Terminal instances -->
-  <div class="flex-1 relative overflow-hidden">
+  <div class="flex-1 relative overflow-hidden term-viewport">
     {#each instances as inst (inst.id)}
       <div
-        class="absolute inset-0 p-1"
+        class="absolute inset-0 term-container"
         class:hidden={currentActiveId !== inst.id}
         data-term-id={inst.id}
       ></div>
     {/each}
 
     {#if instances.length === 0}
-      <div class="flex items-center justify-center h-full text-text-muted text-base">
-        <button onclick={handleNewTerminal} class="text-accent hover:text-accent-hover">
-          + New Terminal
+      <div class="flex items-center justify-center h-full">
+        <button onclick={handleNewTerminal} class="term-empty-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-60">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          New Terminal
         </button>
       </div>
     {/if}
   </div>
 </div>
+
+<style>
+  .term-panel {
+    background: #0c0c14;
+  }
+
+  /* ── Tab bar ─────────────────────────────────────────────────────── */
+  .term-tabbar {
+    background: #0a0a12;
+    border-bottom: 1px solid #1a1a2e;
+    min-height: 38px;
+    padding: 0 4px;
+    gap: 2px;
+  }
+
+  .term-tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-radius: 6px 6px 0 0;
+    margin-top: 4px;
+    position: relative;
+    white-space: nowrap;
+  }
+
+  .term-tab:hover {
+    color: var(--color-text-secondary);
+    background: #13131f;
+  }
+
+  .term-tab.active {
+    color: var(--color-text-primary);
+    background: #0c0c14;
+  }
+
+  .term-tab.active::after {
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    background: var(--color-accent);
+    border-radius: 2px 2px 0 0;
+  }
+
+  .term-tab-icon {
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+
+  .term-tab.active .term-tab-icon {
+    opacity: 0.8;
+    color: var(--color-accent);
+  }
+
+  .term-tab-label {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .term-tab-action {
+    padding: 2px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .term-tab-action:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .term-tab-close {
+    padding: 2px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: all 0.1s;
+    cursor: pointer;
+    margin-left: 2px;
+  }
+
+  .term-tab-close:hover {
+    background: rgba(243, 139, 168, 0.2);
+    color: var(--color-error);
+  }
+
+  :global(.group:hover) .term-tab-close {
+    opacity: 1;
+  }
+
+  .term-new-btn {
+    color: var(--color-text-muted);
+    padding: 6px 10px;
+    transition: all 0.15s;
+    border-radius: 4px;
+    margin-left: 2px;
+  }
+
+  .term-new-btn:hover {
+    color: var(--color-text-primary);
+    background: #13131f;
+  }
+
+  /* ── Terminal viewport ───────────────────────────────────────────── */
+  .term-viewport {
+    background: #0c0c14;
+  }
+
+  .term-container {
+    padding: 8px 4px 4px 8px;
+  }
+
+  .term-empty-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text-muted);
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px dashed #1a1a2e;
+    transition: all 0.2s;
+    background: transparent;
+  }
+
+  .term-empty-btn:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    background: rgba(137, 180, 250, 0.05);
+  }
+</style>

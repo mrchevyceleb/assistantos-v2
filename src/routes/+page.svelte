@@ -10,13 +10,15 @@
   import StatusBar from "$lib/components/StatusBar.svelte";
   import ResizeHandle from "$lib/components/ResizeHandle.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
+  import SettingsModal from "$lib/components/SettingsModal.svelte";
   import { sidebarWidth, sidebarVisible, workspacePath } from "$lib/stores/workspace";
-  import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal } from "$lib/stores/terminal";
+  import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal, leftPanelVisible, leftPanelWidth } from "$lib/stores/terminal";
   import { readDirectoryTree, readFileText, startWatcher, stopWatcher } from "$lib/utils/tauri";
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
   import { tabs, updateTabContent } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { zoomIn, zoomOut, resetZoom, initZoom } from "$lib/stores/ui";
+  import { settingsVisible, settings } from "$lib/stores/settings";
 
   let paletteVisible = $state(false);
   let sidebarView = $state<"explorer" | "search">("explorer");
@@ -156,8 +158,19 @@
     rightPanelWidth.update((w) => Math.max(200, Math.min(800, w - delta)));
   }
 
+  function handleLeftPanelResize(delta: number) {
+    leftPanelWidth.update((w) => Math.max(200, Math.min(800, w + delta)));
+  }
+
   // Global keyboard shortcuts
   function handleKeydown(e: KeyboardEvent) {
+    // Ctrl+,: Toggle settings modal
+    if (e.ctrlKey && e.key === ",") {
+      e.preventDefault();
+      settingsVisible.update((v) => !v);
+      return;
+    }
+
     // Ctrl+Shift+F: Global search
     if (e.ctrlKey && e.shiftKey && e.key === "F") {
       e.preventDefault();
@@ -222,7 +235,7 @@
     if (e.ctrlKey && e.key === "`") {
       e.preventDefault();
       if (get(bottomTerminals).length === 0) {
-        addTerminal($workspacePath || "", "bottom");
+        addTerminal($workspacePath || "", $settings.defaultTerminalDock);
       } else {
         terminalVisible.update((v) => !v);
       }
@@ -231,7 +244,7 @@
     // Ctrl+Shift+`: New terminal
     if (e.ctrlKey && e.shiftKey && e.key === "`") {
       e.preventDefault();
-      addTerminal($workspacePath || "");
+      addTerminal($workspacePath || "", $settings.defaultTerminalDock);
     }
   }
 </script>
@@ -296,6 +309,14 @@
       <ResizeHandle direction="horizontal" onResize={handleSidebarResize} />
     {/if}
 
+    <!-- Left dock panel -->
+    {#if $leftPanelVisible}
+      <div style:width="{$leftPanelWidth}px" class="shrink-0 overflow-hidden border-r border-border">
+        <TerminalPanel dock="left" />
+      </div>
+      <ResizeHandle direction="horizontal" onResize={handleLeftPanelResize} />
+    {/if}
+
     <!-- Center + right panels -->
     <div class="flex-1 flex overflow-hidden">
       <!-- Center panel: tabs + content + bottom terminal -->
@@ -339,3 +360,5 @@
   <!-- Status bar -->
   <StatusBar />
 </div>
+
+<SettingsModal visible={$settingsVisible} onClose={() => settingsVisible.set(false)} />

@@ -13,6 +13,11 @@ import {
 } from "$lib/stores/tabs";
 import { terminalVisible, terminalHeight } from "$lib/stores/terminal";
 import { uiZoom } from "$lib/stores/ui";
+import {
+  settings,
+  DEFAULT_SETTINGS,
+  type AppSettings,
+} from "$lib/stores/settings";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -24,6 +29,7 @@ export interface AppState {
   terminalHeight: number;
   sidebarView: "explorer" | "search";
   uiZoom?: number;
+  settings?: Partial<AppSettings>;
   openTabs: Array<{
     path: string;
     name: string;
@@ -54,6 +60,7 @@ export async function saveState(): Promise<void> {
     terminalHeight: get(terminalHeight),
     sidebarView: sidebarViewRef,
     uiZoom: get(uiZoom),
+    settings: get(settings),
     openTabs: $tabs
       .filter((t) => !t.path.startsWith("__terminal__:"))
       .map((t) => ({
@@ -98,6 +105,11 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
   terminalHeight.set(state.terminalHeight);
   if (state.uiZoom != null) {
     uiZoom.set(state.uiZoom);
+  }
+
+  // Restore settings (merge saved over defaults)
+  if (state.settings) {
+    settings.set({ ...DEFAULT_SETTINGS, ...state.settings });
   }
 
   // Restore workspace path (caller will handle loading the file tree)
@@ -159,6 +171,7 @@ export function startAutoSave() {
   unsubscribers.push(terminalVisible.subscribe(() => debouncedSave()));
   unsubscribers.push(terminalHeight.subscribe(() => debouncedSave()));
   unsubscribers.push(uiZoom.subscribe(() => debouncedSave()));
+  unsubscribers.push(settings.subscribe(() => debouncedSave()));
   unsubscribers.push(tabs.subscribe(() => debouncedSave()));
   unsubscribers.push(activeTabId.subscribe(() => debouncedSave()));
 }

@@ -1,7 +1,7 @@
 import { writable, derived, get } from "svelte/store";
 import { openTerminalTab, closeTerminalTab } from "$lib/stores/tabs";
 
-export type TerminalDock = "bottom" | "tab" | "right";
+export type TerminalDock = "bottom" | "tab" | "right" | "left";
 
 export interface TerminalInstance {
   id: string;
@@ -28,6 +28,12 @@ export const rightTerminals = derived(terminalInstances, ($t) =>
 );
 export const rightPanelVisible = derived(rightTerminals, ($t) => $t.length > 0);
 export const activeRightTerminalId = writable<string | null>(null);
+export const leftTerminals = derived(terminalInstances, ($t) =>
+  $t.filter((t) => t.dock === "left")
+);
+export const leftPanelVisible = derived(leftTerminals, ($t) => $t.length > 0);
+export const activeLeftTerminalId = writable<string | null>(null);
+export const leftPanelWidth = writable(400);
 
 export function addTerminal(cwd: string, dock: TerminalDock = "bottom"): string {
   const id = `term-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -41,6 +47,8 @@ export function addTerminal(cwd: string, dock: TerminalDock = "bottom"): string 
     terminalVisible.set(true);
   } else if (dock === "right") {
     activeRightTerminalId.set(id);
+  } else if (dock === "left") {
+    activeLeftTerminalId.set(id);
   }
 
   return id;
@@ -69,6 +77,13 @@ export function removeTerminal(id: string) {
       activeRightTerminalId.set(remaining[0].id);
     } else {
       activeRightTerminalId.set(null);
+    }
+  } else if (inst.dock === "left" && get(activeLeftTerminalId) === id) {
+    const remaining = instances.filter((t) => t.id !== id && t.dock === "left");
+    if (remaining.length > 0) {
+      activeLeftTerminalId.set(remaining[0].id);
+    } else {
+      activeLeftTerminalId.set(null);
     }
   }
 }
@@ -105,6 +120,13 @@ export function moveTerminal(id: string, newDock: TerminalDock) {
     } else {
       activeRightTerminalId.set(null);
     }
+  } else if (oldDock === "left" && get(activeLeftTerminalId) === id) {
+    const remaining = instances.filter((t) => t.id !== id && t.dock === "left");
+    if (remaining.length > 0) {
+      activeLeftTerminalId.set(remaining[0].id);
+    } else {
+      activeLeftTerminalId.set(null);
+    }
   }
 
   // Set active state for new dock
@@ -113,6 +135,8 @@ export function moveTerminal(id: string, newDock: TerminalDock) {
     terminalVisible.set(true);
   } else if (newDock === "right") {
     activeRightTerminalId.set(id);
+  } else if (newDock === "left") {
+    activeLeftTerminalId.set(id);
   } else if (newDock === "tab") {
     openTerminalTab(id, inst.title);
   }

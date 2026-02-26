@@ -31,7 +31,7 @@ export function resetZoom() {
 
 const BASE_FONT_SIZE = 14.5;
 
-function applyZoom(level: number) {
+export function applyZoom(level: number) {
   document.documentElement.style.fontSize = `${level * BASE_FONT_SIZE}px`;
 }
 

@@ -3,6 +3,7 @@
   import { tabs, activeTabId, closeTab, moveTab } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
   import { workspacePath } from "$lib/stores/workspace";
+  import { settings } from "$lib/stores/settings";
   import ContextMenu from "./ContextMenu.svelte";
   import type { MenuItem } from "./ContextMenu.svelte";
 
@@ -25,13 +26,13 @@
 
   function handleClose(e: MouseEvent, id: string) {
     e.stopPropagation();
-    closeTab(id);
+    safeCloseTab(id);
   }
 
   function handleMiddleClick(e: MouseEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault();
-      closeTab(id);
+      safeCloseTab(id);
     }
   }
 
@@ -132,6 +133,18 @@
     dragSide = null;
   }
 
+  function safeCloseTab(tabId: string) {
+    const currentSettings = get(settings);
+    if (currentSettings.confirmCloseUnsaved) {
+      const currentTabs = get(tabs);
+      const tab = currentTabs.find((t) => t.id === tabId);
+      if (tab?.isModified) {
+        if (!window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
+      }
+    }
+    closeTab(tabId);
+  }
+
   // ── Tab context menu actions ──────────────────────────────────────
   async function handleCopyTabPath(tabId: string) {
     const tab = get(tabs).find((t) => t.id === tabId);
@@ -160,7 +173,7 @@
   function closeOtherTabs(tabId: string) {
     const currentTabs = get(tabs);
     for (const t of currentTabs) {
-      if (t.id !== tabId) closeTab(t.id);
+      if (t.id !== tabId) safeCloseTab(t.id);
     }
   }
 
@@ -169,7 +182,7 @@
     const idx = currentTabs.findIndex((t) => t.id === tabId);
     if (idx === -1) return;
     const toClose = currentTabs.slice(idx + 1);
-    for (const t of toClose) closeTab(t.id);
+    for (const t of toClose) safeCloseTab(t.id);
   }
 
   function closeTabsToLeft(tabId: string) {
@@ -177,12 +190,12 @@
     const idx = currentTabs.findIndex((t) => t.id === tabId);
     if (idx === -1) return;
     const toClose = currentTabs.slice(0, idx);
-    for (const t of toClose) closeTab(t.id);
+    for (const t of toClose) safeCloseTab(t.id);
   }
 
   function closeAllTabs() {
     const currentTabs = get(tabs);
-    for (const t of currentTabs) closeTab(t.id);
+    for (const t of currentTabs) safeCloseTab(t.id);
   }
 
   function getTabContextMenuItems(tabId: string): MenuItem[] {
@@ -193,7 +206,7 @@
     const hasOthers = currentTabs.length > 1;
 
     return [
-      { label: "Close", action: () => closeTab(tabId) },
+      { label: "Close", action: () => safeCloseTab(tabId) },
       ...(hasOthers ? [{ label: "Close Others", action: () => closeOtherTabs(tabId) }] : []),
       ...(hasLeft ? [{ label: "Close to the Left", action: () => closeTabsToLeft(tabId) }] : []),
       ...(hasRight ? [{ label: "Close to the Right", action: () => closeTabsToRight(tabId) }] : []),

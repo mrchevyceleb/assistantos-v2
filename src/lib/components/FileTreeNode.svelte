@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { FileNode } from "$lib/utils/tauri";
   import { readDirectoryChildren } from "$lib/utils/tauri";
+  import { settings } from "$lib/stores/settings";
   import FileTreeNode from "./FileTreeNode.svelte";
 
   interface Props {
@@ -24,7 +25,7 @@
     expanded = !expanded;
     if (expanded && !loaded) {
       try {
-        children = await readDirectoryChildren(node.path);
+        children = await readDirectoryChildren(node.path, $settings.showHiddenFiles);
         loaded = true;
       } catch (e) {
         console.error("Failed to load children:", e);
@@ -52,7 +53,7 @@
     if (filterText && node.is_dir && !expanded) {
       expanded = true;
       if (!loaded) {
-        readDirectoryChildren(node.path).then((c) => {
+        readDirectoryChildren(node.path, $settings.showHiddenFiles).then((c) => {
           children = c;
           loaded = true;
         });

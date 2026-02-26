@@ -24,12 +24,18 @@ export interface FileInfo {
   modified?: number;
 }
 
-export async function readDirectoryTree(path: string): Promise<FileNode> {
-  return invoke("read_directory_tree", { path });
+export async function readDirectoryTree(
+  path: string,
+  showHidden: boolean = false
+): Promise<FileNode> {
+  return invoke("read_directory_tree", { path, showHidden });
 }
 
-export async function readDirectoryChildren(path: string): Promise<FileNode[]> {
-  return invoke("read_directory_children", { path });
+export async function readDirectoryChildren(
+  path: string,
+  showHidden: boolean = false
+): Promise<FileNode[]> {
+  return invoke("read_directory_children", { path, showHidden });
 }
 
 export async function readFileText(path: string): Promise<string> {
@@ -68,9 +74,10 @@ export async function deletePath(path: string): Promise<void> {
 export async function searchFiles(
   root: string,
   query: string,
-  caseSensitive: boolean = false
+  caseSensitive: boolean = false,
+  showHidden: boolean = false
 ): Promise<SearchResult[]> {
-  return invoke("search_files", { root, query, caseSensitive });
+  return invoke("search_files", { root, query, caseSensitive, showHidden });
 }
 
 export async function getFileInfo(path: string): Promise<FileInfo> {
@@ -84,8 +91,11 @@ export interface FileEntry {
   ext?: string;
 }
 
-export async function listAllFiles(root: string): Promise<FileEntry[]> {
-  return invoke("list_all_files", { root });
+export async function listAllFiles(
+  root: string,
+  showHidden: boolean = false
+): Promise<FileEntry[]> {
+  return invoke("list_all_files", { root, showHidden });
 }
 
 // ── Terminal PTY wrappers ────────────────────────────────────────────
@@ -94,9 +104,10 @@ export async function spawnTerminal(
   id: string,
   cwd: string,
   rows: number,
-  cols: number
+  cols: number,
+  shell: string = "auto"
 ): Promise<void> {
-  return invoke("spawn_terminal", { id, cwd, rows, cols });
+  return invoke("spawn_terminal", { id, cwd, rows, cols, shell });
 }
 
 export async function writeTerminal(

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { activeTab, tabs, activeTabId, toggleEditMode, updateTabContent, setTabModified } from "$lib/stores/tabs";
   import { writeFileText } from "$lib/utils/tauri";
+  import { settings } from "$lib/stores/settings";
   import MarkdownViewer from "./MarkdownViewer.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import CodeViewer from "./CodeViewer.svelte";
@@ -35,9 +36,11 @@
     updateTabContent(tab.id, content);
     setTabModified(tab.id, true);
 
-    // Auto-save after 2 seconds
+    // Auto-save after configured delay (0 = disabled)
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => handleSave(content), 2000);
+    if ($settings.autoSaveDelay > 0) {
+      autoSaveTimer = setTimeout(() => handleSave(content), $settings.autoSaveDelay);
+    }
   }
 
   function handleToggleEdit() {

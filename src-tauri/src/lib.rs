@@ -44,18 +44,21 @@ const HIDDEN_DIRS: &[&str] = &[
     "build",
 ];
 
-fn should_skip(name: &str) -> bool {
-    HIDDEN_DIRS.contains(&name)
+fn should_skip(name: &str, show_hidden: bool) -> bool {
+    if show_hidden {
+        return false;
+    }
+    HIDDEN_DIRS.contains(&name) || name.starts_with('.')
 }
 
-fn build_tree(path: &Path, depth: usize, max_depth: usize) -> Option<FileNode> {
+fn build_tree(path: &Path, depth: usize, max_depth: usize, show_hidden: bool) -> Option<FileNode> {
     let name = path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
 
-    if should_skip(&name) {
+    if should_skip(&name, show_hidden) {
         return None;
     }
 
@@ -88,7 +91,7 @@ fn build_tree(path: &Path, depth: usize, max_depth: usize) -> Option<FileNode> {
                 }
             });
             for entry in entries {
-                if let Some(node) = build_tree(&entry.path(), depth + 1, max_depth) {
+                if let Some(node) = build_tree(&entry.path(), depth + 1, max_depth, show_hidden) {
                     children.push(node);
                 }
             }
@@ -119,7 +122,7 @@ fn build_tree(path: &Path, depth: usize, max_depth: usize) -> Option<FileNode> {
 }
 
 #[tauri::command]
-fn read_directory_tree(path: String) -> Result<FileNode, String> {
+fn read_directory_tree(path: String, show_hidden: bool) -> Result<FileNode, String> {
     let path = PathBuf::from(&path);
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
@@ -127,11 +130,12 @@ fn read_directory_tree(path: String) -> Result<FileNode, String> {
     if !path.is_dir() {
         return Err(format!("Path is not a directory: {}", path.display()));
     }
-    build_tree(&path, 0, 20).ok_or_else(|| "Failed to build directory tree".to_string())
+    build_tree(&path, 0, 20, show_hidden)
+        .ok_or_else(|| "Failed to build directory tree".to_string())
 }
 
 #[tauri::command]
-fn read_directory_children(path: String) -> Result<Vec<FileNode>, String> {
+fn read_directory_children(path: String, show_hidden: bool) -> Result<Vec<FileNode>, String> {
     let path = PathBuf::from(&path);
     if !path.is_dir() {
         return Err("Not a directory".to_string());
@@ -156,7 +160,7 @@ fn read_directory_children(path: String) -> Result<Vec<FileNode>, String> {
 
     for entry in entries {
         let name = entry.file_name().to_string_lossy().to_string();
-        if should_skip(&name) {
+        if should_skip(&name, show_hidden) {
             continue;
         }
         let entry_path = entry.path();
@@ -261,6 +265,7 @@ fn search_files(
     root: String,
     query: String,
     case_sensitive: bool,
+    show_hidden: bool,
 ) -> Result<Vec<SearchResult>, String> {
     let mut results = Vec::new();
     let query_lower = if !case_sensitive {
@@ -273,7 +278,7 @@ fn search_files(
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !should_skip(&name)
+            !should_skip(&name, show_hidden)
         })
         .filter_map(|e| e.ok())
     {
@@ -383,7 +388,7 @@ pub struct FileEntry {
 }
 
 #[tauri::command]
-fn list_all_files(root: String) -> Result<Vec<FileEntry>, String> {
+fn list_all_files(root: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
     let root_path = PathBuf::from(&root);
     let mut files = Vec::new();
 
@@ -391,7 +396,7 @@ fn list_all_files(root: String) -> Result<Vec<FileEntry>, String> {
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !should_skip(&name)
+            !should_skip(&name, show_hidden)
         })
         .filter_map(|e| e.ok())
     {
@@ -454,6 +459,7 @@ fn spawn_terminal(
     cwd: String,
     rows: u16,
     cols: u16,
+    shell: String,
     state: tauri::State<'_, TerminalState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -477,11 +483,29 @@ fn spawn_terminal(
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
     // Determine shell
-    let mut cmd = if cfg!(target_os = "windows") {
+    let shell_trimmed = shell.trim();
+    let mut cmd = if shell_trimmed.is_empty() || shell_trimmed.eq_ignore_ascii_case("auto") {
+        // Default behavior: powershell on Windows, $SHELL on Unix
+        if cfg!(target_os = "windows") {
+            CommandBuilder::new("powershell.exe")
+        } else {
+            let default_shell =
+                std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+            CommandBuilder::new(default_shell)
+        }
+    } else if shell_trimmed.eq_ignore_ascii_case("powershell") {
         CommandBuilder::new("powershell.exe")
+    } else if shell_trimmed.eq_ignore_ascii_case("bash") {
+        if cfg!(target_os = "windows") {
+            CommandBuilder::new("bash.exe")
+        } else {
+            CommandBuilder::new("bash")
+        }
+    } else if shell_trimmed.eq_ignore_ascii_case("cmd") {
+        CommandBuilder::new("cmd.exe")
     } else {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        CommandBuilder::new(shell)
+        // Treat as a direct executable path
+        CommandBuilder::new(shell_trimmed)
     };
 
     // Set working directory

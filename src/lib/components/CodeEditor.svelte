@@ -6,7 +6,8 @@
   import { markdown } from "@codemirror/lang-markdown";
   import { oneDark } from "@codemirror/theme-one-dark";
   import { searchKeymap } from "@codemirror/search";
-  import { bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+  import { bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, indentUnit } from "@codemirror/language";
+  import { settings } from "$lib/stores/settings";
 
   interface Props {
     content: string;
@@ -40,9 +41,7 @@
       langExtension = markdown(); // fallback for now
     }
 
-    const state = EditorState.create({
-      doc: content,
-      extensions: [
+    const extensions = [
         lineNumbers(),
         highlightActiveLine(),
         highlightActiveLineGutter(),
@@ -61,7 +60,7 @@
         EditorView.theme({
           "&": {
             height: "100%",
-            fontSize: "14px",
+            fontSize: `${$settings.editorFontSize}px`,
           },
           ".cm-scroller": {
             fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
@@ -70,7 +69,17 @@
             padding: "8px 0",
           },
         }),
-      ],
+        indentUnit.of(" ".repeat($settings.tabSize)),
+        EditorState.tabSize.of($settings.tabSize),
+    ];
+
+    if ($settings.wordWrap) {
+      extensions.push(EditorView.lineWrapping);
+    }
+
+    const state = EditorState.create({
+      doc: content,
+      extensions,
     });
 
     view = new EditorView({

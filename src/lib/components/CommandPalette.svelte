@@ -3,6 +3,7 @@
   import { workspacePath } from "$lib/stores/workspace";
   import { openTab, updateTabContent, setTabLoading } from "$lib/stores/tabs";
   import { listAllFiles, readFileText } from "$lib/utils/tauri";
+  import { settings } from "$lib/stores/settings";
   import type { FileEntry } from "$lib/utils/tauri";
 
   interface Props {
@@ -22,7 +23,7 @@
   $effect(() => {
     if (visible && $workspacePath) {
       isLoading = true;
-      listAllFiles($workspacePath).then((files) => {
+      listAllFiles($workspacePath, $settings.showHiddenFiles).then((files) => {
         allFiles = files;
         filterFiles();
         isLoading = false;

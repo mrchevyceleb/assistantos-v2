@@ -2,6 +2,7 @@
   import { workspacePath, fileTree, isLoadingTree, workspaceName } from "$lib/stores/workspace";
   import { openTab } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
+  import { settings } from "$lib/stores/settings";
   import { readDirectoryTree, readDirectoryChildren, readFileText, createFile, renamePath, deletePath } from "$lib/utils/tauri";
   import { updateTabContent, setTabLoading } from "$lib/stores/tabs";
   import { getFileIcon } from "$lib/utils/file-types";
@@ -23,7 +24,7 @@
   async function loadTree(path: string) {
     isLoadingTree.set(true);
     try {
-      const tree = await readDirectoryTree(path);
+      const tree = await readDirectoryTree(path, $settings.showHiddenFiles);
       fileTree.set(tree);
       workspaceName.set(tree.name);
     } catch (e) {
