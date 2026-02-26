@@ -66,7 +66,7 @@
   function getFileColor(ext?: string): string {
     if (!ext) return "var(--color-text-muted)";
     const map: Record<string, string> = {
-      md: "#00d4ff", markdown: "#00d4ff",
+      md: "#58b4d0", markdown: "#58b4d0",
       ts: "#3178c6", tsx: "#3178c6",
       js: "#f7df1e", jsx: "#f7df1e", mjs: "#f7df1e",
       py: "#3776ab",
@@ -79,7 +79,7 @@
       vue: "#42b883",
       png: "#a6e3a1", jpg: "#a6e3a1", jpeg: "#a6e3a1", gif: "#a6e3a1", svg: "#f9e2af", webp: "#a6e3a1",
       pdf: "#f38ba8",
-      sh: "#a6e3a1", ps1: "#00d4ff", bat: "#00d4ff",
+      sh: "#a6e3a1", ps1: "#58b4d0", bat: "#58b4d0",
     };
     return map[ext.toLowerCase()] || "var(--color-text-muted)";
   }

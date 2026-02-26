@@ -260,7 +260,7 @@
         placeholder="Filter files..."
         bind:value={filterText}
         class="w-full bg-bg-primary text-text-primary rounded-md border border-border
-               focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(0,212,255,0.15)] placeholder-text-muted"
+               focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(88,180,208,0.15)] placeholder-text-muted"
         style="font-size: 13px; padding: 7px 12px;"
       />
     </div>

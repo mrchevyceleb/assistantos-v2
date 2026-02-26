@@ -12,7 +12,7 @@
 
 <div class="icon-rail flex flex-col items-center shrink-0">
   <!-- Top icons -->
-  <div class="flex flex-col items-center gap-1 mt-1">
+  <div class="flex flex-col items-center gap-2 mt-2">
     <!-- Explorer -->
     <button
       class="rail-icon"
@@ -54,7 +54,7 @@
   <div class="flex-1"></div>
 
   <!-- Bottom icons -->
-  <div class="flex flex-col items-center gap-1 mb-2">
+  <div class="flex flex-col items-center gap-2 mb-3">
     <!-- Settings -->
     <button
       class="rail-icon"
@@ -97,12 +97,12 @@
 
   .rail-icon:hover {
     color: var(--color-text-secondary);
-    background: rgba(0, 212, 255, 0.06);
+    background: rgba(88, 180, 208, 0.06);
   }
 
   .rail-icon.active {
     color: var(--color-accent);
-    background: rgba(0, 212, 255, 0.1);
+    background: rgba(88, 180, 208, 0.1);
   }
 
   .rail-icon.active::before {

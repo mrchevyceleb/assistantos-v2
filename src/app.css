@@ -11,8 +11,8 @@
   --color-text-primary: #e2e8f0;
   --color-text-secondary: #94a3b8;
   --color-text-muted: #64748b;
-  --color-accent: #00d4ff;
-  --color-accent-hover: #22d3ee;
+  --color-accent: #58b4d0;
+  --color-accent-hover: #6cc4de;
   --color-border: #1e2231;
   --color-border-light: #2a2f42;
   --color-success: #34d399;
@@ -20,8 +20,8 @@
   --color-error: #f87171;
   --color-tab-active: #12141c;
   --color-tab-inactive: #0a0b10;
-  --color-accent-glow: rgba(0, 212, 255, 0.15);
-  --color-border-glow: rgba(0, 212, 255, 0.08);
+  --color-accent-glow: rgba(88, 180, 208, 0.12);
+  --color-border-glow: rgba(88, 180, 208, 0.06);
 }
 
 :root {
@@ -67,14 +67,14 @@ html, body {
 }
 
 .glow-border {
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.06),
-              inset 0 0 12px rgba(0, 212, 255, 0.02);
+  box-shadow: 0 0 12px rgba(88, 180, 208, 0.06),
+              inset 0 0 12px rgba(88, 180, 208, 0.02);
 }
 
 .glow-border-strong {
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1),
-              0 0 40px rgba(0, 212, 255, 0.04),
-              inset 0 0 20px rgba(0, 212, 255, 0.02);
+  box-shadow: 0 0 20px rgba(88, 180, 208, 0.1),
+              0 0 40px rgba(88, 180, 208, 0.04),
+              inset 0 0 20px rgba(88, 180, 208, 0.02);
 }
 
 .panel-header {
@@ -84,7 +84,7 @@ html, body {
 }
 
 .hover-glow:hover {
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.12);
+  box-shadow: 0 0 8px rgba(88, 180, 208, 0.12);
 }
 
 /* ── Scrollbar styling ──────────────────────────────────────────── */
@@ -103,7 +103,7 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 212, 255, 0.2);
+  background: rgba(88, 180, 208, 0.2);
 }
 
 /* ── Markdown rendered content styling ──────────────────────────── */
@@ -267,12 +267,12 @@ html, body {
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(0, 212, 255, 0.12);
+  background: rgba(88, 180, 208, 0.12);
   border-radius: 3px;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 212, 255, 0.25);
+  background: rgba(88, 180, 208, 0.25);
 }
 
 /* Let the terminal text be selectable */

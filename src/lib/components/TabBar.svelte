@@ -233,7 +233,7 @@
   function getExtColor(ext?: string): string {
     if (!ext) return "var(--color-text-muted)";
     const colors: Record<string, string> = {
-      md: "#00d4ff",
+      md: "#58b4d0",
       ts: "#3178c6",
       tsx: "#3178c6",
       js: "#f7df1e",
@@ -261,7 +261,7 @@
       <div
         class="flex items-center gap-2.5 border-r border-border whitespace-nowrap
                transition-colors cursor-grab group min-w-0 shrink-0 relative"
-        style="padding: 10px 18px; font-size: 13px;"
+        style="padding: 12px 20px; font-size: 13px;"
         class:bg-bg-primary={$activeTabId === tab.id}
         class:text-text-primary={$activeTabId === tab.id}
         class:bg-bg-tertiary={$activeTabId !== tab.id}

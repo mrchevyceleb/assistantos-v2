@@ -144,7 +144,7 @@
     <!-- Empty state -->
     <div class="flex-1 flex items-center justify-center text-text-muted">
       <div class="text-center">
-        <h2 class="text-3xl font-light mb-3 text-text-secondary" style="text-shadow: 0 0 30px rgba(0, 212, 255, 0.15);">AssistantOS</h2>
+        <h2 class="text-3xl font-light mb-3 text-text-secondary" style="text-shadow: 0 0 30px rgba(88, 180, 208, 0.15);">AssistantOS</h2>
         <p class="text-base">Open a file from the sidebar to get started</p>
         <div class="mt-8 text-sm space-y-2.5">
           <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+O</kbd> Open Folder</p>

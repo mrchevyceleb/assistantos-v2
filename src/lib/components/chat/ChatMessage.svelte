@@ -23,7 +23,7 @@
 <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
   <div class="max-w-[85%] {message.role === 'user'
     ? 'bg-accent/15 border border-accent/20 text-text-primary'
-    : 'bg-bg-secondary/80 border border-border/30 text-text-primary'} rounded-xl px-3.5 py-2.5 text-sm">
+    : 'bg-bg-secondary/80 border border-border/30 text-text-primary'} rounded-xl px-4 py-3 text-sm">
 
     {#if message.role === 'user'}
       <div class="whitespace-pre-wrap">{message.content}</div>

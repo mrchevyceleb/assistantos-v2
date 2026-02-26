@@ -516,7 +516,7 @@
     border: 1px solid #1e1e30;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: inset 0 0 20px rgba(0, 212, 255, 0.03);
+    box-shadow: inset 0 0 20px rgba(88, 180, 208, 0.03);
   }
 
   .term-empty-btn {
@@ -535,6 +535,6 @@
   .term-empty-btn:hover {
     color: var(--color-accent);
     border-color: var(--color-accent);
-    background: rgba(0, 212, 255, 0.05);
+    background: rgba(88, 180, 208, 0.05);
   }
 </style>

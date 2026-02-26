@@ -32,8 +32,8 @@
   }
 </script>
 
-<div class="flex items-center justify-between bg-bg-tertiary/80 backdrop-blur-sm border-t border-border/50 text-text-muted" style="padding: 0 16px; height: 32px; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 -2px 8px rgba(0,0,0,0.2);">
-  <div class="flex items-center gap-4">
+<div class="flex items-center justify-between bg-bg-tertiary/80 backdrop-blur-sm border-t border-border/50 text-text-muted" style="padding: 0 20px; height: 36px; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 -2px 8px rgba(0,0,0,0.2);">
+  <div class="flex items-center gap-5">
     {#if $activeTab}
       <span class="truncate max-w-[400px]" title={$activeTab.path}>
         {getRelativePath($activeTab.path)}
@@ -49,7 +49,7 @@
     {/if}
   </div>
 
-  <div class="flex items-center gap-4">
+  <div class="flex items-center gap-5">
     <button
       onclick={() => settingsVisible.update((v) => !v)}
       class="flex items-center gap-1 hover:text-text-primary transition-colors"

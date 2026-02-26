@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiModel: 'anthropic/claude-sonnet-4',
   aiBaseUrl: 'https://openrouter.ai/api/v1',
   aiTemperature: 0.7,
-  aiMaxTokens: 128000,
+  aiMaxTokens: 16384,
   aiEnableToolUse: true,
   aiConfirmWrites: true,
   aiMaxToolIterations: 25,

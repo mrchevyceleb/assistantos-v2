@@ -22,9 +22,9 @@
   function getAISettings(): AIChatSettings {
     const s = get(settings);
     return {
-      apiKey: s.aiApiKey,
+      apiKey: s.aiApiKey.trim(),
       model: s.aiModel,
-      baseUrl: s.aiBaseUrl,
+      baseUrl: s.aiBaseUrl.trim().replace(/\/+$/, ''),
       temperature: s.aiTemperature,
       maxTokens: s.aiMaxTokens,
       enableToolUse: s.aiEnableToolUse,
@@ -102,11 +102,23 @@
       },
       onError: (error: string) => {
         if (currentStreamingId) {
-          // If still empty streaming message, replace with error
           const msgs = get(chatMessages);
           const msg = msgs.find(m => m.id === currentStreamingId);
           if (msg && !msg.content) {
-            appendToStreamingMessage(currentStreamingId, `Error: ${error}`);
+            // Provide friendlier messages for common errors, but include details
+            let friendlyError = error;
+            if (error.includes('401') || error.toLowerCase().includes('unauthorized') || error.toLowerCase().includes('authentication')) {
+              friendlyError = 'Authentication failed. Check your API key in Settings > AI Chat.\n\n' + error;
+            } else if (error.includes('429')) {
+              friendlyError = 'Rate limited. Wait a moment and try again.';
+            } else if (error.includes('403')) {
+              friendlyError = 'Access denied. Your API key may not have access to this model.\n\n' + error;
+            } else if (error.includes('400')) {
+              friendlyError = 'Bad request. The model may not support the current settings.\n\n' + error;
+            } else if (error.toLowerCase().includes('network') || error.toLowerCase().includes('failed to fetch')) {
+              friendlyError = 'Network error. Check your connection and API base URL.';
+            }
+            appendToStreamingMessage(currentStreamingId, friendlyError);
           }
           finalizeMessage(currentStreamingId);
           currentStreamingId = null;
@@ -188,7 +200,7 @@
 
 <div class="flex flex-col h-full bg-bg-primary/60 backdrop-blur-sm">
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-3 border-b border-border/50">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
     <div class="flex items-center gap-2">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-accent shrink-0">
         <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
@@ -241,11 +253,11 @@
 
   <!-- Messages -->
   <div
-    class="flex-1 overflow-y-auto px-4 py-3 space-y-3"
+    class="flex-1 overflow-y-auto px-5 py-5 space-y-4"
     bind:this={messagesContainer}
   >
     {#if $chatMessages.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-text-muted text-sm gap-2">
+      <div class="flex flex-col items-center justify-center h-full text-text-muted text-sm gap-3">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="opacity-30">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>

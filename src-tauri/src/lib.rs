@@ -802,11 +802,14 @@ async fn ai_chat_stream(
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let api_key = api_key.trim().to_string();
 
     let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
+        .header("HTTP-Referer", "https://assistantos.app")
+        .header("X-Title", "AssistantOS")
         .body(body_json)
         .send()
         .await
@@ -904,10 +907,13 @@ async fn ai_chat_stream(
 async fn ai_fetch_models(base_url: String, api_key: String) -> Result<String, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let api_key = api_key.trim().to_string();
 
     let response = client
         .get(&url)
         .header("Authorization", format!("Bearer {}", api_key))
+        .header("HTTP-Referer", "https://assistantos.app")
+        .header("X-Title", "AssistantOS")
         .send()
         .await
         .map_err(|e| format!("Failed to fetch models: {}", e))?;

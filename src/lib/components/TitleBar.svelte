@@ -129,7 +129,7 @@
       rgba(30, 34, 49, 0.6) 0%,
       rgba(18, 20, 28, 0.4) 100%
     );
-    border-bottom: 1px solid rgba(0, 212, 255, 0.06);
+    border-bottom: 1px solid rgba(88, 180, 208, 0.06);
     position: relative;
   }
 
@@ -143,8 +143,8 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(0, 212, 255, 0.08) 30%,
-      rgba(0, 212, 255, 0.08) 70%,
+      rgba(88, 180, 208, 0.08) 30%,
+      rgba(88, 180, 208, 0.08) 70%,
       transparent 100%
     );
   }

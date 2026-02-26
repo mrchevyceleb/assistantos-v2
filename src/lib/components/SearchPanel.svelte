@@ -193,7 +193,7 @@
           type="text"
           placeholder="Search in files..."
           class="w-full bg-bg-primary text-text-primary text-[13px] px-3 py-1.5 pr-8 rounded-md border border-border
-                 focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(0,212,255,0.15)] placeholder-text-muted"
+                 focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(88,180,208,0.15)] placeholder-text-muted"
         />
         {#if query}
           <button

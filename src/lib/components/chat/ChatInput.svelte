@@ -45,27 +45,28 @@
   });
 </script>
 
-<div class="px-4 py-3 border-t border-border/50">
+<div class="px-4 py-4 border-t border-border/40">
   {#if disabled}
-    <div class="text-text-muted text-xs text-center py-2">
+    <div class="text-text-muted text-[13px] text-center py-3 bg-bg-secondary/60 rounded-xl border border-border/30">
       Set your API key in Settings &rarr; AI Chat to get started
     </div>
   {:else}
-    <div class="flex gap-2 items-end">
+    <div class="flex gap-3 items-end bg-bg-secondary/80 border border-border/40 rounded-xl px-4 py-3 focus-within:border-accent/40 transition-colors">
       <textarea
         bind:this={textarea}
         bind:value={inputText}
         onkeydown={handleKeydown}
         placeholder="Ask about your workspace..."
         rows="1"
-        class="flex-1 bg-bg-secondary/80 border border-border/40 rounded-lg px-3 py-2 text-text-primary text-sm resize-none outline-none
-          placeholder:text-text-muted/50 focus:border-accent/40 transition-colors"
+        class="flex-1 bg-transparent text-text-primary text-[14px] resize-none outline-none leading-[1.4]
+          placeholder:text-text-muted/60"
+        style="min-height: 1.4em;"
         disabled={isLoading}
       ></textarea>
       {#if isLoading}
         <button
           onclick={onStop}
-          class="shrink-0 w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-colors"
+          class="shrink-0 w-9 h-9 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-colors"
           title="Stop (Escape)"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -76,11 +77,11 @@
         <button
           onclick={send}
           disabled={!inputText.trim()}
-          class="shrink-0 w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 text-accent flex items-center justify-center
-            hover:bg-accent/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          class="shrink-0 w-9 h-9 rounded-lg bg-accent/20 text-accent flex items-center justify-center
+            hover:bg-accent/30 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
           title="Send (Enter)"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="22" y1="2" x2="11" y2="13"/>
             <polygon points="22 2 15 22 11 13 2 9 22 2"/>
           </svg>

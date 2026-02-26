@@ -62,7 +62,7 @@ export const DEFAULT_AI_SETTINGS: AIChatSettings = {
   model: 'anthropic/claude-sonnet-4',
   baseUrl: 'https://openrouter.ai/api/v1',
   temperature: 0.7,
-  maxTokens: 128000,
+  maxTokens: 16384,
   enableToolUse: true,
   confirmWrites: true,
   maxToolIterations: 25,
