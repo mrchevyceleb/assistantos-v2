@@ -22,8 +22,8 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultTerminalDock: "bottom",
   defaultShell: "auto",
-  terminalFontSize: 13,
-  terminalCursorStyle: "block",
+  terminalFontSize: 14,
+  terminalCursorStyle: "bar",
   editorFontSize: 14,
   tabSize: 2,
   wordWrap: false,

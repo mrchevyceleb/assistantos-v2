@@ -9,7 +9,6 @@
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
-  import { WebglAddon } from "@xterm/addon-webgl";
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
   import { workspacePath } from "$lib/stores/workspace";
@@ -92,11 +91,12 @@
     term.open(containerEl);
 
     try {
+      const { WebglAddon } = await import("@xterm/addon-webgl");
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => { webglAddon.dispose(); });
       term.loadAddon(webglAddon);
     } catch {
-      // WebGL not available — canvas renderer is fine
+      // WebGL not available or addon incompatible — canvas renderer is fine
     }
 
     fitAddon.fit();
@@ -212,12 +212,15 @@
   </div>
 
   <!-- Terminal area -->
-  <div class="flex-1 term-tab-content" bind:this={containerEl}></div>
+  <div class="flex-1 term-tab-viewport">
+    <div class="term-tab-content" bind:this={containerEl}></div>
+  </div>
 </div>
 
 <style>
   .term-tab-wrapper {
     background: #0c0c14;
+    position: relative;
   }
 
   .term-tab-toolbar {
@@ -252,7 +255,16 @@
     background: #1a1a2e;
   }
 
+  .term-tab-viewport {
+    background: #08080e;
+    padding: 6px 8px 8px 8px;
+    overflow: hidden;
+  }
+
   .term-tab-content {
-    padding: 8px 4px 4px 8px;
+    height: 100%;
+    border: 1px solid #1e1e30;
+    border-radius: 8px;
+    overflow: hidden;
   }
 </style>
