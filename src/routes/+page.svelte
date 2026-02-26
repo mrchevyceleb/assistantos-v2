@@ -11,6 +11,8 @@
   import ResizeHandle from "$lib/components/ResizeHandle.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
+  import TitleBar from "$lib/components/TitleBar.svelte";
+  import IconRail from "$lib/components/IconRail.svelte";
   import { sidebarWidth, sidebarVisible, workspacePath } from "$lib/stores/workspace";
   import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal, leftPanelVisible, leftPanelWidth } from "$lib/stores/terminal";
   import { readDirectoryTree, readFileText, startWatcher, stopWatcher } from "$lib/utils/tauri";
@@ -255,48 +257,27 @@
 <CommandPalette visible={paletteVisible} onClose={() => paletteVisible = false} />
 
 <div class="h-full flex flex-col">
+  <!-- Custom title bar -->
+  <TitleBar />
+
   <!-- Main content area -->
   <div class="flex-1 flex overflow-hidden">
+    <!-- Icon rail (always visible) -->
+    <IconRail
+      activeView={sidebarView}
+      onViewChange={(view) => {
+        if (sidebarView === view && $sidebarVisible) {
+          sidebarVisible.set(false);
+        } else {
+          sidebarView = view;
+          sidebarVisible.set(true);
+        }
+      }}
+    />
+
     <!-- Sidebar -->
     {#if $sidebarVisible}
       <div style:width="{$sidebarWidth}px" class="shrink-0 overflow-hidden flex flex-col">
-        <!-- Sidebar tab bar -->
-        <div class="flex items-center bg-bg-secondary border-b border-border shrink-0">
-          <button
-            class="flex-1 flex items-center justify-center gap-2.5 transition-colors border-b-2"
-            style="padding: 12px 0; font-size: 13px;"
-            class:border-accent={sidebarView === "explorer"}
-            class:text-text-primary={sidebarView === "explorer"}
-            class:border-transparent={sidebarView !== "explorer"}
-            class:text-text-muted={sidebarView !== "explorer"}
-            class:hover:text-text-secondary={sidebarView !== "explorer"}
-            onclick={() => sidebarView = "explorer"}
-            title="Explorer (Ctrl+B)"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-            </svg>
-            Explorer
-          </button>
-          <button
-            class="flex-1 flex items-center justify-center gap-2.5 transition-colors border-b-2"
-            style="padding: 12px 0; font-size: 13px;"
-            class:border-accent={sidebarView === "search"}
-            class:text-text-primary={sidebarView === "search"}
-            class:border-transparent={sidebarView !== "search"}
-            class:text-text-muted={sidebarView !== "search"}
-            class:hover:text-text-secondary={sidebarView !== "search"}
-            onclick={() => sidebarView = "search"}
-            title="Search (Ctrl+Shift+F)"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            Search
-          </button>
-        </div>
-
         <!-- Sidebar content -->
         <div class="flex-1 overflow-hidden">
           {#if sidebarView === "search"}

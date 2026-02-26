@@ -171,12 +171,12 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-[15vh]"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-[15vh]"
     onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onkeydown={handleKeydown}
     role="dialog"
   >
-    <div class="w-[640px] max-h-[60vh] bg-bg-primary border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="w-[640px] max-h-[60vh] glass-panel-solid border border-border rounded-xl shadow-2xl glow-border flex flex-col overflow-hidden">
       <!-- Search input -->
       <div class="flex items-center gap-3 px-5 py-4 border-b border-border">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted shrink-0">

@@ -5,7 +5,7 @@
    * preserving the PTY session and xterm.js state.
    */
   import { onMount, onDestroy } from "svelte";
-  import { terminalInstances, moveTerminal, removeTerminal } from "$lib/stores/terminal";
+  import { terminalInstances, moveTerminal, removeTerminal, appendTerminalBuffer, getTerminalBuffer, clearTerminalBuffer } from "$lib/stores/terminal";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -14,6 +14,7 @@
   import { workspacePath } from "$lib/stores/workspace";
   import { uiZoom } from "$lib/stores/ui";
   import { settings } from "$lib/stores/settings";
+  import { TERM_THEME } from "$lib/utils/terminal-theme";
 
   interface Props {
     terminalId: string;
@@ -22,31 +23,6 @@
   let { terminalId }: Props = $props();
 
   let BASE_TERM_FONT_SIZE = $derived($settings.terminalFontSize);
-
-  const TERM_THEME = {
-    background: "#0c0c14",
-    foreground: "#cdd6f4",
-    cursor: "#89b4fa",
-    cursorAccent: "#0c0c14",
-    selectionBackground: "#585b7066",
-    selectionForeground: "#cdd6f4",
-    black: "#45475a",
-    red: "#f38ba8",
-    green: "#a6e3a1",
-    yellow: "#f9e2af",
-    blue: "#89b4fa",
-    magenta: "#f5c2e7",
-    cyan: "#94e2d5",
-    white: "#bac2de",
-    brightBlack: "#585b70",
-    brightRed: "#f38ba8",
-    brightGreen: "#a6e3a1",
-    brightYellow: "#f9e2af",
-    brightBlue: "#89b4fa",
-    brightMagenta: "#f5c2e7",
-    brightCyan: "#94e2d5",
-    brightWhite: "#a6adc8",
-  };
 
   let containerEl: HTMLDivElement;
   let wrapperEl: HTMLDivElement;
@@ -103,6 +79,12 @@
 
     fitAddon.fit();
 
+    // Replay buffered output (preserves scrollback when moving between docks)
+    const buf = getTerminalBuffer(terminalId);
+    if (buf) {
+      term.write(buf);
+    }
+
     term.onData((data: string) => {
       writeTerminal(terminalId, data).catch(() => {});
     });
@@ -113,6 +95,7 @@
 
     unlistenOutput = await listen<{ id: string; data: string }>("terminal-output", (event) => {
       if (event.payload.id === terminalId && term) {
+        appendTerminalBuffer(terminalId, event.payload.data);
         term.write(event.payload.data);
       }
     });
@@ -170,6 +153,7 @@
     // Only remove the terminal if it wasn't moved to another dock —
     // moveTerminal() already handles re-parenting the instance.
     if (!movedAway) {
+      clearTerminalBuffer(terminalId);
       removeTerminal(terminalId);
     }
   });
@@ -225,7 +209,7 @@
 
 <style>
   .term-tab-wrapper {
-    background: #0c0c14;
+    background: #08090e;
     position: relative;
   }
 
@@ -262,7 +246,7 @@
   }
 
   .term-tab-viewport {
-    background: #08080e;
+    background: #060710;
     padding: 6px 8px 8px 8px;
     overflow: hidden;
   }
@@ -272,5 +256,6 @@
     border: 1px solid #1e1e30;
     border-radius: 8px;
     overflow: hidden;
+    box-shadow: inset 0 0 20px rgba(0, 212, 255, 0.03);
   }
 </style>

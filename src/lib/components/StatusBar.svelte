@@ -31,7 +31,7 @@
   }
 </script>
 
-<div class="flex items-center justify-between bg-bg-tertiary border-t border-border text-text-muted" style="padding: 0 16px; height: 32px; font-size: 12.5px;">
+<div class="flex items-center justify-between bg-bg-tertiary/80 backdrop-blur-sm border-t border-border/50 text-text-muted" style="padding: 0 16px; height: 32px; font-size: 12.5px;">
   <div class="flex items-center gap-4">
     {#if $activeTab}
       <span class="truncate max-w-[400px]" title={$activeTab.path}>

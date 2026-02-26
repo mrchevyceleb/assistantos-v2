@@ -66,7 +66,7 @@
   function getFileColor(ext?: string): string {
     if (!ext) return "var(--color-text-muted)";
     const map: Record<string, string> = {
-      md: "#89b4fa", markdown: "#89b4fa",
+      md: "#00d4ff", markdown: "#00d4ff",
       ts: "#3178c6", tsx: "#3178c6",
       js: "#f7df1e", jsx: "#f7df1e", mjs: "#f7df1e",
       py: "#3776ab",
@@ -79,7 +79,7 @@
       vue: "#42b883",
       png: "#a6e3a1", jpg: "#a6e3a1", jpeg: "#a6e3a1", gif: "#a6e3a1", svg: "#f9e2af", webp: "#a6e3a1",
       pdf: "#f38ba8",
-      sh: "#a6e3a1", ps1: "#89b4fa", bat: "#89b4fa",
+      sh: "#a6e3a1", ps1: "#00d4ff", bat: "#00d4ff",
     };
     return map[ext.toLowerCase()] || "var(--color-text-muted)";
   }
@@ -116,7 +116,7 @@
         <path d="M2 9h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V9z" fill="currentColor" opacity="0.7"/>
       </svg>
     {:else}
-      <svg width="16" height="16" viewBox="0 0 24 24" class="shrink-0" style:color="var(--color-warning)">
+      <svg width="16" height="16" viewBox="0 0 24 24" class="shrink-0" style:color="var(--color-accent)">
         <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" fill="currentColor" opacity="0.7"/>
       </svg>
     {/if}

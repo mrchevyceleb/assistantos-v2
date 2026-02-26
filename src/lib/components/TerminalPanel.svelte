@@ -11,6 +11,9 @@
     addTerminal,
     removeTerminal,
     moveTerminal,
+    appendTerminalBuffer,
+    getTerminalBuffer,
+    clearTerminalBuffer,
     type TerminalDock,
   } from "$lib/stores/terminal";
   import { workspacePath } from "$lib/stores/workspace";
@@ -21,6 +24,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
+  import { TERM_THEME } from "$lib/utils/terminal-theme";
 
   interface Props {
     dock?: TerminalDock;
@@ -30,31 +34,6 @@
 
   // Use settings for base font size (the zoom effect multiplies this)
   let BASE_TERM_FONT_SIZE = $derived($settings.terminalFontSize);
-
-  const TERM_THEME = {
-    background: "#0c0c14",
-    foreground: "#cdd6f4",
-    cursor: "#89b4fa",
-    cursorAccent: "#0c0c14",
-    selectionBackground: "#585b7066",
-    selectionForeground: "#cdd6f4",
-    black: "#45475a",
-    red: "#f38ba8",
-    green: "#a6e3a1",
-    yellow: "#f9e2af",
-    blue: "#89b4fa",
-    magenta: "#f5c2e7",
-    cyan: "#94e2d5",
-    white: "#bac2de",
-    brightBlack: "#585b70",
-    brightRed: "#f38ba8",
-    brightGreen: "#a6e3a1",
-    brightYellow: "#f9e2af",
-    brightBlue: "#89b4fa",
-    brightMagenta: "#f5c2e7",
-    brightCyan: "#94e2d5",
-    brightWhite: "#a6adc8",
-  };
 
   let terminals: Map<string, Terminal> = new Map();
   let fitAddons: Map<string, FitAddon> = new Map();
@@ -97,6 +76,7 @@
       await closeTerminal(id);
     } catch (_) {}
 
+    clearTerminalBuffer(id);
     spawnedIds.delete(id);
 
     const term = terminals.get(id);
@@ -156,6 +136,12 @@
     }
 
     fitAddon.fit();
+
+    // Replay buffered output (preserves scrollback when moving between docks)
+    const buf = getTerminalBuffer(id);
+    if (buf) {
+      term.write(buf);
+    }
 
     terminals.set(id, term);
     fitAddons.set(id, fitAddon);
@@ -251,6 +237,7 @@
       const { id, data } = event.payload;
       const term = terminals.get(id);
       if (term) {
+        appendTerminalBuffer(id, data);
         term.write(data);
       }
     });
@@ -413,7 +400,7 @@
 
 <style>
   .term-panel {
-    background: #0c0c14;
+    background: #08090e;
   }
 
   /* ── Tab bar ─────────────────────────────────────────────────────── */
@@ -521,7 +508,7 @@
 
   /* ── Terminal viewport ───────────────────────────────────────────── */
   .term-viewport {
-    background: #08080e;
+    background: #060710;
     padding: 6px 8px 8px 8px;
   }
 
@@ -529,6 +516,7 @@
     border: 1px solid #1e1e30;
     border-radius: 8px;
     overflow: hidden;
+    box-shadow: inset 0 0 20px rgba(0, 212, 255, 0.03);
   }
 
   .term-empty-btn {
@@ -547,6 +535,6 @@
   .term-empty-btn:hover {
     color: var(--color-accent);
     border-color: var(--color-accent);
-    background: rgba(137, 180, 250, 0.05);
+    background: rgba(0, 212, 255, 0.05);
   }
 </style>

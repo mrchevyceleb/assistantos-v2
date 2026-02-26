@@ -67,7 +67,7 @@
 <!-- Context menu -->
 <div
   bind:this={menuEl}
-  class="fixed z-[101] min-w-[200px] py-1.5 rounded-lg border border-border bg-bg-primary shadow-xl shadow-black/40 transition-opacity duration-100"
+  class="fixed z-[101] min-w-[200px] py-1.5 rounded-lg border border-border glass-panel glow-border shadow-xl shadow-black/40 transition-opacity duration-100"
   class:opacity-0={!visible}
   class:opacity-100={visible}
   style:left="{adjustedX}px"

@@ -42,12 +42,12 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center"
     onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onkeydown={handleKeydown}
     role="dialog"
   >
-    <div class="w-[720px] max-h-[80vh] bg-bg-primary border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="w-[720px] max-h-[80vh] glass-panel-solid border border-border rounded-xl shadow-2xl glow-border flex flex-col overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-border">
         <h2 class="text-text-primary text-base font-semibold">Settings</h2>

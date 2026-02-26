@@ -2,30 +2,33 @@
 @import "@xterm/xterm/css/xterm.css";
 
 @theme {
-  --color-bg-primary: #1e1e2e;
-  --color-bg-secondary: #181825;
-  --color-bg-tertiary: #11111b;
-  --color-bg-hover: #313244;
-  --color-bg-active: #45475a;
-  --color-text-primary: #cdd6f4;
-  --color-text-secondary: #a6adc8;
-  --color-text-muted: #6c7086;
-  --color-accent: #89b4fa;
-  --color-accent-hover: #74c7ec;
-  --color-border: #313244;
-  --color-border-light: #45475a;
-  --color-success: #a6e3a1;
-  --color-warning: #f9e2af;
-  --color-error: #f38ba8;
-  --color-tab-active: #1e1e2e;
-  --color-tab-inactive: #11111b;
+  /* ── Liquid Metal Palette ─────────────────────────────────────── */
+  --color-bg-primary: #12141c;
+  --color-bg-secondary: #0e1017;
+  --color-bg-tertiary: #0a0b10;
+  --color-bg-hover: #1c1f2b;
+  --color-bg-active: #252838;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-accent: #00d4ff;
+  --color-accent-hover: #22d3ee;
+  --color-border: #1e2231;
+  --color-border-light: #2a2f42;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+  --color-tab-active: #12141c;
+  --color-tab-inactive: #0a0b10;
+  --color-accent-glow: rgba(0, 212, 255, 0.15);
+  --color-border-glow: rgba(0, 212, 255, 0.08);
 }
 
 :root {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 14.5px;
   color: var(--color-text-primary);
-  background-color: var(--color-bg-primary);
+  background: transparent;
 }
 
 * {
@@ -38,9 +41,53 @@ html, body {
   height: 100%;
   overflow: hidden;
   user-select: none;
+  background: transparent;
 }
 
-/* Scrollbar styling */
+/* ── Glassmorphism utility classes ──────────────────────────────── */
+.glass-panel {
+  background: rgba(14, 16, 23, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.glass-panel-solid {
+  background: rgba(14, 16, 23, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.metal-sheen {
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.01) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+}
+
+.glow-border {
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.06),
+              inset 0 0 12px rgba(0, 212, 255, 0.02);
+}
+
+.glow-border-strong {
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1),
+              0 0 40px rgba(0, 212, 255, 0.04),
+              inset 0 0 20px rgba(0, 212, 255, 0.02);
+}
+
+.panel-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.12);
+}
+
+/* ── Scrollbar styling ──────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -56,10 +103,10 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-bg-active);
+  background: rgba(0, 212, 255, 0.2);
 }
 
-/* Markdown rendered content styling */
+/* ── Markdown rendered content styling ──────────────────────────── */
 .markdown-body {
   color: var(--color-text-primary);
   line-height: 1.7;
@@ -220,12 +267,12 @@ html, body {
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(88, 91, 112, 0.3);
+  background: rgba(0, 212, 255, 0.12);
   border-radius: 3px;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(88, 91, 112, 0.6);
+  background: rgba(0, 212, 255, 0.25);
 }
 
 /* Let the terminal text be selectable */

@@ -205,9 +205,9 @@
   });
 </script>
 
-<div class="flex flex-col h-full bg-bg-secondary">
+<div class="flex flex-col h-full glass-panel-solid">
   <!-- Header -->
-  <div class="flex items-center justify-between border-b border-border gap-2 min-w-0" style="padding: 10px 14px;">
+  <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 10px 14px;">
     <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: 11.5px;" title={$workspaceName}>
       {$workspaceName}
     </span>
@@ -260,7 +260,7 @@
         placeholder="Filter files..."
         bind:value={filterText}
         class="w-full bg-bg-primary text-text-primary rounded-md border border-border
-               focus:border-accent focus:outline-none placeholder-text-muted"
+               focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(0,212,255,0.15)] placeholder-text-muted"
         style="font-size: 13px; padding: 7px 12px;"
       />
     </div>

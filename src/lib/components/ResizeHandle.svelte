@@ -32,7 +32,7 @@
 </script>
 
 <div
-  class="shrink-0 transition-colors"
+  class="shrink-0 transition-all hover:shadow-[0_0_4px_rgba(0,212,255,0.3)]"
   class:w-[4px]={direction === "horizontal"}
   class:h-[4px]={direction === "vertical"}
   class:cursor-col-resize={direction === "horizontal"}

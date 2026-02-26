@@ -165,7 +165,7 @@
   // Re-search when case sensitivity changes (handled in toggleCase)
 </script>
 
-<div class="flex flex-col h-full bg-bg-secondary">
+<div class="flex flex-col h-full glass-panel-solid">
   <!-- Search header -->
   <div class="px-3 py-2.5 border-b border-border">
     <div class="flex items-center gap-2">
@@ -193,7 +193,7 @@
           type="text"
           placeholder="Search in files..."
           class="w-full bg-bg-primary text-text-primary text-[13px] px-3 py-1.5 pr-8 rounded-md border border-border
-                 focus:border-accent focus:outline-none placeholder-text-muted"
+                 focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(0,212,255,0.15)] placeholder-text-muted"
         />
         {#if query}
           <button

@@ -233,7 +233,7 @@
   function getExtColor(ext?: string): string {
     if (!ext) return "var(--color-text-muted)";
     const colors: Record<string, string> = {
-      md: "#89b4fa",
+      md: "#00d4ff",
       ts: "#3178c6",
       tsx: "#3178c6",
       js: "#f7df1e",
@@ -253,7 +253,7 @@
 {#if $tabs.length > 0}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="flex items-center bg-bg-tertiary border-b border-border overflow-x-auto"
+    class="flex items-center bg-bg-tertiary border-b border-border overflow-x-auto metal-sheen"
     style="min-height: 44px;"
     oncontextmenu={handleBarContextMenu}
   >
@@ -320,7 +320,7 @@
   <!-- Empty tab bar — still right-clickable for new terminal -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="bg-bg-tertiary border-b border-border"
+    class="bg-bg-tertiary border-b border-border metal-sheen"
     style="min-height: 44px;"
     oncontextmenu={handleBarContextMenu}
   ></div>

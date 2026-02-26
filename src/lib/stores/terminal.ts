@@ -90,6 +90,23 @@ export function removeTerminal(id: string) {
   }
 }
 
+// ── Shared output buffer (preserves scrollback across dock moves) ────
+const MAX_BUFFER = 100_000; // characters
+const terminalBuffers = new Map<string, string>();
+
+export function appendTerminalBuffer(id: string, data: string) {
+  const buf = (terminalBuffers.get(id) || "") + data;
+  terminalBuffers.set(id, buf.length > MAX_BUFFER ? buf.slice(-MAX_BUFFER) : buf);
+}
+
+export function getTerminalBuffer(id: string): string | undefined {
+  return terminalBuffers.get(id);
+}
+
+export function clearTerminalBuffer(id: string) {
+  terminalBuffers.delete(id);
+}
+
 export function moveTerminal(id: string, newDock: TerminalDock) {
   const instances = get(terminalInstances);
   const inst = instances.find((t) => t.id === id);
