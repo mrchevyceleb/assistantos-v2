@@ -60,7 +60,7 @@
     }
   });
 
-  const paddingLeft = $derived(`${depth * 16 + 8}px`);
+  const paddingLeft = $derived(`${depth * 20 + 12}px`);
 
   function getFileColor(ext?: string): string {
     if (!ext) return "var(--color-text-muted)";
@@ -87,7 +87,8 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class="w-full flex items-center gap-1.5 py-[3px] text-left text-xs hover:bg-bg-hover transition-colors cursor-pointer group select-none"
+  class="w-full flex items-center gap-2.5 text-left hover:bg-bg-hover transition-colors cursor-pointer group select-none"
+  style="padding-top: 6px; padding-bottom: 6px; font-size: 13.5px;"
   style:padding-left={paddingLeft}
   onclick={toggle}
   oncontextmenu={handleContextMenu}
@@ -96,30 +97,30 @@
   <!-- Expand arrow for dirs -->
   {#if node.is_dir}
     <svg
-      width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"
+      width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"
       class="shrink-0 text-text-muted transition-transform duration-150"
       class:rotate-90={expanded}
     >
       <path d="M8 5l8 7-8 7z"/>
     </svg>
   {:else}
-    <span class="w-[10px] shrink-0"></span>
+    <span class="w-[12px] shrink-0"></span>
   {/if}
 
   <!-- Icon -->
   {#if node.is_dir}
     {#if expanded}
-      <svg width="15" height="15" viewBox="0 0 24 24" class="shrink-0" style:color="var(--color-accent)">
+      <svg width="16" height="16" viewBox="0 0 24 24" class="shrink-0" style:color="var(--color-accent)">
         <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v1H2V6z" fill="currentColor" opacity="0.4"/>
         <path d="M2 9h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V9z" fill="currentColor" opacity="0.7"/>
       </svg>
     {:else}
-      <svg width="15" height="15" viewBox="0 0 24 24" class="shrink-0" style:color="var(--color-warning)">
+      <svg width="16" height="16" viewBox="0 0 24 24" class="shrink-0" style:color="var(--color-warning)">
         <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" fill="currentColor" opacity="0.7"/>
       </svg>
     {/if}
   {:else}
-    <svg width="14" height="14" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.ext)}>
+    <svg width="16" height="16" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.ext)}>
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/>
       <polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="1.5"/>
     </svg>

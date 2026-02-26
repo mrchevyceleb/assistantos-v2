@@ -12,6 +12,7 @@ import {
   updateTabContent,
 } from "$lib/stores/tabs";
 import { terminalVisible, terminalHeight } from "$lib/stores/terminal";
+import { uiZoom } from "$lib/stores/ui";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export interface AppState {
   terminalVisible: boolean;
   terminalHeight: number;
   sidebarView: "explorer" | "search";
+  uiZoom?: number;
   openTabs: Array<{
     path: string;
     name: string;
@@ -51,11 +53,14 @@ export async function saveState(): Promise<void> {
     terminalVisible: get(terminalVisible),
     terminalHeight: get(terminalHeight),
     sidebarView: sidebarViewRef,
-    openTabs: $tabs.map((t) => ({
-      path: t.path,
-      name: t.name,
-      ext: t.ext,
-    })),
+    uiZoom: get(uiZoom),
+    openTabs: $tabs
+      .filter((t) => !t.path.startsWith("__terminal__:"))
+      .map((t) => ({
+        path: t.path,
+        name: t.name,
+        ext: t.ext,
+      })),
     activeTabPath: activeTab?.path ?? null,
   };
 
@@ -91,6 +96,9 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
   sidebarVisible.set(state.sidebarVisible);
   terminalVisible.set(state.terminalVisible);
   terminalHeight.set(state.terminalHeight);
+  if (state.uiZoom != null) {
+    uiZoom.set(state.uiZoom);
+  }
 
   // Restore workspace path (caller will handle loading the file tree)
   if (state.workspacePath) {
@@ -100,6 +108,9 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
   // Restore tabs — open each one and load content
   if (state.openTabs && state.openTabs.length > 0) {
     for (const tab of state.openTabs) {
+      // Skip terminal tabs — they can't be restored across sessions
+      if (tab.path.startsWith("__terminal__:")) continue;
+
       try {
         // Check if file still exists by trying to read it
         const content = await readFileText(tab.path);
@@ -147,6 +158,7 @@ export function startAutoSave() {
   unsubscribers.push(sidebarVisible.subscribe(() => debouncedSave()));
   unsubscribers.push(terminalVisible.subscribe(() => debouncedSave()));
   unsubscribers.push(terminalHeight.subscribe(() => debouncedSave()));
+  unsubscribers.push(uiZoom.subscribe(() => debouncedSave()));
   unsubscribers.push(tabs.subscribe(() => debouncedSave()));
   unsubscribers.push(activeTabId.subscribe(() => debouncedSave()));
 }

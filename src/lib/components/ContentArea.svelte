@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activeTab, toggleEditMode, updateTabContent, setTabModified } from "$lib/stores/tabs";
+  import { activeTab, tabs, activeTabId, toggleEditMode, updateTabContent, setTabModified } from "$lib/stores/tabs";
   import { writeFileText } from "$lib/utils/tauri";
   import MarkdownViewer from "./MarkdownViewer.svelte";
   import CodeEditor from "./CodeEditor.svelte";
@@ -8,8 +8,14 @@
   import ImageViewer from "./ImageViewer.svelte";
   import VideoPlayer from "./VideoPlayer.svelte";
   import PdfViewer from "./PdfViewer.svelte";
+  import TerminalTab from "./TerminalTab.svelte";
 
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Derived: all terminal tabs that need to stay mounted
+  let terminalTabs = $derived($tabs.filter((t) => t.viewerType === "terminal"));
+  // Is the active tab a terminal?
+  let activeIsTerminal = $derived($activeTab?.viewerType === "terminal");
 
   async function handleSave(content: string) {
     const tab = $activeTab;
@@ -51,8 +57,19 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="h-full flex flex-col">
-  {#if $activeTab}
+<div class="h-full flex flex-col relative">
+  <!-- Terminal tabs: always mounted, shown/hidden via CSS to preserve PTY sessions -->
+  {#each terminalTabs as ttab (ttab.id)}
+    <div
+      class="absolute inset-0"
+      class:hidden={$activeTabId !== ttab.id}
+    >
+      <TerminalTab terminalId={ttab.path.replace("__terminal__:", "")} />
+    </div>
+  {/each}
+
+  <!-- Non-terminal content: standard {#if} rendering -->
+  {#if $activeTab && !activeIsTerminal}
     {#if $activeTab.isLoading}
       <div class="flex-1 flex items-center justify-center text-text-muted">
         <span class="text-sm">Loading...</span>
@@ -60,9 +77,9 @@
     {:else}
       <!-- Edit/Preview toolbar for text content -->
       {#if $activeTab.viewerType === "markdown" || $activeTab.viewerType === "code" || $activeTab.viewerType === "text"}
-        <div class="flex items-center gap-2 px-3 py-1 bg-bg-secondary border-b border-border">
+        <div class="flex items-center gap-2 px-4 py-1.5 bg-bg-secondary border-b border-border">
           <button
-            class="text-xs px-2 py-0.5 rounded transition-colors"
+            class="text-[13px] px-3 py-1 rounded-md transition-colors"
             class:bg-accent={!$activeTab.editMode}
             class:text-bg-primary={!$activeTab.editMode}
             class:text-text-muted={$activeTab.editMode}
@@ -72,7 +89,7 @@
             Preview
           </button>
           <button
-            class="text-xs px-2 py-0.5 rounded transition-colors"
+            class="text-[13px] px-3 py-1 rounded-md transition-colors"
             class:bg-accent={$activeTab.editMode}
             class:text-bg-primary={$activeTab.editMode}
             class:text-text-muted={!$activeTab.editMode}
@@ -120,16 +137,18 @@
         {/if}
       </div>
     {/if}
-  {:else}
+  {:else if !$activeTab}
     <!-- Empty state -->
     <div class="flex-1 flex items-center justify-center text-text-muted">
       <div class="text-center">
-        <h2 class="text-2xl font-light mb-2 text-text-secondary">AssistantOS</h2>
-        <p class="text-sm">Open a file from the sidebar to get started</p>
-        <div class="mt-6 text-xs space-y-1">
-          <p><kbd class="px-1.5 py-0.5 bg-bg-secondary rounded border border-border">Ctrl+O</kbd> Open Folder</p>
-          <p><kbd class="px-1.5 py-0.5 bg-bg-secondary rounded border border-border">Ctrl+P</kbd> Quick Open</p>
-          <p><kbd class="px-1.5 py-0.5 bg-bg-secondary rounded border border-border">Ctrl+E</kbd> Toggle Edit</p>
+        <h2 class="text-3xl font-light mb-3 text-text-secondary">AssistantOS</h2>
+        <p class="text-base">Open a file from the sidebar to get started</p>
+        <div class="mt-8 text-sm space-y-2.5">
+          <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+O</kbd> Open Folder</p>
+          <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+P</kbd> Quick Open</p>
+          <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+`</kbd> New Terminal</p>
+          <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+E</kbd> Toggle Edit</p>
+          <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl++/-</kbd> Zoom In/Out</p>
         </div>
       </div>
     </div>

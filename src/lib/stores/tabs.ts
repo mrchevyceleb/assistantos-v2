@@ -91,3 +91,51 @@ export function setTabLoading(id: string, isLoading: boolean) {
     t.map((tab) => (tab.id === id ? { ...tab, isLoading } : tab))
   );
 }
+
+/** Move a tab from one index to another (drag-to-reorder) */
+export function moveTab(fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex) return;
+  tabs.update((t) => {
+    const copy = [...t];
+    const [moved] = copy.splice(fromIndex, 1);
+    copy.splice(toIndex, 0, moved);
+    return copy;
+  });
+}
+
+/** Open a terminal instance as a document tab */
+export function openTerminalTab(terminalId: string, title: string): string {
+  const currentTabs = get(tabs);
+  // Use a synthetic path so we can identify terminal tabs
+  const path = `__terminal__:${terminalId}`;
+  const existing = currentTabs.find((t) => t.path === path);
+  if (existing) {
+    activeTabId.set(existing.id);
+    return existing.id;
+  }
+
+  const newTab: Tab = {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    path,
+    name: title,
+    ext: undefined,
+    viewerType: "terminal" as ViewerType,
+    isModified: false,
+    isLoading: false,
+    editMode: false,
+  };
+
+  tabs.update((t) => [...t, newTab]);
+  activeTabId.set(newTab.id);
+  return newTab.id;
+}
+
+/** Remove terminal tabs for a given terminal ID */
+export function closeTerminalTab(terminalId: string) {
+  const currentTabs = get(tabs);
+  const path = `__terminal__:${terminalId}`;
+  const tab = currentTabs.find((t) => t.path === path);
+  if (tab) {
+    closeTab(tab.id);
+  }
+}

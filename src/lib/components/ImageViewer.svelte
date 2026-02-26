@@ -13,11 +13,18 @@
   let naturalWidth = $state(0);
   let naturalHeight = $state(0);
   let scale = $state(1);
+  let loadError = $state(false);
 
   function handleLoad(e: Event) {
     const img = e.target as HTMLImageElement;
     naturalWidth = img.naturalWidth;
     naturalHeight = img.naturalHeight;
+    loadError = false;
+  }
+
+  function handleError() {
+    loadError = true;
+    console.error("Image failed to load:", filePath, "→", src);
   }
 
   function handleWheel(e: WheelEvent) {
@@ -33,7 +40,7 @@
 
 <div class="h-full flex flex-col">
   <!-- Info bar -->
-  <div class="flex items-center gap-3 px-3 py-1.5 bg-bg-secondary border-b border-border text-xs text-text-muted">
+  <div class="flex items-center gap-4 px-4 py-2 bg-bg-secondary border-b border-border text-sm text-text-muted">
     {#if naturalWidth}
       <span>{naturalWidth} x {naturalHeight}</span>
     {/if}
@@ -42,6 +49,9 @@
     {/if}
     <span>{Math.round(scale * 100)}%</span>
     <button onclick={resetZoom} class="text-accent hover:text-accent-hover ml-1">Reset</button>
+    {#if loadError}
+      <span class="text-error">Failed to load</span>
+    {/if}
   </div>
 
   <!-- Image -->
@@ -51,11 +61,12 @@
     onwheel={handleWheel}
   >
     <img
-      {src}
+      src={src}
       alt={filePath.split(/[/\\]/).pop() || ""}
       class="max-w-none transition-transform duration-100"
       style:transform="scale({scale})"
       onload={handleLoad}
+      onerror={handleError}
     />
   </div>
 </div>

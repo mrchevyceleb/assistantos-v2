@@ -457,6 +457,14 @@ fn spawn_terminal(
     state: tauri::State<'_, TerminalState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Check if this terminal ID already has an active session — don't overwrite it
+    {
+        let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+        if sessions.contains_key(&id) {
+            return Err(format!("Terminal session already exists: {}", id));
+        }
+    }
+
     let pty_system = native_pty_system();
 
     let pair = pty_system

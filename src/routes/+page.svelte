@@ -11,11 +11,12 @@
   import ResizeHandle from "$lib/components/ResizeHandle.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
   import { sidebarWidth, sidebarVisible, workspacePath } from "$lib/stores/workspace";
-  import { terminalVisible, terminalHeight, addTerminal } from "$lib/stores/terminal";
+  import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal } from "$lib/stores/terminal";
   import { readDirectoryTree, readFileText, startWatcher, stopWatcher } from "$lib/utils/tauri";
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
   import { tabs, updateTabContent } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
+  import { zoomIn, zoomOut, resetZoom, initZoom } from "$lib/stores/ui";
 
   let paletteVisible = $state(false);
   let sidebarView = $state<"explorer" | "search">("explorer");
@@ -105,6 +106,9 @@
   });
 
   onMount(() => {
+    // Apply persisted zoom level
+    initZoom();
+
     // Restore persisted state on startup
     restoreState().then(async (restoredSidebarView) => {
       if (restoredSidebarView) {
@@ -148,6 +152,10 @@
     terminalHeight.update((h) => Math.max(100, Math.min(600, h - delta)));
   }
 
+  function handleRightPanelResize(delta: number) {
+    rightPanelWidth.update((w) => Math.max(200, Math.min(800, w - delta)));
+  }
+
   // Global keyboard shortcuts
   function handleKeydown(e: KeyboardEvent) {
     // Ctrl+Shift+F: Global search
@@ -162,6 +170,27 @@
     if (e.ctrlKey && e.key === "p") {
       e.preventDefault();
       paletteVisible = !paletteVisible;
+      return;
+    }
+
+    // Ctrl+= / Ctrl++: Zoom in
+    if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
+      e.preventDefault();
+      zoomIn();
+      return;
+    }
+
+    // Ctrl+-: Zoom out
+    if (e.ctrlKey && e.key === "-") {
+      e.preventDefault();
+      zoomOut();
+      return;
+    }
+
+    // Ctrl+0: Reset zoom
+    if (e.ctrlKey && e.key === "0") {
+      e.preventDefault();
+      resetZoom();
       return;
     }
 
@@ -189,10 +218,14 @@
       sidebarVisible.update((v) => !v);
     }
 
-    // Ctrl+`: Toggle terminal
+    // Ctrl+`: Toggle terminal (spawn one if none exist)
     if (e.ctrlKey && e.key === "`") {
       e.preventDefault();
-      terminalVisible.update((v) => !v);
+      if (get(bottomTerminals).length === 0) {
+        addTerminal($workspacePath || "", "bottom");
+      } else {
+        terminalVisible.update((v) => !v);
+      }
     }
 
     // Ctrl+Shift+`: New terminal
@@ -217,7 +250,8 @@
         <!-- Sidebar tab bar -->
         <div class="flex items-center bg-bg-secondary border-b border-border shrink-0">
           <button
-            class="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] transition-colors border-b-2"
+            class="flex-1 flex items-center justify-center gap-2.5 transition-colors border-b-2"
+            style="padding: 12px 0; font-size: 13px;"
             class:border-accent={sidebarView === "explorer"}
             class:text-text-primary={sidebarView === "explorer"}
             class:border-transparent={sidebarView !== "explorer"}
@@ -226,13 +260,14 @@
             onclick={() => sidebarView = "explorer"}
             title="Explorer (Ctrl+B)"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
             Explorer
           </button>
           <button
-            class="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] transition-colors border-b-2"
+            class="flex-1 flex items-center justify-center gap-2.5 transition-colors border-b-2"
+            style="padding: 12px 0; font-size: 13px;"
             class:border-accent={sidebarView === "search"}
             class:text-text-primary={sidebarView === "search"}
             class:border-transparent={sidebarView !== "search"}
@@ -241,7 +276,7 @@
             onclick={() => sidebarView = "search"}
             title="Search (Ctrl+Shift+F)"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/>
               <line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
@@ -261,26 +296,43 @@
       <ResizeHandle direction="horizontal" onResize={handleSidebarResize} />
     {/if}
 
-    <!-- Right panel: tabs + content + terminal -->
-    <div class="flex-1 flex flex-col overflow-hidden">
-      <!-- Tab bar -->
-      <TabBar />
-
-      <!-- Content area + terminal -->
+    <!-- Center + right panels -->
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Center panel: tabs + content + bottom terminal -->
       <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- Content -->
-        <div class="flex-1 overflow-hidden">
-          <ContentArea />
-        </div>
+        <!-- Tab bar -->
+        <TabBar />
 
-        <!-- Terminal -->
-        {#if $terminalVisible}
-          <ResizeHandle direction="vertical" onResize={handleTerminalResize} />
-          <div style:height="{$terminalHeight}px" class="shrink-0 overflow-hidden">
-            <TerminalPanel />
+        <!-- Content area + terminal -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <!-- Content -->
+          <div class="flex-1 overflow-hidden">
+            <ContentArea />
           </div>
-        {/if}
+
+          <!-- Bottom terminal — always mounted to preserve PTY sessions, hidden via CSS -->
+          {#if $bottomTerminals.length > 0}
+            <div class:hidden={!$terminalVisible}>
+              <ResizeHandle direction="vertical" onResize={handleTerminalResize} />
+            </div>
+            <div
+              style:height="{$terminalHeight}px"
+              class="shrink-0 overflow-hidden"
+              class:hidden={!$terminalVisible}
+            >
+              <TerminalPanel dock="bottom" />
+            </div>
+          {/if}
+        </div>
       </div>
+
+      <!-- Right panel terminal — always mounted when terminals exist to preserve PTY -->
+      {#if $rightPanelVisible}
+        <ResizeHandle direction="horizontal" onResize={handleRightPanelResize} />
+        <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border">
+          <TerminalPanel dock="right" />
+        </div>
+      {/if}
     </div>
   </div>
 

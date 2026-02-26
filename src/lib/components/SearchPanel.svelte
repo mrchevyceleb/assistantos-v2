@@ -167,9 +167,9 @@
 
 <div class="flex flex-col h-full bg-bg-secondary">
   <!-- Search header -->
-  <div class="px-2 py-2 border-b border-border">
-    <div class="flex items-center gap-1">
-      <span class="text-[11px] font-semibold text-text-secondary uppercase tracking-wide flex-1">Search</span>
+  <div class="px-3 py-2.5 border-b border-border">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-semibold text-text-secondary uppercase tracking-wide flex-1">Search</span>
       <button
         onclick={onClose}
         class="text-text-muted hover:text-text-primary transition-colors p-1 rounded hover:bg-bg-hover shrink-0"
@@ -183,7 +183,7 @@
     </div>
 
     <!-- Search input row -->
-    <div class="mt-1.5 flex items-center gap-1">
+    <div class="mt-2 flex items-center gap-1.5">
       <div class="relative flex-1">
         <input
           bind:this={searchInputEl}
@@ -192,7 +192,7 @@
           onkeydown={handleKeydown}
           type="text"
           placeholder="Search in files..."
-          class="w-full bg-bg-primary text-text-primary text-xs px-2 py-1.5 pr-7 rounded border border-border
+          class="w-full bg-bg-primary text-text-primary text-[13px] px-3 py-1.5 pr-8 rounded-md border border-border
                  focus:border-accent focus:outline-none placeholder-text-muted"
         />
         {#if query}
@@ -254,17 +254,17 @@
           <div class="mb-0.5">
             <!-- File header -->
             <button
-              class="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-bg-hover transition-colors group"
+              class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-bg-hover transition-colors group"
               onclick={() => openResult(fileResults[0])}
               title={relativePath(filePath)}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 text-text-muted">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 text-text-muted">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
               </svg>
-              <span class="text-xs text-text-primary truncate">{fileName(filePath)}</span>
-              <span class="text-[10px] text-text-muted truncate flex-1 min-w-0">{relativePath(filePath)}</span>
-              <span class="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded-full shrink-0">
+              <span class="text-[13px] text-text-primary truncate">{fileName(filePath)}</span>
+              <span class="text-xs text-text-muted truncate flex-1 min-w-0">{relativePath(filePath)}</span>
+              <span class="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded-full shrink-0">
                 {fileResults.length}
               </span>
             </button>
@@ -272,13 +272,13 @@
             <!-- Match lines -->
             {#each fileResults as result (result.path + ':' + result.line_number)}
               <button
-                class="w-full flex items-start gap-2 pl-6 pr-2 py-0.5 text-left hover:bg-bg-hover transition-colors cursor-pointer"
+                class="w-full flex items-start gap-2 pl-7 pr-3 py-1 text-left hover:bg-bg-hover transition-colors cursor-pointer"
                 onclick={() => openResult(result)}
               >
-                <span class="text-[10px] text-text-muted tabular-nums shrink-0 mt-px w-5 text-right">
+                <span class="text-xs text-text-muted tabular-nums shrink-0 mt-px w-6 text-right">
                   {result.line_number}
                 </span>
-                <span class="text-xs text-text-secondary truncate min-w-0 leading-relaxed">
+                <span class="text-[13px] text-text-secondary truncate min-w-0 leading-relaxed">
                   {@html highlightMatch(result.line_content.trim(), query.trim())}
                 </span>
               </button>

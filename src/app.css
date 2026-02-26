@@ -23,6 +23,7 @@
 
 :root {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 14.5px;
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
 }

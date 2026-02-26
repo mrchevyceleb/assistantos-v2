@@ -189,19 +189,19 @@
 
 <div class="flex flex-col h-full bg-bg-secondary">
   <!-- Header -->
-  <div class="flex items-center justify-between px-2 py-2 border-b border-border gap-1 min-w-0">
-    <span class="text-[11px] font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" title={$workspaceName}>
+  <div class="flex items-center justify-between border-b border-border gap-2 min-w-0" style="padding: 10px 14px;">
+    <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: 11.5px;" title={$workspaceName}>
       {$workspaceName}
     </span>
-    <div class="flex items-center gap-0.5 shrink-0">
+    <div class="flex items-center gap-1 shrink-0">
       {#if $workspacePath}
         <!-- New File button -->
         <button
           onclick={() => handleNewFile($workspacePath!)}
-          class="text-text-muted hover:text-text-primary transition-colors p-1 rounded hover:bg-bg-hover"
+          class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded hover:bg-bg-hover"
           title="New File"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
             <line x1="12" y1="11" x2="12" y2="17"/>
@@ -211,10 +211,10 @@
         <!-- New Folder button -->
         <button
           onclick={() => handleNewFolder($workspacePath!)}
-          class="text-text-muted hover:text-text-primary transition-colors p-1 rounded hover:bg-bg-hover"
+          class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded hover:bg-bg-hover"
           title="New Folder"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             <line x1="12" y1="11" x2="12" y2="17"/>
             <line x1="9" y1="14" x2="15" y2="14"/>
@@ -224,10 +224,10 @@
       <!-- Open Folder button -->
       <button
         onclick={handleOpenFolder}
-        class="text-text-muted hover:text-text-primary transition-colors p-1 rounded hover:bg-bg-hover"
+        class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded hover:bg-bg-hover"
         title="Open Folder"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
       </button>
@@ -236,13 +236,14 @@
 
   <!-- Filter -->
   {#if $fileTree}
-    <div class="px-2 py-1.5">
+    <div style="padding: 8px 14px;">
       <input
         type="text"
         placeholder="Filter files..."
         bind:value={filterText}
-        class="w-full bg-bg-primary text-text-primary text-xs px-2 py-1 rounded border border-border
+        class="w-full bg-bg-primary text-text-primary rounded-md border border-border
                focus:border-accent focus:outline-none placeholder-text-muted"
+        style="font-size: 13px; padding: 7px 12px;"
       />
     </div>
   {/if}

@@ -6,6 +6,7 @@ export type ViewerType =
   | "pdf"
   | "code"
   | "text"
+  | "terminal"
   | "unsupported";
 
 const MARKDOWN_EXTS = new Set(["md", "markdown", "mdx"]);

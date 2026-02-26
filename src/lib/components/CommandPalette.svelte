@@ -175,10 +175,10 @@
     onkeydown={handleKeydown}
     role="dialog"
   >
-    <div class="w-[600px] max-h-[60vh] bg-bg-primary border border-border rounded-lg shadow-2xl flex flex-col overflow-hidden">
+    <div class="w-[640px] max-h-[60vh] bg-bg-primary border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
       <!-- Search input -->
-      <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted shrink-0">
+      <div class="flex items-center gap-3 px-5 py-4 border-b border-border">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted shrink-0">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
@@ -186,7 +186,7 @@
           bind:this={inputEl}
           bind:value={query}
           placeholder="Type to search files..."
-          class="flex-1 bg-transparent text-text-primary text-sm outline-none placeholder-text-muted"
+          class="flex-1 bg-transparent text-text-primary text-base outline-none placeholder-text-muted"
           type="text"
         />
         {#if isLoading}
@@ -197,9 +197,9 @@
       </div>
 
       <!-- Results -->
-      <div class="flex-1 overflow-y-auto py-1">
+      <div class="flex-1 overflow-y-auto py-1.5">
         {#if filteredFiles.length === 0 && !isLoading}
-          <div class="px-4 py-8 text-center text-text-muted text-sm">
+          <div class="px-5 py-10 text-center text-text-muted text-base">
             {query ? "No files matching your search" : "No files found"}
           </div>
         {/if}
@@ -208,7 +208,7 @@
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div
-            class="flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors"
+            class="flex items-center gap-3 px-5 py-2 cursor-pointer transition-colors"
             class:bg-bg-hover={i === selectedIndex}
             onclick={() => openFile(file)}
             onmouseenter={() => selectedIndex = i}
@@ -217,21 +217,21 @@
             aria-selected={i === selectedIndex}
           >
             <!-- File icon dot -->
-            <span class="w-2 h-2 rounded-full shrink-0" style:background={getFileColor(file.ext)}></span>
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" style:background={getFileColor(file.ext)}></span>
 
             <!-- File name + path -->
             <div class="flex-1 min-w-0">
-              <div class="text-sm text-text-primary truncate">
+              <div class="text-[14px] text-text-primary truncate">
                 {@html highlightMatch(file.name, query)}
               </div>
-              <div class="text-[11px] text-text-muted truncate">
+              <div class="text-xs text-text-muted truncate">
                 {@html highlightMatch(file.relative_path, query)}
               </div>
             </div>
 
             <!-- Extension badge -->
             {#if file.ext}
-              <span class="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-bg-secondary shrink-0">
+              <span class="text-xs text-text-muted px-2 py-0.5 rounded-md bg-bg-secondary shrink-0">
                 .{file.ext}
               </span>
             {/if}
@@ -240,10 +240,10 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center gap-4 px-4 py-2 border-t border-border text-[11px] text-text-muted">
-        <span><kbd class="px-1 py-0.5 bg-bg-secondary rounded border border-border">↑↓</kbd> Navigate</span>
-        <span><kbd class="px-1 py-0.5 bg-bg-secondary rounded border border-border">Enter</kbd> Open</span>
-        <span><kbd class="px-1 py-0.5 bg-bg-secondary rounded border border-border">Esc</kbd> Close</span>
+      <div class="flex items-center gap-5 px-5 py-2.5 border-t border-border text-xs text-text-muted">
+        <span><kbd class="px-1.5 py-0.5 bg-bg-secondary rounded border border-border">↑↓</kbd> Navigate</span>
+        <span><kbd class="px-1.5 py-0.5 bg-bg-secondary rounded border border-border">Enter</kbd> Open</span>
+        <span><kbd class="px-1.5 py-0.5 bg-bg-secondary rounded border border-border">Esc</kbd> Close</span>
       </div>
     </div>
   </div>
