@@ -145,12 +145,27 @@
 
   // --- Build context menu items ---
 
+  async function handleCopyPath(node: FileNode) {
+    try {
+      await navigator.clipboard.writeText(node.path);
+    } catch {
+      // Fallback for older webview
+      const ta = document.createElement("textarea");
+      ta.value = node.path;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+  }
+
   function getContextMenuItems(node: FileNode): MenuItem[] {
     if (node.is_dir) {
       return [
         { label: "New File", action: () => handleNewFile(node.path) },
         { label: "New Folder", action: () => handleNewFolder(node.path) },
         { label: "", separator: true, action: () => {} },
+        { label: "Copy Path", action: () => handleCopyPath(node) },
         { label: "Rename", action: () => handleRename(node) },
         { label: "", separator: true, action: () => {} },
         { label: "Delete", action: () => handleDelete(node), danger: true },
@@ -158,6 +173,8 @@
     } else {
       return [
         { label: "Open", action: () => handleOpen(node) },
+        { label: "", separator: true, action: () => {} },
+        { label: "Copy Path", action: () => handleCopyPath(node) },
         { label: "Rename", action: () => handleRename(node) },
         { label: "", separator: true, action: () => {} },
         { label: "Delete", action: () => handleDelete(node), danger: true },

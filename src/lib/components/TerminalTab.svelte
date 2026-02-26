@@ -12,12 +12,15 @@
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
   import { workspacePath } from "$lib/stores/workspace";
+  import { uiZoom } from "$lib/stores/ui";
 
   interface Props {
     terminalId: string;
   }
 
   let { terminalId }: Props = $props();
+
+  const BASE_TERM_FONT_SIZE = 13;
 
   let containerEl: HTMLDivElement;
   let wrapperEl: HTMLDivElement;
@@ -62,7 +65,7 @@
         brightWhite: "#a6adc8",
       },
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
-      fontSize: 13,
+      fontSize: Math.round(BASE_TERM_FONT_SIZE * $uiZoom),
       cursorBlink: true,
       convertEol: false,
     });
@@ -118,6 +121,15 @@
 
     // Also refit on window resize
     window.addEventListener("resize", handleResize);
+  });
+
+  // Update terminal font size when zoom changes
+  $effect(() => {
+    const zoom = $uiZoom;
+    if (term && fitAddon) {
+      term.options.fontSize = Math.round(BASE_TERM_FONT_SIZE * zoom);
+      try { fitAddon.fit(); } catch {}
+    }
   });
 
   function handleResize() {

@@ -115,6 +115,27 @@ export function getFileIcon(name: string, isDir: boolean, ext?: string): string 
   return "file";
 }
 
+export function getMimeType(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const mimeMap: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    webp: 'image/webp',
+    ico: 'image/x-icon',
+    bmp: 'image/bmp',
+    pdf: 'application/pdf',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+  };
+  return mimeMap[ext] || 'application/octet-stream';
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

@@ -12,6 +12,7 @@
     type TerminalDock,
   } from "$lib/stores/terminal";
   import { workspacePath } from "$lib/stores/workspace";
+  import { uiZoom } from "$lib/stores/ui";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -23,6 +24,8 @@
   }
 
   let { dock = "bottom" }: Props = $props();
+
+  const BASE_TERM_FONT_SIZE = 13;
 
   let terminals: Map<string, Terminal> = new Map();
   let fitAddons: Map<string, FitAddon> = new Map();
@@ -105,7 +108,7 @@
         brightWhite: "#a6adc8",
       },
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
-      fontSize: 13,
+      fontSize: Math.round(BASE_TERM_FONT_SIZE * $uiZoom),
       cursorBlink: true,
       convertEol: false,
     });
@@ -184,6 +187,17 @@
         }
       }
     });
+  });
+
+  // Update terminal font size when zoom changes
+  $effect(() => {
+    const zoom = $uiZoom;
+    const newSize = Math.round(BASE_TERM_FONT_SIZE * zoom);
+    for (const [id, term] of terminals.entries()) {
+      term.options.fontSize = newSize;
+      const fa = fitAddons.get(id);
+      if (fa) try { fa.fit(); } catch {}
+    }
   });
 
   // Fit on active tab change

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { convertFileSrc } from "@tauri-apps/api/core";
-  import { formatFileSize } from "$lib/utils/file-types";
+  import { readFileBinary } from "$lib/utils/tauri";
+  import { formatFileSize, getMimeType } from "$lib/utils/file-types";
 
   interface Props {
     filePath: string;
@@ -9,11 +9,36 @@
 
   let { filePath, fileSize }: Props = $props();
 
-  const src = $derived(convertFileSrc(filePath));
+  let blobUrl = $state<string | null>(null);
   let naturalWidth = $state(0);
   let naturalHeight = $state(0);
   let scale = $state(1);
   let loadError = $state(false);
+
+  $effect(() => {
+    const path = filePath;
+    let cancelled = false;
+    let url: string | null = null;
+
+    blobUrl = null;
+    loadError = false;
+
+    readFileBinary(path).then((bytes) => {
+      if (cancelled) return;
+      const blob = new Blob([new Uint8Array(bytes)], { type: getMimeType(path) });
+      url = URL.createObjectURL(blob);
+      blobUrl = url;
+    }).catch((e) => {
+      if (cancelled) return;
+      loadError = true;
+      console.error("Failed to load image:", path, e);
+    });
+
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  });
 
   function handleLoad(e: Event) {
     const img = e.target as HTMLImageElement;
@@ -24,7 +49,6 @@
 
   function handleError() {
     loadError = true;
-    console.error("Image failed to load:", filePath, "→", src);
   }
 
   function handleWheel(e: WheelEvent) {
@@ -60,13 +84,17 @@
     style="background: repeating-conic-gradient(#1a1a2e 0% 25%, #16162a 0% 50%) 50% / 20px 20px;"
     onwheel={handleWheel}
   >
-    <img
-      src={src}
-      alt={filePath.split(/[/\\]/).pop() || ""}
-      class="max-w-none transition-transform duration-100"
-      style:transform="scale({scale})"
-      onload={handleLoad}
-      onerror={handleError}
-    />
+    {#if blobUrl}
+      <img
+        src={blobUrl}
+        alt={filePath.split(/[/\\]/).pop() || ""}
+        class="max-w-none transition-transform duration-100"
+        style:transform="scale({scale})"
+        onload={handleLoad}
+        onerror={handleError}
+      />
+    {:else if !loadError}
+      <span class="text-text-muted text-sm">Loading...</span>
+    {/if}
   </div>
 </div>

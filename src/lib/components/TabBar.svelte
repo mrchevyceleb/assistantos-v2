@@ -133,6 +133,30 @@
   }
 
   // ── Tab context menu actions ──────────────────────────────────────
+  async function handleCopyTabPath(tabId: string) {
+    const tab = get(tabs).find((t) => t.id === tabId);
+    if (!tab) return;
+    try {
+      await navigator.clipboard.writeText(tab.path);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = tab.path;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+  }
+
+  function handleRenameTab(tabId: string) {
+    const currentTabs = get(tabs);
+    const tab = currentTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const newName = window.prompt("Rename tab:", tab.name);
+    if (!newName || newName === tab.name) return;
+    tabs.update((t) => t.map((tab) => (tab.id === tabId ? { ...tab, name: newName } : tab)));
+  }
+
   function closeOtherTabs(tabId: string) {
     const currentTabs = get(tabs);
     for (const t of currentTabs) {
@@ -173,6 +197,9 @@
       ...(hasOthers ? [{ label: "Close Others", action: () => closeOtherTabs(tabId) }] : []),
       ...(hasLeft ? [{ label: "Close to the Left", action: () => closeTabsToLeft(tabId) }] : []),
       ...(hasRight ? [{ label: "Close to the Right", action: () => closeTabsToRight(tabId) }] : []),
+      { label: "", separator: true, action: () => {} },
+      { label: "Copy Path", action: () => handleCopyTabPath(tabId) },
+      { label: "Rename Tab", action: () => handleRenameTab(tabId) },
       { label: "", separator: true, action: () => {} },
       { label: "Close All", action: () => closeAllTabs(), danger: true },
       { label: "", separator: true, action: () => {} },
