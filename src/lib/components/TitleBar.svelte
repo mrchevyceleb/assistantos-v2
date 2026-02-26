@@ -25,7 +25,6 @@
   }
 
   async function handleDrag(e: MouseEvent) {
-    // Only drag from the bar itself, not from buttons
     if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
     const win = await getWindow();
     await win.startDragging();
@@ -37,12 +36,10 @@
   }
 
   onMount(() => {
-    // Check initial maximized state
     getWindow().then(async (win) => {
       isMaximized = await win.isMaximized();
     });
 
-    // Listen for resize changes
     let unlisten: (() => void) | null = null;
     getWindow().then(async (win) => {
       unlisten = await win.onResized(async () => {
@@ -62,75 +59,66 @@
   onmousedown={handleDrag}
   ondblclick={handleDoubleClick}
 >
-  <!-- Traffic lights -->
-  <div class="flex items-center gap-2 ml-3.5" data-no-drag>
-    <!-- Close -->
-    <button
-      class="traffic-light"
-      style="background: {hoveredBtn === 'close' ? '#ff5f57' : '#ff5f57'};"
-      onmouseenter={() => hoveredBtn = "close"}
-      onmouseleave={() => hoveredBtn = null}
-      onclick={handleClose}
-      title="Close"
-    >
-      {#if hoveredBtn === "close"}
-        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#4a0002" stroke-width="1.5">
-          <line x1="1.5" y1="1.5" x2="6.5" y2="6.5"/>
-          <line x1="6.5" y1="1.5" x2="1.5" y2="6.5"/>
-        </svg>
-      {/if}
-    </button>
-
-    <!-- Minimize -->
-    <button
-      class="traffic-light"
-      style="background: {hoveredBtn === 'minimize' ? '#febc2e' : '#febc2e'};"
-      onmouseenter={() => hoveredBtn = "minimize"}
-      onmouseleave={() => hoveredBtn = null}
-      onclick={handleMinimize}
-      title="Minimize"
-    >
-      {#if hoveredBtn === "minimize"}
-        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#9a6300" stroke-width="1.5">
-          <line x1="1" y1="4" x2="7" y2="4"/>
-        </svg>
-      {/if}
-    </button>
-
-    <!-- Maximize -->
-    <button
-      class="traffic-light"
-      style="background: {hoveredBtn === 'maximize' ? '#28c840' : '#28c840'};"
-      onmouseenter={() => hoveredBtn = "maximize"}
-      onmouseleave={() => hoveredBtn = null}
-      onclick={handleMaximize}
-      title={isMaximized ? "Restore" : "Maximize"}
-    >
-      {#if hoveredBtn === "maximize"}
-        {#if isMaximized}
-          <!-- Restore icon -->
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#006500" stroke-width="1.2">
-            <rect x="1" y="2.5" width="4.5" height="4.5" rx="0.5"/>
-            <path d="M2.5 2.5V1.5a.5.5 0 01.5-.5H7a.5.5 0 01.5.5V5.5a.5.5 0 01-.5.5h-1"/>
-          </svg>
-        {:else}
-          <!-- Expand icon -->
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="#006500" stroke-width="1.2">
-            <path d="M1 2.5L4 0.5 7 2.5"/>
-            <path d="M1 5.5L4 7.5 7 5.5"/>
-          </svg>
-        {/if}
-      {/if}
-    </button>
-  </div>
+  <!-- Left spacer to balance window controls -->
+  <div class="w-[138px] shrink-0"></div>
 
   <!-- Center title -->
   <div class="flex-1 flex items-center justify-center pointer-events-none">
     <span class="titlebar-title">ASSISTANTOS</span>
   </div>
 
-  <!-- Spacer to balance traffic lights -->
-  <div class="w-[72px]"></div>
+  <!-- Windows-style window controls (right side) -->
+  <div class="flex items-center shrink-0" data-no-drag>
+    <!-- Minimize -->
+    <button
+      class="win-btn"
+      class:win-btn-hover={hoveredBtn === "minimize"}
+      onmouseenter={() => hoveredBtn = "minimize"}
+      onmouseleave={() => hoveredBtn = null}
+      onclick={handleMinimize}
+      title="Minimize"
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1"/>
+      </svg>
+    </button>
+
+    <!-- Maximize / Restore -->
+    <button
+      class="win-btn"
+      class:win-btn-hover={hoveredBtn === "maximize"}
+      onmouseenter={() => hoveredBtn = "maximize"}
+      onmouseleave={() => hoveredBtn = null}
+      onclick={handleMaximize}
+      title={isMaximized ? "Restore Down" : "Maximize"}
+    >
+      {#if isMaximized}
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1">
+          <rect x="0.5" y="2.5" width="7" height="7" rx="0.5"/>
+          <path d="M2.5 2.5V1a.5.5 0 01.5-.5H9.5A.5.5 0 0110 1V7.5a.5.5 0 01-.5.5H7.5"/>
+        </svg>
+      {:else}
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" stroke-width="1"/>
+        </svg>
+      {/if}
+    </button>
+
+    <!-- Close -->
+    <button
+      class="win-btn win-btn-close"
+      class:win-btn-close-hover={hoveredBtn === "close"}
+      onmouseenter={() => hoveredBtn = "close"}
+      onmouseleave={() => hoveredBtn = null}
+      onclick={handleClose}
+      title="Close"
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2">
+        <line x1="1" y1="1" x2="9" y2="9"/>
+        <line x1="9" y1="1" x2="1" y2="9"/>
+      </svg>
+    </button>
+  </div>
 </div>
 
 <style>
@@ -169,24 +157,35 @@
     opacity: 0.7;
   }
 
-  .traffic-light {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
+  .win-btn {
+    width: 46px;
+    height: 38px;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
+    background: transparent;
+    color: var(--color-text-muted);
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: background 0.1s, color 0.1s;
     padding: 0;
   }
 
-  .traffic-light:hover {
-    opacity: 0.85;
+  .win-btn-hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-primary);
   }
 
-  .traffic-light:active {
-    opacity: 0.65;
+  .win-btn-close-hover {
+    background: #c42b1c !important;
+    color: #ffffff !important;
+  }
+
+  .win-btn:active {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .win-btn-close:active {
+    background: #b22a1a !important;
   }
 </style>

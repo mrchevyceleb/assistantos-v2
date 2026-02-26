@@ -21,6 +21,8 @@
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { zoomIn, zoomOut, resetZoom, initZoom } from "$lib/stores/ui";
   import { settingsVisible, settings } from "$lib/stores/settings";
+  import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
+  import { chatPanelVisible, chatPanelWidth } from "$lib/stores/chat";
 
   let paletteVisible = $state(false);
   let sidebarView = $state<"explorer" | "search">("explorer");
@@ -164,6 +166,10 @@
     leftPanelWidth.update((w) => Math.max(200, Math.min(800, w + delta)));
   }
 
+  function handleChatPanelResize(delta: number) {
+    chatPanelWidth.update((w) => Math.max(300, Math.min(800, w - delta)));
+  }
+
   // Global keyboard shortcuts
   function handleKeydown(e: KeyboardEvent) {
     // Ctrl+,: Toggle settings modal
@@ -225,6 +231,13 @@
           }
         });
       });
+    }
+
+    // Ctrl+L: Toggle AI Chat panel
+    if (e.ctrlKey && e.key === "l") {
+      e.preventDefault();
+      chatPanelVisible.update((v) => !v);
+      return;
     }
 
     // Ctrl+B: Toggle sidebar
@@ -333,6 +346,14 @@
         <ResizeHandle direction="horizontal" onResize={handleRightPanelResize} />
         <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border">
           <TerminalPanel dock="right" />
+        </div>
+      {/if}
+
+      <!-- AI Chat Panel -->
+      {#if $chatPanelVisible}
+        <ResizeHandle direction="horizontal" onResize={handleChatPanelResize} />
+        <div style:width="{$chatPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border">
+          <ChatPanel />
         </div>
       {/if}
     </div>

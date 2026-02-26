@@ -12,6 +12,7 @@ import {
   updateTabContent,
 } from "$lib/stores/tabs";
 import { terminalVisible, terminalHeight } from "$lib/stores/terminal";
+import { chatPanelVisible, chatPanelWidth } from "$lib/stores/chat";
 import { uiZoom } from "$lib/stores/ui";
 import {
   settings,
@@ -36,6 +37,8 @@ export interface AppState {
     ext?: string;
   }>;
   activeTabPath: string | null;
+  chatPanelVisible?: boolean;
+  chatPanelWidth?: number;
 }
 
 // ── Save ─────────────────────────────────────────────────────────────
@@ -61,6 +64,8 @@ export async function saveState(): Promise<void> {
     sidebarView: sidebarViewRef,
     uiZoom: get(uiZoom),
     settings: get(settings),
+    chatPanelVisible: get(chatPanelVisible),
+    chatPanelWidth: get(chatPanelWidth),
     openTabs: $tabs
       .filter((t) => !t.path.startsWith("__terminal__:"))
       .map((t) => ({
@@ -144,6 +149,14 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
     }
   }
 
+  // Restore chat panel state
+  if (state.chatPanelVisible != null) {
+    chatPanelVisible.set(state.chatPanelVisible);
+  }
+  if (state.chatPanelWidth != null) {
+    chatPanelWidth.set(state.chatPanelWidth);
+  }
+
   // Update sidebar view ref for future saves
   sidebarViewRef = state.sidebarView ?? "explorer";
 
@@ -174,6 +187,8 @@ export function startAutoSave() {
   unsubscribers.push(settings.subscribe(() => debouncedSave()));
   unsubscribers.push(tabs.subscribe(() => debouncedSave()));
   unsubscribers.push(activeTabId.subscribe(() => debouncedSave()));
+  unsubscribers.push(chatPanelVisible.subscribe(() => debouncedSave()));
+  unsubscribers.push(chatPanelWidth.subscribe(() => debouncedSave()));
 }
 
 export function stopAutoSave() {

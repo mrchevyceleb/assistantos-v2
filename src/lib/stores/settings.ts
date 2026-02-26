@@ -15,6 +15,15 @@ export interface AppSettings {
   showHiddenFiles: boolean;
   restoreSession: boolean;
   confirmCloseUnsaved: boolean;
+  aiApiKey: string;
+  aiModel: string;
+  aiBaseUrl: string;
+  aiTemperature: number;
+  aiMaxTokens: number;
+  aiEnableToolUse: boolean;
+  aiConfirmWrites: boolean;
+  aiMaxToolIterations: number;
+  aiFavoriteModels: string[];
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────
@@ -32,6 +41,20 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHiddenFiles: false,
   restoreSession: true,
   confirmCloseUnsaved: true,
+  aiApiKey: '',
+  aiModel: 'anthropic/claude-sonnet-4',
+  aiBaseUrl: 'https://openrouter.ai/api/v1',
+  aiTemperature: 0.7,
+  aiMaxTokens: 128000,
+  aiEnableToolUse: true,
+  aiConfirmWrites: true,
+  aiMaxToolIterations: 25,
+  aiFavoriteModels: [
+    'anthropic/claude-sonnet-4',
+    'anthropic/claude-opus-4',
+    'openai/gpt-4.1',
+    'google/gemini-2.5-pro-preview',
+  ],
 };
 
 // ── Stores ───────────────────────────────────────────────────────────

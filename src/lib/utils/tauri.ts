@@ -148,3 +148,58 @@ export async function saveAppState(stateJson: string): Promise<void> {
 export async function loadAppState(): Promise<string> {
   return invoke("load_app_state");
 }
+
+// ── AI Chat wrappers ────────────────────────────────────────────────
+
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+}
+
+export async function aiChatStream(
+  requestId: string,
+  baseUrl: string,
+  apiKey: string,
+  bodyJson: string,
+): Promise<void> {
+  return invoke("ai_chat_stream", { requestId, baseUrl, apiKey, bodyJson });
+}
+
+export async function aiFetchModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<string> {
+  return invoke("ai_fetch_models", { baseUrl, apiKey });
+}
+
+export async function runCommandSync(
+  command: string,
+  cwd: string,
+  timeoutMs?: number,
+): Promise<CommandResult> {
+  return invoke("run_command_sync", { command, cwd, timeoutMs });
+}
+
+export async function saveChatSession(
+  sessionId: string,
+  data: string,
+): Promise<void> {
+  return invoke("save_chat_session", { sessionId, data });
+}
+
+export async function loadChatSession(
+  sessionId: string,
+): Promise<string> {
+  return invoke("load_chat_session", { sessionId });
+}
+
+export async function listChatSessions(): Promise<string[]> {
+  return invoke("list_chat_sessions");
+}
+
+export async function deleteChatSession(
+  sessionId: string,
+): Promise<void> {
+  return invoke("delete_chat_session", { sessionId });
+}

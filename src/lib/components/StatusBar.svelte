@@ -6,6 +6,7 @@
   import { formatFileSize } from "$lib/utils/file-types";
   import { uiZoom } from "$lib/stores/ui";
   import { settings, settingsVisible } from "$lib/stores/settings";
+  import { chatPanelVisible } from "$lib/stores/chat";
 
   function toggleTerminal() {
     const dock = get(settings).defaultTerminalDock;
@@ -31,7 +32,7 @@
   }
 </script>
 
-<div class="flex items-center justify-between bg-bg-tertiary/80 backdrop-blur-sm border-t border-border/50 text-text-muted" style="padding: 0 16px; height: 32px; font-size: 12.5px;">
+<div class="flex items-center justify-between bg-bg-tertiary/80 backdrop-blur-sm border-t border-border/50 text-text-muted" style="padding: 0 16px; height: 32px; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 -2px 8px rgba(0,0,0,0.2);">
   <div class="flex items-center gap-4">
     {#if $activeTab}
       <span class="truncate max-w-[400px]" title={$activeTab.path}>
@@ -61,6 +62,16 @@
     </button>
     <span class="text-text-muted">{Math.round($uiZoom * 100)}%</span>
     <span>UTF-8</span>
+    <button
+      onclick={() => chatPanelVisible.update((v) => !v)}
+      class="flex items-center gap-1.5 hover:text-text-primary transition-colors"
+      title="AI Chat (Ctrl+L)"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
+      </svg>
+      AI Chat
+    </button>
     <button
       onclick={toggleTerminal}
       class="flex items-center gap-1.5 hover:text-text-primary transition-colors"

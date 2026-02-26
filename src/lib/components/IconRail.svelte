@@ -1,5 +1,6 @@
 <script lang="ts">
   import { settingsVisible } from "$lib/stores/settings";
+  import { chatPanelVisible } from "$lib/stores/chat";
 
   interface Props {
     activeView: "explorer" | "search";
@@ -36,6 +37,17 @@
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
     </button>
+    <!-- AI Chat -->
+    <button
+      class="rail-icon"
+      class:active={$chatPanelVisible}
+      onclick={() => chatPanelVisible.update((v) => !v)}
+      title="AI Chat (Ctrl+L)"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
+      </svg>
+    </button>
   </div>
 
   <!-- Spacer -->
@@ -60,8 +72,14 @@
 <style>
   .icon-rail {
     width: 48px;
-    background: rgba(10, 11, 16, 0.6);
+    background: linear-gradient(
+      180deg,
+      rgba(16, 18, 26, 0.9) 0%,
+      rgba(10, 11, 16, 0.95) 100%
+    );
     border-right: 1px solid var(--color-border);
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02),
+                1px 0 8px rgba(0, 0, 0, 0.3);
   }
 
   .rail-icon {

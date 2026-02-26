@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
+use futures_util::StreamExt;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::Emitter;
@@ -772,6 +773,316 @@ fn load_app_state(app: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| format!("Failed to read state file {}: {}", state_file.display(), e))
 }
 
+// ── AI Chat Backend ──────────────────────────────────────────────────
+
+#[derive(Clone, Serialize)]
+struct AiStreamChunkPayload {
+    request_id: String,
+    data: String,
+}
+
+#[derive(Clone, Serialize)]
+struct AiStreamDonePayload {
+    request_id: String,
+}
+
+#[derive(Clone, Serialize)]
+struct AiStreamErrorPayload {
+    request_id: String,
+    error: String,
+}
+
+#[tauri::command]
+async fn ai_chat_stream(
+    app: tauri::AppHandle,
+    request_id: String,
+    base_url: String,
+    api_key: String,
+    body_json: String,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .body(body_json)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = format!("Request failed: {}", e);
+            let _ = app.emit(
+                "ai-stream-error",
+                AiStreamErrorPayload {
+                    request_id: request_id.clone(),
+                    error: err_msg.clone(),
+                },
+            );
+            err_msg
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let err_msg = format!("API error {}: {}", status, body);
+        let _ = app.emit(
+            "ai-stream-error",
+            AiStreamErrorPayload {
+                request_id: request_id.clone(),
+                error: err_msg.clone(),
+            },
+        );
+        return Err(err_msg);
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+
+                // Process complete lines from the buffer
+                while let Some(newline_pos) = buffer.find('\n') {
+                    let line = buffer[..newline_pos].trim().to_string();
+                    buffer = buffer[newline_pos + 1..].to_string();
+
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if data.trim() == "[DONE]" {
+                            let _ = app.emit(
+                                "ai-stream-done",
+                                AiStreamDonePayload {
+                                    request_id: request_id.clone(),
+                                },
+                            );
+                            return Ok(());
+                        }
+
+                        let _ = app.emit(
+                            "ai-stream-chunk",
+                            AiStreamChunkPayload {
+                                request_id: request_id.clone(),
+                                data: data.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                let err_msg = format!("Stream error: {}", e);
+                let _ = app.emit(
+                    "ai-stream-error",
+                    AiStreamErrorPayload {
+                        request_id: request_id.clone(),
+                        error: err_msg.clone(),
+                    },
+                );
+                return Err(err_msg);
+            }
+        }
+    }
+
+    // Stream ended without [DONE] — still signal done
+    let _ = app.emit(
+        "ai-stream-done",
+        AiStreamDonePayload {
+            request_id: request_id.clone(),
+        },
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn ai_fetch_models(base_url: String, api_key: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch models: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))
+}
+
+// ── Command Execution ───────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct CommandResult {
+    stdout: String,
+    stderr: String,
+    exit_code: i32,
+}
+
+#[tauri::command]
+async fn run_command_sync(
+    command: String,
+    cwd: String,
+    timeout_ms: Option<u64>,
+) -> Result<CommandResult, String> {
+    let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30000));
+
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = tokio::process::Command::new("powershell.exe");
+        c.arg("-Command").arg(&command);
+        c
+    } else {
+        let mut c = tokio::process::Command::new("bash");
+        c.arg("-c").arg(&command);
+        c
+    };
+
+    cmd.current_dir(&cwd);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    // Ensure the child process is killed if the future is dropped (e.g. on timeout)
+    cmd.kill_on_drop(true);
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn command: {}", e))?;
+
+    let wait_fut = child.wait_with_output();
+
+    match tokio::time::timeout(timeout, wait_fut).await {
+        Ok(result) => {
+            let output = result.map_err(|e| format!("Failed to wait for command: {}", e))?;
+            Ok(CommandResult {
+                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                exit_code: output.status.code().unwrap_or(-1),
+            })
+        }
+        Err(_) => {
+            // Timeout: dropping the future drops the Child, which kills it (kill_on_drop)
+            Err("Command timed out".to_string())
+        }
+    }
+}
+
+// ── Chat Session Persistence ────────────────────────────────────────
+
+/// Sanitize session_id to prevent path traversal attacks.
+/// Only allows alphanumeric chars, hyphens, and underscores.
+fn sanitize_session_id(id: &str) -> Result<String, String> {
+    if id.is_empty() {
+        return Err("Session ID cannot be empty".to_string());
+    }
+    if id.len() > 128 {
+        return Err("Session ID too long".to_string());
+    }
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("Invalid session ID: {}", id));
+    }
+    Ok(id.to_string())
+}
+
+#[tauri::command]
+fn save_chat_session(app: tauri::AppHandle, session_id: String, data: String) -> Result<(), String> {
+    let session_id = sanitize_session_id(&session_id)?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let chats_dir = app_data_dir.join("chats");
+    fs::create_dir_all(&chats_dir)
+        .map_err(|e| format!("Failed to create chats dir: {}", e))?;
+
+    let file_path = chats_dir.join(format!("{}.json", session_id));
+    fs::write(&file_path, data)
+        .map_err(|e| format!("Failed to write chat session: {}", e))
+}
+
+#[tauri::command]
+fn load_chat_session(app: tauri::AppHandle, session_id: String) -> Result<String, String> {
+    let session_id = sanitize_session_id(&session_id)?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let file_path = app_data_dir.join("chats").join(format!("{}.json", session_id));
+
+    if !file_path.exists() {
+        return Err(format!("Chat session not found: {}", session_id));
+    }
+
+    fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read chat session: {}", e))
+}
+
+#[tauri::command]
+fn list_chat_sessions(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let chats_dir = app_data_dir.join("chats");
+
+    if !chats_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries = fs::read_dir(&chats_dir)
+        .map_err(|e| format!("Failed to read chats dir: {}", e))?;
+
+    let mut session_ids: Vec<String> = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    session_ids.sort();
+    Ok(session_ids)
+}
+
+#[tauri::command]
+fn delete_chat_session(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    let session_id = sanitize_session_id(&session_id)?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let file_path = app_data_dir.join("chats").join(format!("{}.json", session_id));
+
+    if !file_path.exists() {
+        return Err(format!("Chat session not found: {}", session_id));
+    }
+
+    fs::remove_file(&file_path)
+        .map_err(|e| format!("Failed to delete chat session: {}", e))
+}
+
 // ── App Entry ────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -804,6 +1115,13 @@ pub fn run() {
             stop_watcher,
             save_app_state,
             load_app_state,
+            ai_chat_stream,
+            ai_fetch_models,
+            run_command_sync,
+            save_chat_session,
+            load_chat_session,
+            list_chat_sessions,
+            delete_chat_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
