@@ -55,8 +55,10 @@
   let unlistenOutput: (() => void) | null = null;
   let unlistenClosed: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let movedAway = false;
 
   function handleMove(target: "bottom" | "right" | "left") {
+    movedAway = true;
     if (term) {
       term.dispose();
       term = null;
@@ -165,7 +167,11 @@
       term = null;
       fitAddon = null;
     }
-    removeTerminal(terminalId);
+    // Only remove the terminal if it wasn't moved to another dock —
+    // moveTerminal() already handles re-parenting the instance.
+    if (!movedAway) {
+      removeTerminal(terminalId);
+    }
   });
 </script>
 
