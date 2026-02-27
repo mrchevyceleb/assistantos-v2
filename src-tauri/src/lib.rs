@@ -1153,6 +1153,8 @@ pub fn run() {
             list_chat_sessions,
             delete_chat_session,
         ])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

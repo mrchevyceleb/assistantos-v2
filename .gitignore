@@ -12,3 +12,6 @@ vite.config.ts.timestamp-*
 # Rust / Tauri
 src-tauri/target/
 src-tauri/gen/
+
+# Signing keys (never commit)
+src-tauri/keys/

@@ -23,6 +23,7 @@
   import { settingsVisible, settings } from "$lib/stores/settings";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import { chatPanelVisible, chatPanelWidth } from "$lib/stores/chat";
+  import UpdateNotification from "$lib/components/UpdateNotification.svelte";
 
   let paletteVisible = $state(false);
   let sidebarView = $state<"explorer" | "search">("explorer");
@@ -364,3 +365,4 @@
 </div>
 
 <SettingsModal visible={$settingsVisible} onClose={() => settingsVisible.set(false)} />
+<UpdateNotification />
