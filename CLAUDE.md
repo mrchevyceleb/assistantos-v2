@@ -85,3 +85,36 @@ The Rust backend filters these directories from the tree: `.git`, `node_modules`
 - **Tab deduplication**: Opening an already-open file activates the existing tab instead of creating a new one.
 - **Terminal tabs**: Use synthetic paths `__terminal__:{id}` to integrate terminals into the tab bar.
 - **Encoding fallback**: Rust file reading tries UTF-8 first, falls back to `encoding_rs` detection.
+
+## Releases and Auto-Updates
+
+**GitHub repo**: `mrchevyceleb/assistantos-v2` (private)
+
+**Auto-updater** is built in via `tauri-plugin-updater`. The app checks GitHub releases on launch (3s delay) and every 30 minutes. The `UpdateNotification.svelte` component handles the UI toast. Update manifests are served from the `latest.json` asset attached to each GitHub release.
+
+**Signing**: Updater uses a keypair. The private key is stored as the `TAURI_SIGNING_PRIVATE_KEY` GitHub secret (with empty password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The public key is in `tauri.conf.json` under `plugins.updater.pubkey`. Local key backup at `src-tauri/keys/` (gitignored).
+
+### Release process
+
+**IMPORTANT: Always ask the user before creating a release.** After finishing work, ask: "Want me to cut a release with these changes?" Do NOT tag or push a release without explicit approval.
+
+Steps to release:
+1. Bump the version in all three places (must match):
+   - `tauri.conf.json` -> `version`
+   - `package.json` -> `version`
+   - `src-tauri/Cargo.toml` -> `version`
+2. Commit the version bump
+3. Tag: `git tag v{version}`
+4. Push: `git push origin master && git push origin v{version}`
+5. GitHub Actions (`.github/workflows/release.yml`) handles the rest:
+   - Creates a draft release
+   - Builds Windows (x64 NSIS) and Mac (universal binary) in parallel
+   - Publishes the release when both builds complete
+   - The `latest.json` artifact enables auto-update detection
+
+### Build targets
+
+| Platform | Runner | Output |
+|----------|--------|--------|
+| Windows x64 | `windows-latest` | NSIS installer (.exe) + .msi |
+| macOS Universal | `macos-latest` | .dmg (Intel + Apple Silicon) |
