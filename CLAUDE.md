@@ -92,7 +92,31 @@ The Rust backend filters these directories from the tree: `.git`, `node_modules`
 
 **Auto-updater** is built in via `tauri-plugin-updater`. The app checks GitHub releases on launch (3s delay) and every 30 minutes. The `UpdateNotification.svelte` component handles the UI toast. Update manifests are served from the `latest.json` asset attached to each GitHub release.
 
-**Signing**: Updater uses a keypair. The private key is stored as the `TAURI_SIGNING_PRIVATE_KEY` GitHub secret (with empty password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The public key is in `tauri.conf.json` under `plugins.updater.pubkey`. Local key backup at `src-tauri/keys/` (gitignored).
+### Signing
+
+Updater uses a minisign keypair:
+- **Private key**: `TAURI_SIGNING_PRIVATE_KEY` GitHub secret
+- **Password**: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` GitHub secret (must be a real non-empty password, NOT empty string. GitHub Actions cannot store empty secrets)
+- **Public key**: `tauri.conf.json` -> `plugins.updater.pubkey`
+- **Local backup**: `src-tauri/keys/assistantos.key` and `.key.pub` (gitignored)
+
+If the signing key ever needs regenerating:
+1. `npx tauri signer generate --ci -p "YOUR_PASSWORD" -w src-tauri/keys/assistantos.key`
+2. Update `TAURI_SIGNING_PRIVATE_KEY` secret: `cat src-tauri/keys/assistantos.key | gh secret set TAURI_SIGNING_PRIVATE_KEY`
+3. Update `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secret: `echo -n "YOUR_PASSWORD" | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+4. Update pubkey in `tauri.conf.json` -> `plugins.updater.pubkey` with contents of `.key.pub`
+
+### Critical config: `createUpdaterArtifacts`
+
+`tauri.conf.json` -> `bundle.createUpdaterArtifacts` MUST be set to `"v1Compatible"`. Without this, the Tauri v2 CLI will NOT generate `.nsis.zip`, `.nsis.zip.sig`, `.app.tar.gz`, or `.app.tar.gz.sig` files needed for the auto-updater. These are the updater bundles the `latest.json` manifest points to.
+
+### Release workflow architecture
+
+The workflow (`.github/workflows/release.yml`) does NOT use `tauri-apps/tauri-action`. It builds directly with `npx tauri build` because tauri-action has bugs with uploading updater artifacts. The workflow has three jobs:
+
+1. **build-windows**: `npx tauri build` on windows-latest, uploads `.exe` + `.nsis.zip` + `.nsis.zip.sig` as GitHub Actions artifacts
+2. **build-macos**: `npx tauri build --target universal-apple-darwin` on macos-latest, uploads `.dmg` + `.app.tar.gz` + `.app.tar.gz.sig` as artifacts
+3. **publish**: Downloads all artifacts, creates the GitHub release, uploads all files, reads `.sig` files from disk to build `latest.json` with platform entries, then publishes
 
 ### Release process
 
@@ -106,15 +130,20 @@ Steps to release:
 2. Commit the version bump
 3. Tag: `git tag v{version}`
 4. Push: `git push origin master && git push origin v{version}`
-5. GitHub Actions (`.github/workflows/release.yml`) handles the rest:
-   - Creates a draft release
-   - Builds Windows (x64 NSIS) and Mac (universal binary) in parallel
-   - Publishes the release when both builds complete
-   - The `latest.json` artifact enables auto-update detection
+5. GitHub Actions handles the rest automatically (~12-15 min):
+   - Builds Windows (x64) and macOS (universal) in parallel
+   - Creates release with all installers + updater bundles + `latest.json`
+   - `latest.json` has populated `platforms` with signatures and download URLs
 
 ### Build targets
 
-| Platform | Runner | Output |
-|----------|--------|--------|
-| Windows x64 | `windows-latest` | NSIS installer (.exe) + .msi |
-| macOS Universal | `macos-latest` | .dmg (Intel + Apple Silicon) |
+| Platform | Runner | Installer | Updater bundle |
+|----------|--------|-----------|----------------|
+| Windows x64 | `windows-latest` | `.exe` (NSIS) | `.nsis.zip` + `.nsis.zip.sig` |
+| macOS Universal | `macos-latest` | `.dmg` | `.app.tar.gz` + `.app.tar.gz.sig` |
+
+### Troubleshooting releases
+
+- **"Wrong password for that key"**: The `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secret is wrong or missing. Regenerate the key pair (see Signing section above).
+- **Empty `platforms` in latest.json**: The `.nsis.zip`/`.sig` files weren't generated. Ensure `createUpdaterArtifacts: "v1Compatible"` is in `tauri.conf.json` bundle config.
+- **Build fails silently**: Check the "List build artifacts" step output to see what files were actually generated in the bundle directories.
