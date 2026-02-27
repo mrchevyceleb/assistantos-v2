@@ -58,23 +58,23 @@ jobs:
 
       - name: Upload updater artifacts (Windows)
         if: matrix.platform == 'windows-latest'
-        shell: bash
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.ref_name }}"
-          NSIS_ZIP=$(find src-tauri/target -name "*.nsis.zip" | head -1)
-          NSIS_SIG=$(find src-tauri/target -name "*.nsis.zip.sig" | head -1)
+          $tag = "${{ github.ref_name }}"
+          $nsisZip = Get-ChildItem -Path src-tauri/target -Recurse -Filter "*.nsis.zip" | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path src-tauri/target -Recurse -Filter "*.nsis.zip.sig" | Select-Object -First 1
 
-          if [ -n "$NSIS_ZIP" ] && [ -n "$NSIS_SIG" ]; then
-            echo "Uploading $NSIS_ZIP"
-            gh release upload "$TAG" "$NSIS_ZIP" --clobber
-            echo "Uploading $NSIS_SIG"
-            gh release upload "$TAG" "$NSIS_SIG" --clobber
-          else
-            echo "WARNING: NSIS zip or sig not found"
-            find src-tauri/target -name "*.sig" -o -name "*.nsis.zip" 2>/dev/null
-          fi
+          if ($nsisZip -and $nsisSig) {
+            Write-Host "Uploading $($nsisZip.FullName)"
+            gh release upload $tag $nsisZip.FullName --clobber
+            Write-Host "Uploading $($nsisSig.FullName)"
+            gh release upload $tag $nsisSig.FullName --clobber
+          } else {
+            Write-Host "WARNING: NSIS zip or sig not found"
+            Get-ChildItem -Path src-tauri/target -Recurse -Include "*.sig","*.nsis.zip" | ForEach-Object { Write-Host $_.FullName }
+          }
 
       - name: Upload updater artifacts (macOS)
         if: matrix.platform == 'macos-latest'
@@ -103,37 +103,39 @@ jobs:
         with:
           script: |
             const tag = context.ref.replace('refs/tags/', '');
-            const { data: release } = await github.rest.repos.getReleaseByTag({
+
+            // Find draft release (getReleaseByTag doesn't find drafts)
+            const { data: releases } = await github.rest.repos.listReleases({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag
+              per_page: 10
             });
+            const release = releases.find(r => r.tag_name === tag);
+            if (!release) {
+              core.setFailed(`Release with tag ${tag} not found`);
+              return;
+            }
 
             const assets = release.assets;
             const baseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}`;
 
-            // Find sig files content
             let windowsSig = '';
             let macSig = '';
 
             for (const asset of assets) {
               if (asset.name.endsWith('.nsis.zip.sig')) {
-                const { data } = await github.rest.repos.getReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  asset_id: asset.id,
+                const resp = await github.request('GET ' + asset.url, {
                   headers: { Accept: 'application/octet-stream' }
                 });
-                windowsSig = Buffer.from(data).toString('utf-8').trim();
+                windowsSig = new TextDecoder().decode(resp.data).trim();
+                core.info(`Found Windows sig: ${asset.name} (${windowsSig.length} chars)`);
               }
               if (asset.name.endsWith('.app.tar.gz.sig')) {
-                const { data } = await github.rest.repos.getReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  asset_id: asset.id,
+                const resp = await github.request('GET ' + asset.url, {
                   headers: { Accept: 'application/octet-stream' }
                 });
-                macSig = Buffer.from(data).toString('utf-8').trim();
+                macSig = new TextDecoder().decode(resp.data).trim();
+                core.info(`Found macOS sig: ${asset.name} (${macSig.length} chars)`);
               }
             }
 
@@ -150,16 +152,20 @@ jobs:
                 signature: windowsSig,
                 url: `${baseUrl}/${nsisZip.name}`
               };
+            } else {
+              core.warning('Windows updater artifacts missing');
             }
 
             if (appTarGz && macSig) {
-              platforms['darwin-universal'] = {
+              const macEntry = {
                 signature: macSig,
                 url: `${baseUrl}/${appTarGz.name}`
               };
-              // Also add arch-specific entries pointing to universal
-              platforms['darwin-aarch64'] = platforms['darwin-universal'];
-              platforms['darwin-x86_64'] = platforms['darwin-universal'];
+              platforms['darwin-universal'] = macEntry;
+              platforms['darwin-aarch64'] = macEntry;
+              platforms['darwin-x86_64'] = macEntry;
+            } else {
+              core.warning('macOS updater artifacts missing');
             }
 
             const latestJson = JSON.stringify({
@@ -169,24 +175,10 @@ jobs:
               platforms
             }, null, 2);
 
-            core.info('latest.json content:');
+            core.info('latest.json:');
             core.info(latestJson);
 
             // Upload latest.json
-            const fs = require('fs');
-            fs.writeFileSync('/tmp/latest.json', latestJson);
-
-            // Delete existing latest.json if present
-            const existing = assets.find(a => a.name === 'latest.json');
-            if (existing) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: existing.id
-              });
-            }
-
-            const uploadUrl = release.upload_url;
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -194,15 +186,13 @@ jobs:
               name: 'latest.json',
               data: latestJson
             });
-
             core.info('Uploaded latest.json');
 
-            // Publish the release (un-draft)
+            // Publish
             await github.rest.repos.updateRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               release_id: release.id,
               draft: false
             });
-
             core.info('Release published!');
