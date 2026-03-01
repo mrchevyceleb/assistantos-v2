@@ -151,10 +151,24 @@
     const tab = currentTabs.find((t) => t.id === tabId);
     if (!tab) return;
 
+    const currentSettings = get(settings);
+
     if (tab.viewerType === "terminal") {
-      closeTab(tabId, { forceTerminal: true });
+      if (!window.confirm(`Close terminal tab "${tab.name}"? This will end the session.`)) {
+        return;
+      }
+    }
+
+    if (currentSettings.confirmCloseUnsaved && tab.isModified) {
+      if (!window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) {
+        return;
+      }
+    }
+
+    if (tab.viewerType === "terminal") {
+      closeTab(tabId, { forceTerminal: true, skipConfirm: true });
     } else {
-      closeTab(tabId);
+      closeTab(tabId, { skipConfirm: true });
     }
   }
 
@@ -316,7 +330,12 @@
           type="button"
           class="ml-1 p-2 rounded-md opacity-0 group-hover:opacity-100 hover:bg-bg-active transition-opacity cursor-pointer"
           onclick={(e) => handleClose(e, tab.id)}
+          onpointerdown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           onmousedown={(e) => e.stopPropagation()}
+          draggable="false"
           title={`Close ${tab.name}`}
           aria-label={`Close ${tab.name}`}
         >

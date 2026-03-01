@@ -508,7 +508,10 @@
       <div class="flex items-center justify-between px-3 pb-2.5">
         <div class="text-text-muted/50 select-none" style="font-size: calc(13px * var(--ui-zoom));">
           {#if isLoading}
-            Generating...
+            <span class="working-indicator" role="status" aria-label="Assistant is working">
+              <span class="working-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span>Working on it...</span>
+            </span>
           {:else if $settings.aiEnableAtMentions}
             Enter to send, @ for files, / for commands
           {:else}
@@ -553,3 +556,53 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .working-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text-muted);
+  }
+
+  .working-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+  }
+
+  .working-bars span {
+    width: 3px;
+    border-radius: 999px;
+    background: rgba(88, 180, 208, 0.85);
+    animation: working-bars 0.85s ease-in-out infinite;
+  }
+
+  .working-bars span:nth-child(1) {
+    height: 5px;
+    animation-delay: 0s;
+  }
+
+  .working-bars span:nth-child(2) {
+    height: 10px;
+    animation-delay: 0.15s;
+  }
+
+  .working-bars span:nth-child(3) {
+    height: 7px;
+    animation-delay: 0.3s;
+  }
+
+  @keyframes working-bars {
+    0%,
+    100% {
+      transform: scaleY(0.65);
+      opacity: 0.45;
+    }
+    50% {
+      transform: scaleY(1.15);
+      opacity: 1;
+    }
+  }
+</style>

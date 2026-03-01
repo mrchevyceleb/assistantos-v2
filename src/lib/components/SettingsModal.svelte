@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settings, updateSetting } from "$lib/stores/settings";
+  import { settings, updateSetting, getActiveAIKey, getActiveAIBaseUrl } from "$lib/stores/settings";
   import type { AppSettings } from "$lib/stores/settings";
   import { uiZoom, applyZoom } from "$lib/stores/ui";
   import { availableModels, modelsLoading, modelsError, fetchModels, modelsLastFetched, TOP_PROVIDERS } from "$lib/stores/models";
@@ -88,6 +88,13 @@
   let mcpTesting = $state<Record<string, boolean>>({});
   let mcpStatus = $state<Record<string, string>>({});
   let addingSlashDir = $state(false);
+  let openRouterAuthCode = $state("");
+  let openRouterCodeVerifier = $state("");
+  let openRouterOauthBusy = $state(false);
+  let openRouterOauthStatus = $state("");
+
+  type AIProvider = AppSettings["aiProvider"];
+  type AIAuthMode = AppSettings["aiAuthMode"];
 
   const categories: Category[] = [
     "Terminal",
@@ -215,20 +222,175 @@
       $settings.aiSlashCommandDirs.filter((p) => p !== path),
     );
   }
+
+  function providerDisplayName(provider: AIProvider): string {
+    if (provider === "anthropic") return "Anthropic Direct";
+    if (provider === "openai") return "OpenAI Direct (Codex)";
+    return "OpenRouter";
+  }
+
+  function activeApiKey(): string {
+    return getActiveAIKey($settings);
+  }
+
+  function setActiveApiKey(value: string) {
+    if ($settings.aiProvider === "anthropic") {
+      updateSetting("aiAnthropicApiKey", value);
+      return;
+    }
+    if ($settings.aiProvider === "openai") {
+      updateSetting("aiOpenAIApiKey", value);
+      return;
+    }
+    updateSetting("aiOpenRouterApiKey", value);
+    updateSetting("aiApiKey", value);
+  }
+
+  function activeBaseUrl(): string {
+    return getActiveAIBaseUrl($settings);
+  }
+
+  function setActiveBaseUrl(value: string) {
+    if ($settings.aiProvider === "anthropic") {
+      updateSetting("aiAnthropicBaseUrl", value);
+      return;
+    }
+    if ($settings.aiProvider === "openai") {
+      updateSetting("aiOpenAIBaseUrl", value);
+      return;
+    }
+    updateSetting("aiOpenRouterBaseUrl", value);
+    updateSetting("aiBaseUrl", value);
+  }
+
+  function setProvider(provider: AIProvider) {
+    updateSetting("aiProvider", provider);
+    if (provider === "anthropic" && !$settings.aiModel.toLowerCase().includes("claude")) {
+      updateSetting("aiModel", "claude-sonnet-4-5");
+    }
+    if (provider === "openai" && !$settings.aiModel.toLowerCase().includes("gpt") && !$settings.aiModel.toLowerCase().includes("codex")) {
+      updateSetting("aiModel", "gpt-5.2");
+    }
+    if (provider === "openrouter" && !$settings.aiModel.includes("/")) {
+      updateSetting("aiModel", "anthropic/claude-sonnet-4");
+    }
+    modelSearch = "";
+    modelDropdownOpen = false;
+  }
+
+  async function openProviderLogin() {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    if ($settings.aiProvider === "anthropic") {
+      await openUrl("https://console.anthropic.com");
+      return;
+    }
+    if ($settings.aiProvider === "openai") {
+      await openUrl("https://platform.openai.com");
+      return;
+    }
+    await startOpenRouterOAuth();
+  }
+
+  function randomVerifier(length = 64): string {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+    const bytes = new Uint8Array(length);
+    crypto.getRandomValues(bytes);
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) {
+      out += alphabet[bytes[i] % alphabet.length];
+    }
+    return out;
+  }
+
+  async function sha256Base64Url(value: string): Promise<string> {
+    const encoded = new TextEncoder().encode(value);
+    const digest = await crypto.subtle.digest("SHA-256", encoded);
+    const bytes = Array.from(new Uint8Array(digest));
+    const base64 = btoa(String.fromCharCode(...bytes));
+    return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  async function startOpenRouterOAuth() {
+    if (openRouterOauthBusy) return;
+    openRouterOauthBusy = true;
+    openRouterOauthStatus = "";
+
+    try {
+      const verifier = randomVerifier(64);
+      openRouterCodeVerifier = verifier;
+      const challenge = await sha256Base64Url(verifier);
+      const callbackUrl = "http://localhost:3000/openrouter-oauth-callback";
+      const authUrl = `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callbackUrl)}&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`;
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(authUrl);
+      openRouterOauthStatus = "Browser opened. After login, paste the returned code below.";
+    } catch (e) {
+      openRouterOauthStatus = `OAuth start failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      openRouterOauthBusy = false;
+    }
+  }
+
+  async function exchangeOpenRouterOAuthCode() {
+    const code = openRouterAuthCode.trim();
+    if (!code) return;
+    if (!openRouterCodeVerifier) {
+      openRouterOauthStatus = "Start OAuth first so a code verifier is generated.";
+      return;
+    }
+
+    openRouterOauthBusy = true;
+    openRouterOauthStatus = "Exchanging code...";
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/auth/keys", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code,
+          code_verifier: openRouterCodeVerifier,
+          code_challenge_method: "S256",
+        }),
+      });
+
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+
+      const parsed = JSON.parse(text);
+      const key = parsed?.key;
+      if (!key || typeof key !== "string") {
+        throw new Error("OAuth exchange succeeded but no key was returned.");
+      }
+
+      updateSetting("aiProvider", "openrouter");
+      updateSetting("aiAuthMode", "oauth");
+      updateSetting("aiOpenRouterApiKey", key);
+      updateSetting("aiApiKey", key);
+      openRouterAuthCode = "";
+      openRouterOauthStatus = "Connected. OpenRouter OAuth key saved.";
+    } catch (e) {
+      openRouterOauthStatus = `OAuth exchange failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      openRouterOauthBusy = false;
+    }
+  }
 </script>
 
 {#if visible}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
+    class="settings-modal fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
     onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onkeydown={handleKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
   >
-    <div class="w-[960px] max-h-[88vh] min-h-[560px] glass-panel-solid border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div class="settings-panel w-[1080px] max-h-[90vh] min-h-[620px] glass-panel-solid border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between px-8 py-5 border-b border-border/40">
         <h2 class="text-text-primary text-lg font-semibold tracking-wide">Settings</h2>
@@ -591,6 +753,22 @@
                     <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiEnableAtMentions ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
                   </div>
                 </div>
+
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">Thinking Visibility</div>
+                    <div class="text-text-muted text-[12px] mt-1">Choose how much reasoning text to show in messages</div>
+                  </div>
+                  <select
+                    class="bg-bg-primary border border-border/40 rounded-lg px-4 py-2 text-text-primary text-[13.5px] outline-none focus:border-accent/40 transition-colors"
+                    value={$settings.aiThinkingMode}
+                    onchange={(e) => updateSetting("aiThinkingMode", e.currentTarget.value as AppSettings["aiThinkingMode"])}
+                  >
+                    <option value="all">Show All</option>
+                    <option value="preview">Preview + Expand</option>
+                    <option value="none">Hide</option>
+                  </select>
+                </div>
               </div>
 
               <!-- Slash command folders -->
@@ -629,30 +807,105 @@
 
               <!-- Connection card -->
               <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
-                <!-- OpenRouter API Key -->
+                <div class="py-6 px-7 grid grid-cols-2 gap-4">
+                  <div>
+                    <div class="text-text-primary text-[13.5px] font-medium mb-1">Provider</div>
+                    <div class="text-text-muted text-[12px] mb-3">Pick where chat requests are sent</div>
+                    <select
+                      class="w-full bg-bg-primary border border-border/40 rounded-lg px-4 py-2.5 text-text-primary text-[13.5px] outline-none focus:border-accent/40 transition-colors"
+                      value={$settings.aiProvider}
+                      onchange={(e) => setProvider(e.currentTarget.value as AIProvider)}
+                    >
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="anthropic">Anthropic Direct</option>
+                      <option value="openai">OpenAI Direct (Codex)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div class="text-text-primary text-[13.5px] font-medium mb-1">Auth Mode</div>
+                    <div class="text-text-muted text-[12px] mb-3">API key or provider OAuth token</div>
+                    <select
+                      class="w-full bg-bg-primary border border-border/40 rounded-lg px-4 py-2.5 text-text-primary text-[13.5px] outline-none focus:border-accent/40 transition-colors"
+                      value={$settings.aiAuthMode}
+                      onchange={(e) => updateSetting("aiAuthMode", e.currentTarget.value as AIAuthMode)}
+                    >
+                      <option value="apiKey">API Key</option>
+                      <option value="oauth">Provider OAuth</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div class="py-6 px-7">
-                  <div class="text-text-primary text-[13.5px] font-medium mb-1">OpenRouter API Key</div>
-                  <div class="text-text-muted text-[12px] mb-4">Your OpenRouter API key for AI chat</div>
+                  <div class="text-text-primary text-[13.5px] font-medium mb-1">{providerDisplayName($settings.aiProvider)} Credential</div>
+                  <div class="text-text-muted text-[12px] mb-4">
+                    {$settings.aiAuthMode === "oauth"
+                      ? "OAuth access token (or provider-issued key)."
+                      : "API key for the selected provider."}
+                  </div>
                   <input
                     type="password"
                     class="w-full bg-bg-primary border border-border/40 rounded-lg px-4 py-2.5 text-text-primary text-[13.5px] font-mono outline-none focus:border-accent/40 transition-colors"
-                    value={$settings.aiApiKey}
-                    oninput={(e) => updateSetting("aiApiKey", e.currentTarget.value)}
-                    placeholder="sk-or-..."
+                    value={activeApiKey()}
+                    oninput={(e) => setActiveApiKey(e.currentTarget.value)}
+                    placeholder={$settings.aiProvider === "openrouter" ? "sk-or-..." : $settings.aiProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
                   />
                 </div>
 
                 <!-- API Base URL -->
                 <div class="py-6 px-7">
                   <div class="text-text-primary text-[13.5px] font-medium mb-1">API Base URL</div>
-                  <div class="text-text-muted text-[12px] mb-4">OpenRouter-compatible API endpoint</div>
+                  <div class="text-text-muted text-[12px] mb-4">Override endpoint for {providerDisplayName($settings.aiProvider)}</div>
                   <input
                     type="text"
                     class="w-full bg-bg-primary border border-border/40 rounded-lg px-4 py-2.5 text-text-primary text-[13.5px] font-mono outline-none focus:border-accent/40 transition-colors"
-                    value={$settings.aiBaseUrl}
-                    oninput={(e) => updateSetting("aiBaseUrl", e.currentTarget.value)}
+                    value={activeBaseUrl()}
+                    oninput={(e) => setActiveBaseUrl(e.currentTarget.value)}
                   />
                 </div>
+
+                {#if $settings.aiAuthMode === "oauth"}
+                  <div class="py-6 px-7 space-y-3">
+                    <div class="text-text-primary text-[13.5px] font-medium">OAuth Connect</div>
+                    {#if $settings.aiProvider === "openrouter"}
+                      <div class="flex items-center gap-2">
+                        <button
+                          class="px-3 py-2 text-[12px] rounded-md bg-accent/20 border border-accent/30 text-accent hover:bg-accent/25 transition-colors disabled:opacity-50"
+                          onclick={startOpenRouterOAuth}
+                          disabled={openRouterOauthBusy}
+                        >
+                          {openRouterOauthBusy ? "Starting..." : "Start OpenRouter OAuth"}
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        class="w-full bg-bg-primary border border-border/40 rounded-lg px-4 py-2.5 text-text-primary text-[13px] font-mono outline-none focus:border-accent/40 transition-colors"
+                        placeholder="Paste OAuth code from redirected URL"
+                        bind:value={openRouterAuthCode}
+                      />
+                      <button
+                        class="px-3 py-2 text-[12px] rounded-md border border-border/40 text-text-primary hover:border-accent/30 transition-colors disabled:opacity-50"
+                        onclick={exchangeOpenRouterOAuthCode}
+                        disabled={openRouterOauthBusy || !openRouterAuthCode.trim()}
+                      >
+                        Exchange Code for Key
+                      </button>
+                      {#if openRouterOauthStatus}
+                        <div class="text-text-muted text-[12px]">{openRouterOauthStatus}</div>
+                      {/if}
+                    {:else}
+                      <div class="text-text-muted text-[12px]">
+                        Direct OAuth token flows vary by provider plan. Use the button below to open your provider portal and paste the issued token/key above.
+                      </div>
+                      <button
+                        class="px-3 py-2 text-[12px] rounded-md border border-border/40 text-text-primary hover:border-accent/30 transition-colors"
+                        onclick={openProviderLogin}
+                      >
+                        Open {$settings.aiProvider === "anthropic" ? "Anthropic" : "OpenAI"} Portal
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
               </div>
 
               <!-- Model card -->
@@ -667,7 +920,7 @@
                       class="px-4 py-2 text-[13px] rounded-lg border border-border/40 text-text-muted hover:text-text-primary hover:border-accent/30 transition-colors flex items-center gap-2
                         {$modelsLoading ? 'opacity-50 pointer-events-none' : ''}"
                       onclick={() => fetchModels()}
-                      disabled={$modelsLoading || !$settings.aiApiKey}
+                      disabled={$modelsLoading || (!activeApiKey() && $settings.aiProvider !== "anthropic")}
                     >
                       {#if $modelsLoading}
                         <span class="inline-block w-3.5 h-3.5 border-2 border-accent/50 border-t-transparent rounded-full animate-spin"></span>
@@ -752,7 +1005,7 @@
                         {/if}
                       </div>
                     {/if}
-                  {:else if !$settings.aiApiKey}
+                  {:else if !activeApiKey() && $settings.aiProvider !== "anthropic"}
                     <div class="text-text-muted text-[13px]">Add your API key above, then click Load Models</div>
                   {/if}
 
@@ -1042,3 +1295,58 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .settings-panel {
+    font-size: calc(16px * var(--ui-zoom));
+  }
+
+  .settings-panel :global(h2) {
+    font-size: calc(26px * var(--ui-zoom));
+    letter-spacing: 0.01em;
+  }
+
+  .settings-panel :global(h3) {
+    font-size: calc(24px * var(--ui-zoom));
+    letter-spacing: 0.01em;
+  }
+
+  .settings-panel :global(input),
+  .settings-panel :global(select),
+  .settings-panel :global(textarea),
+  .settings-panel :global(button) {
+    font-size: calc(15px * var(--ui-zoom));
+  }
+
+  .settings-panel :global(.py-6) {
+    padding-top: 1.9rem;
+    padding-bottom: 1.9rem;
+  }
+
+  .settings-panel :global(.px-7) {
+    padding-left: 2.15rem;
+    padding-right: 2.15rem;
+  }
+
+  .settings-panel :global(.px-8) {
+    padding-left: 2.35rem;
+    padding-right: 2.35rem;
+  }
+
+  .settings-panel :global(.py-5) {
+    padding-top: 1.55rem;
+    padding-bottom: 1.55rem;
+  }
+
+  .settings-panel :global(.text-\[13\.5px\]),
+  .settings-panel :global(.text-\[13px\]),
+  .settings-panel :global(.text-\[12px\]),
+  .settings-panel :global(.text-\[11px\]) {
+    font-size: calc(15px * var(--ui-zoom));
+    line-height: 1.45;
+  }
+
+  .settings-panel :global(.text-\[16px\]) {
+    font-size: calc(20px * var(--ui-zoom));
+  }
+</style>

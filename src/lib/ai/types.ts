@@ -24,7 +24,7 @@ export interface ToolResult {
   isError?: boolean;
 }
 
-export type StreamChunkType = 'text' | 'tool_call' | 'done' | 'error';
+export type StreamChunkType = 'text' | 'thinking' | 'tool_call' | 'done' | 'error';
 
 export interface StreamChunk {
   type: StreamChunkType;
@@ -47,6 +47,8 @@ export interface ToolDefinition {
 }
 
 export interface AIChatSettings {
+  provider: 'openrouter' | 'openai' | 'anthropic';
+  authMode?: 'apiKey' | 'oauth';
   apiKey: string;
   model: string;
   baseUrl: string;
@@ -68,6 +70,8 @@ export interface ContextUsage {
 }
 
 export const DEFAULT_AI_SETTINGS: AIChatSettings = {
+  provider: 'openrouter',
+  authMode: 'apiKey',
   apiKey: '',
   model: 'anthropic/claude-sonnet-4',
   baseUrl: 'https://openrouter.ai/api/v1',
@@ -102,6 +106,7 @@ export interface UIToolCall {
 
 export interface ChatEngineCallbacks {
   onChunk: (content: string) => void;
+  onThinking?: (content: string) => void;
   onToolCall: (toolCalls: ToolCall[]) => void;
   onToolResult: (results: ToolResult[]) => void;
   onToolConfirmation: (toolCall: ToolCall) => Promise<boolean>;

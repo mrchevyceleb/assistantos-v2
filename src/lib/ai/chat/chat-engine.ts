@@ -1,7 +1,8 @@
 import { get } from 'svelte/store';
 import { workspacePath } from '$lib/stores/workspace';
 import { readFileText } from '$lib/utils/tauri';
-import { streamCompletion } from '../providers/openrouter';
+import { streamOpenAICompatibleCompletion } from '../providers/openrouter';
+import { streamAnthropicCompletion } from '../providers/anthropic';
 import { executeTool } from '../tools/tool-executor';
 import { getAllToolDefinitions, WRITE_TOOLS } from '../tools/tool-definitions';
 import { SYSTEM_PROMPT } from '../constants';
@@ -58,7 +59,7 @@ export class ChatEngine {
   }
 
   async compactNow(): Promise<{ usage: ContextUsage; compacted: boolean }> {
-    const compacted = await this.compactSession(true);
+    const compacted = await this.compactSession(true, 0);
     return {
       usage: this.getContextUsage(),
       compacted,
@@ -133,7 +134,7 @@ export class ChatEngine {
       }
 
       this.session.addMessage({ role: 'user', content: enrichedUserContent });
-      await this.compactSession(false);
+      await this.compactSession(false, 1);
       this.emitContextUsage();
 
       // Run agentic loop
@@ -154,7 +155,11 @@ export class ChatEngine {
         let finishReason = 'stop';
 
         await new Promise<void>((resolve, reject) => {
-          streamCompletion(
+          const streamFn = this.settings.provider === 'anthropic'
+            ? streamAnthropicCompletion
+            : streamOpenAICompatibleCompletion;
+
+          streamFn(
             messages,
             this.settings,
             tools,
@@ -166,6 +171,9 @@ export class ChatEngine {
                   case 'text':
                     fullContent += chunk.content || '';
                     this.callbacks.onChunk(chunk.content || '');
+                    break;
+                  case 'thinking':
+                    this.callbacks.onThinking?.(chunk.content || '');
                     break;
                   case 'tool_call':
                     if (chunk.toolCall) {
@@ -274,10 +282,8 @@ export class ChatEngine {
     }
   }
 
-  private getPromptBudget(): number {
-    const contextWindow = Math.max(this.settings.contextWindow || DEFAULT_CONTEXT_WINDOW, 4096);
-    const reserve = Math.max(this.settings.maxTokens || 0, 512);
-    return Math.max(2048, contextWindow - reserve);
+  private getContextWindow(): number {
+    return Math.max(this.settings.contextWindow || DEFAULT_CONTEXT_WINDOW, 4096);
   }
 
   private estimateTokens(text: string): number {
@@ -308,7 +314,7 @@ export class ChatEngine {
 
   private computeContextUsage(messages: ChatMessage[]): ContextUsage {
     const usedTokens = messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
-    const maxTokens = this.getPromptBudget();
+    const maxTokens = this.getContextWindow();
     const remainingTokens = Math.max(0, maxTokens - usedTokens);
     const usedPercent = Math.min(100, (usedTokens / maxTokens) * 100);
 
@@ -331,44 +337,38 @@ export class ChatEngine {
       const role = message.role.toUpperCase();
       const content = (message.content || '').trim().replace(/\s+/g, ' ');
       if (content) {
-        lines.push(`${role}: ${content.slice(0, 300)}`);
+        lines.push(`${role}: ${content.slice(0, 220)}`);
       }
 
       if (message.tool_calls?.length) {
         for (const call of message.tool_calls) {
-          const args = (call.function.arguments || '').replace(/\s+/g, ' ').slice(0, 180);
+          const args = (call.function.arguments || '').replace(/\s+/g, ' ').slice(0, 120);
           lines.push(`TOOL: ${call.function.name}(${args})`);
         }
       }
-
-      if (lines.length >= 80) break;
     }
 
-    const joined = lines.join('\n').slice(0, 6000);
+    const joined = lines.join('\n').slice(0, 50000);
     if (!joined) {
       return 'Older context was compacted to save room for newer messages.';
     }
     return `Older context was compacted to preserve room for new messages.\n\n${joined}`;
   }
 
-  private async compactSession(force: boolean): Promise<boolean> {
+  private async compactSession(force: boolean, preserveLatestCount: number): Promise<boolean> {
     const usage = this.getContextUsage();
     if (!force && usage.usedPercent < AUTO_COMPACT_THRESHOLD_PERCENT) {
       return false;
     }
 
     const messages = this.session.getMessages();
-    if (messages.length <= 8) {
+    if (messages.length <= 1) {
       return false;
     }
 
-    let keepTailCount = Math.min(12, messages.length - 1);
-    keepTailCount = Math.max(6, keepTailCount);
-    if (keepTailCount >= messages.length) {
-      keepTailCount = messages.length - 1;
-    }
-    const head = messages.slice(0, messages.length - keepTailCount);
-    const tail = messages.slice(-keepTailCount);
+    const safePreserve = Math.max(0, Math.min(preserveLatestCount, messages.length - 1));
+    const head = messages.slice(0, messages.length - safePreserve);
+    const tail = safePreserve > 0 ? messages.slice(-safePreserve) : [];
 
     if (head.length === 0) {
       return false;

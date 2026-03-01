@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { aiFetchModels } from '$lib/utils/tauri';
-import { settings } from './settings';
+import { settings, getActiveAIBaseUrl, getActiveAIKey } from './settings';
 
 export interface OpenRouterModel {
   id: string;
@@ -27,9 +27,38 @@ export const modelsLoading = writable(false);
 export const modelsError = writable<string | null>(null);
 export const modelsLastFetched = writable<number>(0);
 
+const ANTHROPIC_MODELS: OpenRouterModel[] = [
+  { id: 'claude-opus-4-1', name: 'Claude Opus 4.1', context_length: 200000 },
+  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', context_length: 200000 },
+  { id: 'claude-3-7-sonnet-latest', name: 'Claude 3.7 Sonnet', context_length: 200000 },
+  { id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet', context_length: 200000 },
+  { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku', context_length: 200000 },
+];
+
+export function inferContextLength(modelId: string): number {
+  const id = modelId.toLowerCase();
+  if (id.includes('gemini')) return 1000000;
+  if (id.includes('claude')) return 200000;
+  if (id.includes('gpt-5')) return 400000;
+  if (id.includes('gpt-4.1')) return 128000;
+  if (id.includes('gpt-4')) return 128000;
+  if (id.includes('codex')) return 200000;
+  return 128000;
+}
+
 export async function fetchModels(): Promise<void> {
   const s = get(settings);
-  if (!s.aiApiKey) {
+  if (s.aiProvider === 'anthropic') {
+    availableModels.set(ANTHROPIC_MODELS);
+    modelsError.set(null);
+    modelsLastFetched.set(Date.now());
+    return;
+  }
+
+  const apiKey = getActiveAIKey(s);
+  const baseUrl = getActiveAIBaseUrl(s);
+
+  if (!apiKey) {
     modelsError.set('No API key configured');
     return;
   }
@@ -38,14 +67,14 @@ export async function fetchModels(): Promise<void> {
   modelsError.set(null);
 
   try {
-    const raw = await aiFetchModels(s.aiBaseUrl, s.aiApiKey);
+    const raw = await aiFetchModels(baseUrl, apiKey);
     const parsed = JSON.parse(raw);
     const models: OpenRouterModel[] = (parsed.data || [])
       .map((m: any) => ({
         id: m.id,
         name: m.name || m.id,
         created: m.created ?? undefined,
-        context_length: m.context_length,
+        context_length: m.context_length || inferContextLength(m.id || ''),
         pricing: m.pricing,
       }))
       .sort((a: OpenRouterModel, b: OpenRouterModel) => a.id.localeCompare(b.id));

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { UIMessage } from '$lib/stores/chat';
+  import { settings } from '$lib/stores/settings';
   import ToolCallBlock from './ToolCallBlock.svelte';
   import { renderMarkdown } from '$lib/utils/markdown';
 
@@ -9,6 +10,7 @@
 
   let { message }: Props = $props();
   let renderedHtml = $state('');
+  let showFullThinking = $state(false);
 
   $effect(() => {
     if (message.role === 'assistant' && !message.isStreaming && message.content) {
@@ -19,6 +21,18 @@
   });
 
   const isUser = $derived(message.role === 'user');
+  const thinkingText = $derived((message.thinking || '').trim());
+
+  function firstSentences(text: string, maxSentences = 3): string {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+    const parts = normalized.split(/(?<=[.!?])\s+/);
+    if (parts.length <= maxSentences) return normalized;
+    return parts.slice(0, maxSentences).join(' ');
+  }
+
+  const thinkingPreview = $derived(firstSentences(thinkingText));
+  const thinkingHidden = $derived(thinkingText.length > thinkingPreview.length);
 </script>
 
 <div class="group px-4 py-3.5 transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15">
@@ -52,6 +66,28 @@
 
       <!-- Message body -->
       <div class="leading-[1.7] text-text-primary" style="font-size: calc(17px * var(--ui-zoom));">
+        {#if !isUser && thinkingText && $settings.aiThinkingMode !== 'none'}
+          <div class="mb-2 rounded-lg border border-accent/20 bg-accent/6 px-3 py-2">
+            <div class="mb-1 text-text-muted uppercase tracking-wider" style="font-size: calc(11px * var(--ui-zoom));">Thinking</div>
+            {#if $settings.aiThinkingMode === 'all'}
+              <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: calc(13px * var(--ui-zoom));">{thinkingText}</div>
+            {:else}
+              <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: calc(13px * var(--ui-zoom));">
+                {showFullThinking ? thinkingText : thinkingPreview}
+              </div>
+              {#if thinkingHidden}
+                <button
+                  class="mt-1.5 text-accent/85 hover:text-accent transition-colors"
+                  style="font-size: calc(12px * var(--ui-zoom));"
+                  onclick={() => (showFullThinking = !showFullThinking)}
+                >
+                  {showFullThinking ? 'Hide full thinking' : 'Show full thinking'}
+                </button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+
         {#if message.mentions && message.mentions.length > 0}
           <div class="mb-1.5 flex flex-wrap gap-1.5">
             {#each message.mentions as mention}
@@ -65,7 +101,28 @@
         {#if isUser}
           <div class="whitespace-pre-wrap break-words">{message.content}</div>
         {:else if message.isStreaming}
-          <div class="whitespace-pre-wrap break-words">{message.content}{#if !message.content && message.toolCalls.length === 0}<span class="inline-block w-1.5 h-[15px] bg-accent/60 rounded-sm animate-pulse ml-0.5 translate-y-[2px]"></span>{/if}</div>
+          <div class="whitespace-pre-wrap break-words">
+            {message.content}
+            {#if message.toolCalls.length === 0}
+              {#if message.content}
+                <span class="thinking-trail" aria-hidden="true">
+                  <span class="thinking-trail-dot"></span>
+                  <span class="thinking-trail-dot"></span>
+                  <span class="thinking-trail-dot"></span>
+                </span>
+              {:else}
+                <span class="thinking-chip" role="status" aria-label="Assistant is working">
+                  <span class="thinking-orbit" aria-hidden="true">
+                    <span class="thinking-core"></span>
+                  </span>
+                  <span class="thinking-label">Thinking</span>
+                  <span class="thinking-ellipsis" aria-hidden="true">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                </span>
+              {/if}
+            {/if}
+          </div>
         {:else if renderedHtml}
           <div class="chat-prose">{@html renderedHtml}</div>
         {:else}
@@ -166,5 +223,108 @@
   .chat-prose :global(strong) {
     font-weight: 600;
     color: var(--color-text-primary);
+  }
+
+  .thinking-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid rgba(88, 180, 208, 0.28);
+    border-radius: 999px;
+    background: rgba(88, 180, 208, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .thinking-orbit {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(88, 180, 208, 0.25);
+    border-top-color: rgba(88, 180, 208, 0.95);
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    animation: thinking-spin 0.9s linear infinite;
+  }
+
+  .thinking-core {
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(88, 180, 208, 0.95);
+    box-shadow: 0 0 10px rgba(88, 180, 208, 0.45);
+  }
+
+  .thinking-label {
+    font-size: 0.82em;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
+  }
+
+  .thinking-ellipsis span {
+    color: rgba(88, 180, 208, 0.9);
+    animation: thinking-blink 1.1s infinite;
+  }
+
+  .thinking-ellipsis span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  .thinking-ellipsis span:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+
+  .thinking-trail {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  .thinking-trail-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(88, 180, 208, 0.85);
+    animation: thinking-hop 0.9s ease-in-out infinite;
+  }
+
+  .thinking-trail-dot:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .thinking-trail-dot:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  @keyframes thinking-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes thinking-blink {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes thinking-hop {
+    0%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.5;
+    }
+    50% {
+      transform: translateY(-2px);
+      opacity: 1;
+    }
   }
 </style>

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { get } from "svelte/store";
   import { check } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
+  import { terminalInstances } from "$lib/stores/terminal";
 
   let updateAvailable = $state(false);
   let updateVersion = $state("");
@@ -41,7 +43,6 @@
         currentUpdate = update;
         updateAvailable = true;
         updateVersion = update.version;
-        void installUpdate();
       }
     } catch (e) {
       console.warn("Update check failed:", e);
@@ -55,6 +56,13 @@
 
     const update = currentUpdate;
     if (!update) return;
+
+    if (get(terminalInstances).length > 0) {
+      const proceed = window.confirm(
+        "You have active terminal sessions. Installing an update may close the app and end running processes. Install anyway?",
+      );
+      if (!proceed) return;
+    }
 
     try {
       isAutoInstalling = true;
@@ -95,6 +103,12 @@
   }
 
   async function restartNow() {
+    if (get(terminalInstances).length > 0) {
+      const proceed = window.confirm(
+        "You have active terminal sessions. Restarting now will close them. Restart anyway?",
+      );
+      if (!proceed) return;
+    }
     await relaunch();
   }
 
@@ -163,7 +177,7 @@
         <div class="flex items-start gap-3">
           <div class="flex-1">
             <p class="text-sm font-medium text-primary">Update available</p>
-            <p class="text-xs text-secondary mt-1">Version {updateVersion} found. Downloading and installing in background.</p>
+            <p class="text-xs text-secondary mt-1">Version {updateVersion} is available. Install when you're ready.</p>
           </div>
           <button onclick={dismiss} class="text-tertiary hover:text-primary text-lg leading-none">&times;</button>
         </div>

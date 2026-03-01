@@ -1071,6 +1071,142 @@ async fn ai_chat_stream(
 }
 
 #[tauri::command]
+async fn ai_chat_stream_anthropic(
+    app: tauri::AppHandle,
+    request_id: String,
+    base_url: String,
+    api_key: String,
+    body_json: String,
+) -> Result<(), String> {
+    let url = format!("{}/messages", base_url.trim_end_matches('/'));
+    let api_key = api_key.trim().to_string();
+
+    let body: serde_json::Value = serde_json::from_str(&body_json)
+        .map_err(|e| format!("Invalid request body: {}", e))?;
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        "x-api-key",
+        reqwest::header::HeaderValue::from_str(&api_key)
+            .map_err(|e| format!("Invalid API key format: {}", e))?,
+    );
+    headers.insert(
+        "anthropic-version",
+        reqwest::header::HeaderValue::from_static("2023-06-01"),
+    );
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = format!("Request failed: {}", e);
+            let _ = app.emit(
+                "ai-stream-error",
+                AiStreamErrorPayload {
+                    request_id: request_id.clone(),
+                    error: err_msg.clone(),
+                },
+            );
+            err_msg
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let err_msg = format!("API error {}: {}", status, body);
+        let _ = app.emit(
+            "ai-stream-error",
+            AiStreamErrorPayload {
+                request_id: request_id.clone(),
+                error: err_msg.clone(),
+            },
+        );
+        return Err(err_msg);
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer: Vec<u8> = Vec::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(bytes) => {
+                buffer.extend_from_slice(&bytes);
+
+                while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let mut line_bytes: Vec<u8> = buffer.drain(..=newline_pos).collect();
+
+                    if line_bytes.last() == Some(&b'\n') {
+                        line_bytes.pop();
+                    }
+                    if line_bytes.last() == Some(&b'\r') {
+                        line_bytes.pop();
+                    }
+                    if line_bytes.is_empty() {
+                        continue;
+                    }
+
+                    let line = match String::from_utf8(line_bytes) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            continue;
+                        }
+                    };
+
+                    if let Some(raw_data) = line.strip_prefix("data:") {
+                        let data = raw_data.strip_prefix(' ').unwrap_or(raw_data);
+
+                        if data.trim() == "[DONE]" {
+                            let _ = app.emit(
+                                "ai-stream-done",
+                                AiStreamDonePayload {
+                                    request_id: request_id.clone(),
+                                },
+                            );
+                            return Ok(());
+                        }
+
+                        let _ = app.emit(
+                            "ai-stream-chunk",
+                            AiStreamChunkPayload {
+                                request_id: request_id.clone(),
+                                data: data.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                let err_msg = format!("Stream error: {}", e);
+                let _ = app.emit(
+                    "ai-stream-error",
+                    AiStreamErrorPayload {
+                        request_id: request_id.clone(),
+                        error: err_msg.clone(),
+                    },
+                );
+                return Err(err_msg);
+            }
+        }
+    }
+
+    let _ = app.emit(
+        "ai-stream-done",
+        AiStreamDonePayload {
+            request_id: request_id.clone(),
+        },
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn ai_fetch_models(base_url: String, api_key: String) -> Result<String, String> {
     let url = format!("{}/models", base_url.trim_end_matches('/'));
     let api_key = api_key.trim().to_string();
@@ -1293,7 +1429,7 @@ async fn mcp_try_initialize_at_endpoint(
             "capabilities": {},
             "clientInfo": {
                 "name": "AssistantOS",
-                "version": "1.0.5"
+                "version": "1.0.6"
             }
         }
     });
@@ -1634,6 +1770,7 @@ pub fn run() {
             save_app_state,
             load_app_state,
             ai_chat_stream,
+            ai_chat_stream_anthropic,
             ai_fetch_models,
             mcp_list_tools,
             mcp_call_tool,

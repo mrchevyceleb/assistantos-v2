@@ -16,9 +16,17 @@ export interface AppSettings {
   showHiddenFiles: boolean;
   restoreSession: boolean;
   confirmCloseUnsaved: boolean;
+  aiProvider: "openrouter" | "anthropic" | "openai";
+  aiAuthMode: "apiKey" | "oauth";
   aiApiKey: string;
+  aiOpenRouterApiKey: string;
+  aiAnthropicApiKey: string;
+  aiOpenAIApiKey: string;
   aiModel: string;
   aiBaseUrl: string;
+  aiOpenRouterBaseUrl: string;
+  aiAnthropicBaseUrl: string;
+  aiOpenAIBaseUrl: string;
   aiTemperature: number;
   aiMaxTokens: number;
   aiEnableToolUse: boolean;
@@ -30,6 +38,7 @@ export interface AppSettings {
   aiReadInstructionsEveryMessage: boolean;
   aiEnableAtMentions: boolean;
   aiSlashCommandDirs: string[];
+  aiThinkingMode: "all" | "preview" | "none";
   mcpServers: MCPServerConfig[];
 }
 
@@ -59,9 +68,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showHiddenFiles: false,
   restoreSession: true,
   confirmCloseUnsaved: true,
+  aiProvider: "openrouter",
+  aiAuthMode: "apiKey",
   aiApiKey: '',
+  aiOpenRouterApiKey: '',
+  aiAnthropicApiKey: '',
+  aiOpenAIApiKey: '',
   aiModel: 'anthropic/claude-sonnet-4',
   aiBaseUrl: 'https://openrouter.ai/api/v1',
+  aiOpenRouterBaseUrl: 'https://openrouter.ai/api/v1',
+  aiAnthropicBaseUrl: 'https://api.anthropic.com/v1',
+  aiOpenAIBaseUrl: 'https://api.openai.com/v1',
   aiTemperature: 0.7,
   aiMaxTokens: 16384,
   aiEnableToolUse: true,
@@ -72,6 +89,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiReadInstructionsEveryMessage: true,
   aiEnableAtMentions: true,
   aiSlashCommandDirs: [],
+  aiThinkingMode: "preview",
   aiFavoriteModels: [
     'anthropic/claude-sonnet-4',
     'anthropic/claude-opus-4',
@@ -96,4 +114,20 @@ export function updateSetting<K extends keyof AppSettings>(
   value: AppSettings[K],
 ) {
   settings.update((s) => ({ ...s, [key]: value }));
+}
+
+export function getActiveAIKey(s: AppSettings): string {
+  if (s.aiProvider === "anthropic") return (s.aiAnthropicApiKey || "").trim();
+  if (s.aiProvider === "openai") return (s.aiOpenAIApiKey || "").trim();
+  return (s.aiOpenRouterApiKey || s.aiApiKey || "").trim();
+}
+
+export function getActiveAIBaseUrl(s: AppSettings): string {
+  if (s.aiProvider === "anthropic") {
+    return (s.aiAnthropicBaseUrl || "https://api.anthropic.com/v1").trim();
+  }
+  if (s.aiProvider === "openai") {
+    return (s.aiOpenAIBaseUrl || "https://api.openai.com/v1").trim();
+  }
+  return (s.aiOpenRouterBaseUrl || s.aiBaseUrl || "https://openrouter.ai/api/v1").trim();
 }

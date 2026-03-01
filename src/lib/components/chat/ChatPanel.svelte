@@ -5,34 +5,57 @@
   import ChatInput from './ChatInput.svelte';
   import {
     chatMessages, chatIsLoading, clearChat, addUIMessage, addStreamingMessage,
-    appendToStreamingMessage, finalizeMessage, addToolCallToMessage,
+    appendToStreamingMessage, appendThinkingToStreamingMessage, finalizeMessage, addToolCallToMessage,
     updateToolCallStatus, pendingConfirmation,
     type PendingConfirmation, type UIToolCall,
   } from '$lib/stores/chat';
-import { chatPanelDock } from '$lib/stores/chat';
-import { settings, updateSetting } from '$lib/stores/settings';
-import { ChatEngine } from '$lib/ai/chat/chat-engine';
-import { ChatSession } from '$lib/ai/chat/session';
-import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
-import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
-import { availableModels } from '$lib/stores/models';
+  import { chatPanelDock } from '$lib/stores/chat';
+  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey } from '$lib/stores/settings';
+  import { ChatEngine } from '$lib/ai/chat/chat-engine';
+  import { ChatSession } from '$lib/ai/chat/session';
+  import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
+  import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
+  import { availableModels, fetchModels, inferContextLength } from '$lib/stores/models';
 
   let messagesContainer: HTMLDivElement;
   let engine: ChatEngine | null = null;
   let currentStreamingId: string | null = null;
   let modelSwitcherOpen = $state(false);
   let contextUsage = $state<ContextUsage | null>(null);
+  let attemptedModelFetch = $state(false);
+
+  function inferContextWindow(modelId: string): number {
+    return inferContextLength(modelId);
+  }
+
+  function resolveContextWindow(): number {
+    const s = get(settings);
+    const model = get(availableModels).find((m) => m.id === s.aiModel);
+    return model?.context_length || inferContextWindow(s.aiModel);
+  }
+
+  function visibleContextUsage(): ContextUsage {
+    if (contextUsage) return contextUsage;
+    const max = resolveContextWindow();
+    return {
+      usedTokens: 0,
+      maxTokens: max,
+      remainingTokens: max,
+      usedPercent: 0,
+    };
+  }
 
   function getAISettings(): AIChatSettings {
     const s = get(settings);
-    const model = get(availableModels).find((m) => m.id === s.aiModel);
     return {
-      apiKey: s.aiApiKey.trim(),
+      provider: s.aiProvider,
+      authMode: s.aiAuthMode,
+      apiKey: getActiveAIKey(s),
       model: s.aiModel,
-      baseUrl: s.aiBaseUrl.trim().replace(/\/+$/, ''),
+      baseUrl: getActiveAIBaseUrl(s).replace(/\/+$/, ''),
       temperature: s.aiTemperature,
       maxTokens: s.aiMaxTokens,
-      contextWindow: model?.context_length || 128000,
+      contextWindow: resolveContextWindow(),
       enableToolUse: s.aiEnableToolUse,
       confirmWrites: s.aiConfirmWrites,
       yoloMode: s.aiYoloMode,
@@ -49,6 +72,12 @@ import { availableModels } from '$lib/stores/models';
       onChunk: (content: string) => {
         if (currentStreamingId) {
           appendToStreamingMessage(currentStreamingId, content);
+          scrollToBottom();
+        }
+      },
+      onThinking: (content: string) => {
+        if (currentStreamingId) {
+          appendThinkingToStreamingMessage(currentStreamingId, content);
           scrollToBottom();
         }
       },
@@ -225,6 +254,24 @@ import { availableModels } from '$lib/stores/models';
   });
 
   $effect(() => {
+    $settings.aiProvider;
+    attemptedModelFetch = false;
+  });
+
+  $effect(() => {
+    $settings.aiProvider;
+    $settings.aiOpenRouterApiKey;
+    $settings.aiOpenAIApiKey;
+    $settings.aiAnthropicApiKey;
+    $availableModels;
+    if (!getActiveAIKey($settings) || attemptedModelFetch || $availableModels.length > 0) {
+      return;
+    }
+    attemptedModelFetch = true;
+    void fetchModels();
+  });
+
+  $effect(() => {
     if ($settings.aiYoloMode && $pendingConfirmation) {
       handleConfirm(true);
     }
@@ -233,6 +280,7 @@ import { availableModels } from '$lib/stores/models';
   $effect(() => {
     $settings.aiModel;
     $settings.aiMaxTokens;
+    $availableModels;
     if (engine) {
       engine.updateSettings(getAISettings());
       contextUsage = engine.getContextUsage();
@@ -243,10 +291,19 @@ import { availableModels } from '$lib/stores/models';
     return model.split('/').pop() || model;
   }
 
-  function contextText(): string {
-    if (!contextUsage) return 'Context --';
-    const remainingPct = Math.max(0, 100 - contextUsage.usedPercent);
-    return `Context ${remainingPct.toFixed(0)}% left`;
+  function contextPercentText(): string {
+    const usage = visibleContextUsage();
+    return `${usage.usedPercent.toFixed(1)}% used`;
+  }
+
+  function contextTokenText(): string {
+    const usage = visibleContextUsage();
+    return `${usage.usedTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} tokens`;
+  }
+
+  function contextProgressWidth(): string {
+    const usage = visibleContextUsage();
+    return `${Math.max(0, Math.min(100, usage.usedPercent)).toFixed(2)}%`;
   }
 
   async function handleCompactNow() {
@@ -333,20 +390,8 @@ import { availableModels } from '$lib/stores/models';
           </div>
         {/if}
       </div>
-      <div class="text-text-muted shrink-0" style="font-size: calc(12.5px * var(--ui-zoom));">
-        {contextText()}
-      </div>
     </div>
     <div class="flex items-center gap-1">
-      <button
-        class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
-        style="font-size: calc(13px * var(--ui-zoom));"
-        onclick={handleCompactNow}
-        disabled={$chatIsLoading}
-        title="Compact context now"
-      >
-        Compact
-      </button>
       <button
         class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
         style="font-size: calc(13px * var(--ui-zoom));"
@@ -364,6 +409,30 @@ import { availableModels } from '$lib/stores/models';
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Context bar -->
+  <div class="px-4 py-2.5 border-b border-border/30 bg-bg-secondary/45">
+    <div class="flex items-center gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="h-1.5 rounded-full bg-bg-active overflow-hidden">
+          <div class="h-full rounded-full bg-accent/80 transition-all duration-300" style={`width: ${contextProgressWidth()};`}></div>
+        </div>
+        <div class="mt-1.5 flex items-center justify-between text-text-muted" style="font-size: calc(12px * var(--ui-zoom));">
+          <span>{contextPercentText()}</span>
+          <span class="font-mono">{contextTokenText()}</span>
+        </div>
+      </div>
+      <button
+        class="h-9 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
+        style="font-size: calc(12.5px * var(--ui-zoom));"
+        onclick={handleCompactNow}
+        disabled={$chatIsLoading}
+        title="Compact context now"
+      >
+        Compact
       </button>
     </div>
   </div>
@@ -428,6 +497,6 @@ import { availableModels } from '$lib/stores/models';
     onStop={handleStop}
     onSteer={handleSteer}
     isLoading={$chatIsLoading}
-    disabled={!$settings.aiApiKey}
+    disabled={!getActiveAIKey($settings)}
   />
 </div>

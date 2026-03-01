@@ -4,6 +4,7 @@ export interface UIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking?: string;
   mentions?: string[];
   steer?: string;
   isStreaming: boolean;
@@ -50,6 +51,7 @@ export function addUIMessage(
     id,
     role,
     content,
+    thinking: '',
     mentions: options?.mentions,
     steer: options?.steer,
     isStreaming: false,
@@ -66,6 +68,7 @@ export function addStreamingMessage(): string {
     id,
     role: 'assistant',
     content: '',
+    thinking: '',
     isStreaming: true,
     toolCalls: [],
     timestamp: Date.now(),
@@ -83,6 +86,12 @@ export function updateStreamingMessage(id: string, content: string): void {
 export function appendToStreamingMessage(id: string, chunk: string): void {
   chatMessages.update((msgs) =>
     msgs.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m))
+  );
+}
+
+export function appendThinkingToStreamingMessage(id: string, chunk: string): void {
+  chatMessages.update((msgs) =>
+    msgs.map((m) => (m.id === id ? { ...m, thinking: (m.thinking || '') + chunk } : m))
   );
 }
 

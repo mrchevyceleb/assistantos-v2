@@ -120,7 +120,17 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
 
   // Restore settings (merge saved over defaults)
   if (state.settings) {
-    settings.set({ ...DEFAULT_SETTINGS, ...state.settings });
+    const merged = { ...DEFAULT_SETTINGS, ...state.settings };
+
+    // Backward compatibility: migrate legacy single AI key/base URL fields.
+    if (!merged.aiOpenRouterApiKey && merged.aiApiKey) {
+      merged.aiOpenRouterApiKey = merged.aiApiKey;
+    }
+    if (!merged.aiOpenRouterBaseUrl && merged.aiBaseUrl) {
+      merged.aiOpenRouterBaseUrl = merged.aiBaseUrl;
+    }
+
+    settings.set(merged);
   }
 
   // Restore workspace path (caller will handle loading the file tree)

@@ -174,6 +174,15 @@ export async function aiChatStream(
   return invoke("ai_chat_stream", { requestId, baseUrl, apiKey, bodyJson });
 }
 
+export async function aiChatStreamAnthropic(
+  requestId: string,
+  baseUrl: string,
+  apiKey: string,
+  bodyJson: string,
+): Promise<void> {
+  return invoke("ai_chat_stream_anthropic", { requestId, baseUrl, apiKey, bodyJson });
+}
+
 export async function aiFetchModels(
   baseUrl: string,
   apiKey: string,

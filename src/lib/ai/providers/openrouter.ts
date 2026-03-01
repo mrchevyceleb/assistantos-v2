@@ -11,7 +11,44 @@ interface StreamCallbacks {
 
 let requestCounter = 0;
 
-export async function streamCompletion(
+function extractThinkingFromOpenAIChunk(rawData: string): string | null {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawData);
+  } catch {
+    return null;
+  }
+
+  const delta = parsed?.choices?.[0]?.delta;
+  if (!delta) return null;
+
+  if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
+    return delta.reasoning;
+  }
+
+  if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
+    return delta.reasoning_content;
+  }
+
+  const details = delta.reasoning_details;
+  if (Array.isArray(details)) {
+    const joined = details
+      .map((d: any) => {
+        if (typeof d === 'string') return d;
+        if (typeof d?.text === 'string') return d.text;
+        if (typeof d?.reasoning === 'string') return d.reasoning;
+        return '';
+      })
+      .filter(Boolean)
+      .join('');
+
+    if (joined.length > 0) return joined;
+  }
+
+  return null;
+}
+
+export async function streamOpenAICompatibleCompletion(
   messages: ChatMessage[],
   settings: AIChatSettings,
   tools: ToolDefinition[] | undefined,
@@ -44,6 +81,11 @@ export async function streamCompletion(
       'ai-stream-chunk',
       (event) => {
         if (event.payload.request_id !== requestId) return;
+
+        const thinking = extractThinkingFromOpenAIChunk(event.payload.data);
+        if (thinking) {
+          callbacks.onChunk({ type: 'thinking', content: thinking });
+        }
 
         const chunk = processor.processLine(event.payload.data);
         if (chunk) {
@@ -104,3 +146,5 @@ export async function streamCompletion(
     processor.reset();
   }
 }
+
+export const streamCompletion = streamOpenAICompatibleCompletion;
