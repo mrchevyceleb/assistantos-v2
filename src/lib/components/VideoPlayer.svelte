@@ -42,6 +42,7 @@
       src={blobUrl}
       controls
       class="max-w-full max-h-full rounded-lg"
+      style="transform: scale(var(--content-zoom)); transform-origin: center;"
     >
       <track kind="captions" />
     </video>

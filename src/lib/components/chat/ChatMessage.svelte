@@ -51,6 +51,16 @@
 
       <!-- Message body -->
       <div class="text-[14px] leading-[1.7] text-text-primary">
+        {#if message.mentions && message.mentions.length > 0}
+          <div class="mb-1.5 flex flex-wrap gap-1.5">
+            {#each message.mentions as mention}
+              <span class="text-[10.5px] px-2 py-0.5 rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono">@{mention}</span>
+            {/each}
+          </div>
+        {/if}
+        {#if message.steer}
+          <div class="mb-1.5 text-[11px] text-warning/90">Steer: {message.steer}</div>
+        {/if}
         {#if isUser}
           <div class="whitespace-pre-wrap break-words">{message.content}</div>
         {:else if message.isStreaming}

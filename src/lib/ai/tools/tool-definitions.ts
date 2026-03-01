@@ -1,6 +1,6 @@
 import type { ToolDefinition } from '../types';
 
-export const TOOL_DEFINITIONS: ToolDefinition[] = [
+export const LOCAL_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
@@ -202,6 +202,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
 ];
+
+let dynamicToolDefinitions: ToolDefinition[] = [];
+
+export function setDynamicToolDefinitions(definitions: ToolDefinition[]) {
+  dynamicToolDefinitions = definitions;
+}
+
+export function getAllToolDefinitions(): ToolDefinition[] {
+  return [...LOCAL_TOOL_DEFINITIONS, ...dynamicToolDefinitions];
+}
+
+// Backward compatibility for existing imports.
+export const TOOL_DEFINITIONS = LOCAL_TOOL_DEFINITIONS;
 
 export const WRITE_TOOLS = new Set([
   'create_file',

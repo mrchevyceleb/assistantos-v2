@@ -1,4 +1,6 @@
-export const TERM_THEME = {
+export type TerminalStylePreset = "metal" | "minimal" | "retro" | "high-contrast";
+
+const BASE_THEME = {
   background: "#0c0c14",
   foreground: "#e2e8f0",
   cursor: "#58b4d0",
@@ -22,3 +24,36 @@ export const TERM_THEME = {
   brightCyan: "#22d3ee",
   brightWhite: "#94a3b8",
 };
+
+const THEME_BY_PRESET: Record<TerminalStylePreset, typeof BASE_THEME> = {
+  metal: BASE_THEME,
+  minimal: {
+    ...BASE_THEME,
+    background: "#0a0b10",
+    selectionBackground: "#33415566",
+  },
+  retro: {
+    ...BASE_THEME,
+    background: "#0a140e",
+    foreground: "#8df3b4",
+    cursor: "#8df3b4",
+    cursorAccent: "#0a140e",
+    selectionBackground: "#1f6f3f66",
+    blue: "#5eead4",
+    brightBlue: "#5eead4",
+  },
+  "high-contrast": {
+    ...BASE_THEME,
+    background: "#050507",
+    foreground: "#f8fafc",
+    cursor: "#f8fafc",
+    cursorAccent: "#050507",
+    selectionBackground: "#ffffff44",
+  },
+};
+
+export function getTerminalTheme(preset: TerminalStylePreset) {
+  return THEME_BY_PRESET[preset] || BASE_THEME;
+}
+
+export const TERM_THEME = BASE_THEME;

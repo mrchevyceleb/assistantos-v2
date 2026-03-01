@@ -8,7 +8,7 @@
 
   let { content, filePath }: Props = $props();
   let showPreview = $state(false);
-  let iframeEl: HTMLIFrameElement;
+  let iframeEl = $state<HTMLIFrameElement | null>(null);
 
   function togglePreview() {
     showPreview = !showPreview;
@@ -53,6 +53,7 @@
       <iframe
         bind:this={iframeEl}
         class="w-full h-full border-none bg-white"
+        style="transform: scale(var(--content-zoom)); transform-origin: top left; width: calc(100% / var(--content-zoom)); height: calc(100% / var(--content-zoom));"
         title="HTML Preview"
         sandbox="allow-scripts allow-same-origin"
       ></iframe>

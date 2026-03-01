@@ -115,6 +115,54 @@ export function getFileIcon(name: string, isDir: boolean, ext?: string): string 
   return "file";
 }
 
+export function getFileColor(name: string, isDir: boolean, ext?: string): string {
+  if (isDir) {
+    const lower = name.toLowerCase();
+    if (["src", "app", "lib"].includes(lower)) return "#7dd3fc";
+    if (["docs", "doc"].includes(lower)) return "#facc15";
+    if (["tests", "test", "__tests__"].includes(lower)) return "#a78bfa";
+    if (["assets", "images", "img", "public"].includes(lower)) return "#34d399";
+    return "#58b4d0";
+  }
+
+  if (!ext) return "var(--color-text-muted)";
+
+  const lower = ext.toLowerCase();
+  const map: Record<string, string> = {
+    md: "#7dd3fc",
+    markdown: "#7dd3fc",
+    ts: "#60a5fa",
+    tsx: "#60a5fa",
+    js: "#facc15",
+    jsx: "#facc15",
+    py: "#93c5fd",
+    rs: "#fdba74",
+    html: "#fb7185",
+    htm: "#fb7185",
+    css: "#818cf8",
+    scss: "#f472b6",
+    less: "#818cf8",
+    json: "#86efac",
+    yaml: "#86efac",
+    yml: "#86efac",
+    toml: "#86efac",
+    sql: "#f0abfc",
+    svelte: "#fb923c",
+    vue: "#4ade80",
+    png: "#34d399",
+    jpg: "#34d399",
+    jpeg: "#34d399",
+    gif: "#34d399",
+    svg: "#facc15",
+    webp: "#34d399",
+    pdf: "#f87171",
+    sh: "#86efac",
+    ps1: "#38bdf8",
+    bat: "#38bdf8",
+  };
+  return map[lower] || "var(--color-text-muted)";
+}
+
 export function getMimeType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() || '';
   const mimeMap: Record<string, string> = {

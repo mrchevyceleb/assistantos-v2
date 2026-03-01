@@ -31,8 +31,9 @@
   }
 </script>
 
-<div
-  class="shrink-0 transition-all hover:shadow-[0_0_4px_rgba(88,180,208,0.3)]"
+<button
+  type="button"
+  class="shrink-0 transition-all hover:shadow-[0_0_4px_rgba(88,180,208,0.3)] appearance-none border-0 p-0"
   class:w-[4px]={direction === "horizontal"}
   class:h-[4px]={direction === "vertical"}
   class:cursor-col-resize={direction === "horizontal"}
@@ -41,5 +42,5 @@
   class:bg-accent={isDragging}
   class:hover:bg-accent={true}
   onmousedown={handleMouseDown}
-  role="separator"
-></div>
+  aria-label={direction === "horizontal" ? "Resize panel width" : "Resize panel height"}
+></button>

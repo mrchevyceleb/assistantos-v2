@@ -6,8 +6,9 @@
   import { markdown } from "@codemirror/lang-markdown";
   import { oneDark } from "@codemirror/theme-one-dark";
   import { searchKeymap } from "@codemirror/search";
-  import { bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, indentUnit } from "@codemirror/language";
+  import { bracketMatching, foldGutter, indentUnit } from "@codemirror/language";
   import { settings } from "$lib/stores/settings";
+  import { uiZoom } from "$lib/stores/ui";
 
   interface Props {
     content: string;
@@ -60,7 +61,7 @@
         EditorView.theme({
           "&": {
             height: "100%",
-            fontSize: `${$settings.editorFontSize}px`,
+            fontSize: `${Math.round($settings.editorFontSize * $uiZoom)}px`,
           },
           ".cm-scroller": {
             fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
@@ -106,4 +107,4 @@
   });
 </script>
 
-<div class="h-full overflow-hidden" bind:this={container}></div>
+<div class="h-full overflow-hidden" bind:this={container} style:font-size="{Math.round($settings.editorFontSize * $uiZoom)}px"></div>

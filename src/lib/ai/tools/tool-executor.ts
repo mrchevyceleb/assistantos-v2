@@ -2,10 +2,11 @@ import { get } from 'svelte/store';
 import { workspacePath } from '$lib/stores/workspace';
 import {
   readFileText, writeFileText, createFile, deletePath, renamePath,
-  searchFiles, getFileInfo, readDirectoryTree, listAllFiles, runCommandSync,
+  searchFiles, getFileInfo, readDirectoryTree, listAllFiles, runCommandSync, mcpCallTool,
 } from '$lib/utils/tauri';
 import type { ToolCall, ToolResult } from '../types';
 import { MAX_READ_FILE_CHARS, MAX_SEARCH_RESULTS, MAX_LIST_FILES } from '../constants';
+import { getMcpToolMetadata } from './mcp-registry';
 
 function resolvePath(relativePath: string): string {
   const wsPath = get(workspacePath);
@@ -146,6 +147,29 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       }
 
       default:
+        if (name.startsWith('mcp__')) {
+          const metadata = getMcpToolMetadata(name);
+          if (!metadata) {
+            return {
+              toolCallId: toolCall.id,
+              toolName: name,
+              content: `Unknown MCP tool: ${name}`,
+              isError: true,
+            };
+          }
+
+          const payload = JSON.stringify(args || {});
+          result = await mcpCallTool(
+            metadata.server.url,
+            metadata.originalName,
+            payload,
+            metadata.server.authToken || undefined,
+            metadata.server.headersJson || undefined,
+            metadata.server.timeoutMs,
+          );
+          break;
+        }
+
         return {
           toolCallId: toolCall.id,
           toolName: name,

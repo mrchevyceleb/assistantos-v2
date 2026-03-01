@@ -1,11 +1,13 @@
 <script lang="ts">
-  export interface MenuItem {
-    label: string;
-    icon?: string;
-    action: () => void;
-    danger?: boolean;
-    separator?: boolean;
-  }
+export interface MenuItem {
+  label: string;
+  icon?: string;
+  action: () => void;
+  danger?: boolean;
+  separator?: boolean;
+  disabled?: boolean;
+  shortcut?: string;
+}
 
   interface Props {
     x: number;
@@ -17,11 +19,14 @@
   let { x, y, items, onClose }: Props = $props();
 
   let menuEl: HTMLDivElement | undefined = $state();
-  let adjustedX = $state(x);
-  let adjustedY = $state(y);
+  let adjustedX = $state(0);
+  let adjustedY = $state(0);
   let visible = $state(false);
 
   $effect(() => {
+    adjustedX = x;
+    adjustedY = y;
+
     // Adjust position to avoid viewport overflow
     if (menuEl) {
       const rect = menuEl.getBoundingClientRect();
@@ -48,6 +53,7 @@
   }
 
   function handleItemClick(item: MenuItem) {
+    if (item.disabled) return;
     item.action();
     onClose();
   }
@@ -80,14 +86,24 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="flex items-center gap-2.5 px-4 py-2 text-[13px] cursor-pointer transition-colors mx-1 rounded {item.danger ? 'text-error context-menu-danger' : 'text-text-primary hover:bg-bg-hover'}"
+        class="flex items-center gap-2.5 px-4 py-2.5 text-[13px] transition-colors mx-1 rounded
+          {item.disabled
+            ? 'text-text-muted/40 cursor-not-allowed'
+            : item.danger
+              ? 'text-error context-menu-danger cursor-pointer'
+              : 'text-text-primary hover:bg-bg-hover cursor-pointer'}"
         onclick={() => handleItemClick(item)}
         role="menuitem"
+        tabindex={item.disabled ? -1 : 0}
+        aria-disabled={item.disabled || undefined}
       >
         {#if item.icon}
           <span class="w-4 text-center text-xs shrink-0">{item.icon}</span>
         {/if}
-        <span>{item.label}</span>
+        <span class="flex-1">{item.label}</span>
+        {#if item.shortcut}
+          <span class="text-[11px] text-text-muted/70 font-mono">{item.shortcut}</span>
+        {/if}
       </div>
     {/if}
   {/each}

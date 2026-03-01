@@ -1,7 +1,7 @@
 <script lang="ts">
   import { get } from "svelte/store";
   import { activeTab } from "$lib/stores/tabs";
-  import { terminalVisible, terminalInstances, bottomTerminals, addTerminal } from "$lib/stores/terminal";
+  import { terminalVisible, bottomTerminals, addTerminal } from "$lib/stores/terminal";
   import { workspacePath } from "$lib/stores/workspace";
   import { formatFileSize } from "$lib/utils/file-types";
   import { uiZoom } from "$lib/stores/ui";
@@ -32,7 +32,7 @@
   }
 </script>
 
-<div class="flex items-center justify-between bg-bg-tertiary/80 backdrop-blur-sm border-t border-border/50 text-text-muted" style="padding: 0 20px; height: 36px; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 -2px 8px rgba(0,0,0,0.2);">
+<div class="flex items-center justify-between bg-bg-tertiary/90 backdrop-blur-sm border-t border-border/60 text-text-muted panel-lift metal-sheen" style="padding: 0 22px; height: 42px; font-size: 12.8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), inset 0 -1px 0 rgba(0,0,0,0.56), 0 -4px 14px rgba(0,0,0,0.25);">
   <div class="flex items-center gap-5">
     {#if $activeTab}
       <span class="truncate max-w-[400px]" title={$activeTab.path}>
@@ -52,7 +52,7 @@
   <div class="flex items-center gap-5">
     <button
       onclick={() => settingsVisible.update((v) => !v)}
-      class="flex items-center gap-1 hover:text-text-primary transition-colors"
+      class="status-btn flex items-center gap-1 hover:text-text-primary transition-colors"
       title="Settings (Ctrl+,)"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -64,7 +64,7 @@
     <span>UTF-8</span>
     <button
       onclick={() => chatPanelVisible.update((v) => !v)}
-      class="flex items-center gap-1.5 hover:text-text-primary transition-colors"
+      class="status-btn flex items-center gap-1.5 hover:text-text-primary transition-colors"
       title="AI Chat (Ctrl+L)"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -74,7 +74,7 @@
     </button>
     <button
       onclick={toggleTerminal}
-      class="flex items-center gap-1.5 hover:text-text-primary transition-colors"
+      class="status-btn flex items-center gap-1.5 hover:text-text-primary transition-colors"
       title="Toggle Terminal (Ctrl+`)"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -90,3 +90,17 @@
     </button>
   </div>
 </div>
+
+<style>
+  .status-btn {
+    padding: 4px 8px;
+    border-radius: 7px;
+  }
+
+  .status-btn:hover {
+    background: linear-gradient(180deg, rgba(62, 70, 88, 0.32) 0%, rgba(18, 22, 33, 0.45) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.48);
+  }
+</style>

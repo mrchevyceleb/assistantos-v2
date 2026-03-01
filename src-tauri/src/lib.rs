@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 use futures_util::StreamExt;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION};
 use tauri::Emitter;
 use tauri::Manager;
 
@@ -954,6 +955,208 @@ async fn ai_fetch_models(base_url: String, api_key: String) -> Result<String, St
         .map_err(|e| format!("Failed to read response: {}", e))
 }
 
+fn parse_mcp_headers(headers_json: Option<String>) -> Result<HeaderMap, String> {
+    let mut headers = HeaderMap::new();
+    if let Some(raw) = headers_json {
+        if raw.trim().is_empty() {
+            return Ok(headers);
+        }
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("Invalid MCP headers JSON: {}", e))?;
+        let obj = parsed
+            .as_object()
+            .ok_or_else(|| "MCP headers must be a JSON object".to_string())?;
+
+        for (k, v) in obj {
+            let value = v
+                .as_str()
+                .ok_or_else(|| format!("MCP header '{}' must be a string", k))?;
+            let name =
+                HeaderName::from_bytes(k.as_bytes()).map_err(|e| format!("Invalid header name '{}': {}", k, e))?;
+            let header_value =
+                HeaderValue::from_str(value).map_err(|e| format!("Invalid header value for '{}': {}", k, e))?;
+            headers.insert(name, header_value);
+        }
+    }
+    Ok(headers)
+}
+
+async fn mcp_post_jsonrpc(
+    client: &reqwest::Client,
+    url: &str,
+    base_headers: &HeaderMap,
+    session_id: Option<&str>,
+    body: serde_json::Value,
+) -> Result<(serde_json::Value, Option<String>), String> {
+    let mut headers = base_headers.clone();
+    if let Some(sid) = session_id {
+        let sid_header = HeaderValue::from_str(sid)
+            .map_err(|e| format!("Invalid MCP session id header: {}", e))?;
+        headers.insert(HeaderName::from_static("mcp-session-id"), sid_header);
+    }
+
+    let response = client
+        .post(url)
+        .headers(headers)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("MCP HTTP request failed: {}", e))?;
+
+    let response_session_id = response
+        .headers()
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read MCP response body: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("MCP HTTP error {}: {}", status, text));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("Invalid MCP JSON response: {}", e))?;
+
+    if let Some(err) = parsed.get("error") {
+        return Err(format!("MCP JSON-RPC error: {}", err));
+    }
+
+    Ok((parsed, response_session_id))
+}
+
+async fn mcp_initialize_session(
+    server_url: &str,
+    auth_token: Option<String>,
+    headers_json: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<(reqwest::Client, HeaderMap, Option<String>), String> {
+    let mut headers = parse_mcp_headers(headers_json)?;
+    if let Some(token) = auth_token {
+        if !token.trim().is_empty() {
+            let auth = HeaderValue::from_str(&format!("Bearer {}", token.trim()))
+                .map_err(|e| format!("Invalid MCP auth token: {}", e))?;
+            headers.insert(AUTHORIZATION, auth);
+        }
+    }
+
+    headers.insert(
+        HeaderName::from_static("accept"),
+        HeaderValue::from_static("application/json, text/event-stream"),
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(timeout_ms.unwrap_or(20000)))
+        .build()
+        .map_err(|e| format!("Failed to create MCP HTTP client: {}", e))?;
+
+    let init_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": "assistantos-init",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "AssistantOS",
+                "version": "1.0.0"
+            }
+        }
+    });
+
+    let (_init_response, mut session_id) =
+        mcp_post_jsonrpc(&client, server_url, &headers, None, init_body).await?;
+
+    let initialized_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    });
+
+    if let Ok((_, sid)) =
+        mcp_post_jsonrpc(&client, server_url, &headers, session_id.as_deref(), initialized_body).await
+    {
+        if sid.is_some() {
+            session_id = sid;
+        }
+    }
+
+    Ok((client, headers, session_id))
+}
+
+#[tauri::command]
+async fn mcp_list_tools(
+    server_url: String,
+    auth_token: Option<String>,
+    headers_json: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let (client, headers, session_id) =
+        mcp_initialize_session(&server_url, auth_token, headers_json, timeout_ms).await?;
+
+    let tools_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": "assistantos-tools-list",
+        "method": "tools/list",
+        "params": {}
+    });
+
+    let (resp, _) =
+        mcp_post_jsonrpc(&client, &server_url, &headers, session_id.as_deref(), tools_body).await?;
+
+    let tools = resp
+        .get("result")
+        .and_then(|r| r.get("tools"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+
+    Ok(serde_json::json!({ "tools": tools }).to_string())
+}
+
+#[tauri::command]
+async fn mcp_call_tool(
+    server_url: String,
+    tool_name: String,
+    arguments_json: String,
+    auth_token: Option<String>,
+    headers_json: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let (client, headers, session_id) =
+        mcp_initialize_session(&server_url, auth_token, headers_json, timeout_ms).await?;
+
+    let args_value: serde_json::Value = if arguments_json.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&arguments_json)
+            .map_err(|e| format!("Invalid MCP tool arguments JSON: {}", e))?
+    };
+
+    let call_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": "assistantos-tools-call",
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": args_value
+        }
+    });
+
+    let (resp, _) =
+        mcp_post_jsonrpc(&client, &server_url, &headers, session_id.as_deref(), call_body).await?;
+
+    Ok(resp
+        .get("result")
+        .cloned()
+        .unwrap_or(resp)
+        .to_string())
+}
+
 // ── Command Execution ───────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -1147,6 +1350,8 @@ pub fn run() {
             load_app_state,
             ai_chat_stream,
             ai_fetch_models,
+            mcp_list_tools,
+            mcp_call_tool,
             run_command_sync,
             save_chat_session,
             load_chat_session,

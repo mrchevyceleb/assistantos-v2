@@ -9,10 +9,12 @@
     updateToolCallStatus, pendingConfirmation,
     type PendingConfirmation, type UIToolCall,
   } from '$lib/stores/chat';
+  import { chatPanelDock } from '$lib/stores/chat';
   import { settings, updateSetting } from '$lib/stores/settings';
   import { ChatEngine } from '$lib/ai/chat/chat-engine';
   import { ChatSession } from '$lib/ai/chat/session';
   import type { AIChatSettings, ToolCall, ToolResult } from '$lib/ai/types';
+  import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
 
   let messagesContainer: HTMLDivElement;
   let engine: ChatEngine | null = null;
@@ -30,6 +32,7 @@
       enableToolUse: s.aiEnableToolUse,
       confirmWrites: s.aiConfirmWrites,
       maxToolIterations: s.aiMaxToolIterations,
+      readInstructionsEachMessage: s.aiReadInstructionsEveryMessage,
     };
   }
 
@@ -124,7 +127,7 @@
     });
   }
 
-  async function handleSend(message: string) {
+  async function handleSend(message: string, payload?: { mentions?: string[]; steer?: string }) {
     if (!message.trim()) return;
     if (get(chatIsLoading)) return;
 
@@ -136,13 +139,21 @@
     }
     engine.updateSettings(getAISettings());
 
-    addUIMessage('user', message);
+    await refreshMcpToolDefinitions();
+
+    addUIMessage('user', message, payload);
 
     chatIsLoading.set(true);
     currentStreamingId = addStreamingMessage();
     scrollToBottom();
 
-    await engine.sendMessage(message);
+    await engine.sendMessage(message, payload);
+  }
+
+  async function handleSteer(steer: string) {
+    if (!steer.trim()) return;
+    handleStop();
+    await handleSend(`Steer: ${steer}`, { steer });
   }
 
   function handleStop() {
@@ -193,9 +204,9 @@
   }
 </script>
 
-<div class="flex flex-col h-full bg-bg-tertiary">
+<div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift">
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 h-12 shrink-0 border-b border-border/40 bg-bg-secondary/60 backdrop-blur-sm">
+  <div class="flex items-center justify-between px-4 h-[52px] shrink-0 border-b border-border/40 bg-bg-secondary/65 backdrop-blur-sm metal-sheen">
     <div class="flex items-center gap-3 min-w-0">
       <div class="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent">
@@ -238,22 +249,30 @@
         {/if}
       </div>
     </div>
-    <button
-      class="w-8 h-8 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all
-        flex items-center justify-center"
-      onclick={handleNewChat}
-      title="New Chat"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"/>
-        <line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-    </button>
+    <div class="flex items-center gap-1">
+      <button
+        class="h-8 rounded-md px-2.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
+        onclick={() => chatPanelDock.set($chatPanelDock === 'right' ? 'bottom' : 'right')}
+        title="Toggle chat dock"
+      >
+        {$chatPanelDock === 'right' ? 'Dock Bottom' : 'Dock Right'}
+      </button>
+      <button
+        class="w-8 h-8 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all flex items-center justify-center"
+        onclick={handleNewChat}
+        title="New Chat"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- Messages -->
   <div
-    class="flex-1 overflow-y-auto"
+    class="flex-1 overflow-y-auto metal-inset mx-2 mt-2 rounded-lg"
     bind:this={messagesContainer}
   >
     {#if $chatMessages.length === 0}
@@ -307,6 +326,7 @@
   <ChatInput
     onSend={handleSend}
     onStop={handleStop}
+    onSteer={handleSteer}
     isLoading={$chatIsLoading}
     disabled={!$settings.aiApiKey}
   />

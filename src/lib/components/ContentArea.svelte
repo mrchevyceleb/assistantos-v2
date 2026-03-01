@@ -80,9 +80,9 @@
     {:else}
       <!-- Edit/Preview toolbar for text content -->
       {#if $activeTab.viewerType === "markdown" || $activeTab.viewerType === "code" || $activeTab.viewerType === "text"}
-        <div class="flex items-center gap-3 px-5 py-2.5 glass-panel-solid border-b border-border">
+        <div class="flex items-center gap-3.5 px-6 py-3 glass-panel-solid border-b border-border panel-lift">
           <button
-            class="text-[13px] px-4 py-1.5 rounded-md transition-colors"
+            class="text-[13px] px-4.5 py-2 rounded-md transition-colors"
             class:bg-accent={!$activeTab.editMode}
             class:text-bg-primary={!$activeTab.editMode}
             class:text-text-muted={$activeTab.editMode}
@@ -92,7 +92,7 @@
             Preview
           </button>
           <button
-            class="text-[13px] px-4 py-1.5 rounded-md transition-colors"
+            class="text-[13px] px-4.5 py-2 rounded-md transition-colors"
             class:bg-accent={$activeTab.editMode}
             class:text-bg-primary={$activeTab.editMode}
             class:text-text-muted={!$activeTab.editMode}

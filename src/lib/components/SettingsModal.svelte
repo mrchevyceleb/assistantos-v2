@@ -4,6 +4,7 @@
   import { uiZoom, applyZoom } from "$lib/stores/ui";
   import { availableModels, modelsLoading, modelsError, fetchModels, modelsLastFetched, TOP_PROVIDERS } from "$lib/stores/models";
   import type { OpenRouterModel } from "$lib/stores/models";
+  import { mcpListTools } from "$lib/utils/tauri";
 
   let modelSearch = $state('');
   let modelDropdownOpen = $state(false);
@@ -79,6 +80,14 @@
 
   let activeCategory = $state<Category>("Terminal");
 
+  let newMcpName = $state("");
+  let newMcpUrl = $state("");
+  let newMcpToken = $state("");
+  let newMcpHeaders = $state("{}");
+  let newMcpTimeoutMs = $state(20000);
+  let mcpTesting = $state<Record<string, boolean>>({});
+  let mcpStatus = $state<Record<string, string>>({});
+
   const categories: Category[] = [
     "Terminal",
     "Editor",
@@ -112,6 +121,72 @@
       onClose();
     }
   }
+
+  function addMcpServer() {
+    const name = newMcpName.trim();
+    const url = newMcpUrl.trim();
+    if (!name || !url) return;
+
+    const id = `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    updateSetting("mcpServers", [
+      ...$settings.mcpServers,
+      {
+        id,
+        name,
+        url,
+        enabled: true,
+        authToken: newMcpToken.trim(),
+        headersJson: newMcpHeaders.trim() || "{}",
+        timeoutMs: Number(newMcpTimeoutMs) || 20000,
+      },
+    ]);
+
+    newMcpName = "";
+    newMcpUrl = "";
+    newMcpToken = "";
+    newMcpHeaders = "{}";
+    newMcpTimeoutMs = 20000;
+  }
+
+  function updateMcpServer(id: string, patch: Partial<AppSettings["mcpServers"][number]>) {
+    updateSetting(
+      "mcpServers",
+      $settings.mcpServers.map((server) =>
+        server.id === id ? { ...server, ...patch } : server,
+      ),
+    );
+  }
+
+  function removeMcpServer(id: string) {
+    updateSetting(
+      "mcpServers",
+      $settings.mcpServers.filter((server) => server.id !== id),
+    );
+  }
+
+  async function testMcpServer(id: string) {
+    const server = $settings.mcpServers.find((s) => s.id === id);
+    if (!server) return;
+
+    mcpTesting = { ...mcpTesting, [id]: true };
+    mcpStatus = { ...mcpStatus, [id]: "Testing..." };
+
+    try {
+      const raw = await mcpListTools(
+        server.url,
+        server.authToken || undefined,
+        server.headersJson || undefined,
+        server.timeoutMs,
+      );
+      const parsed = JSON.parse(raw);
+      const count = Array.isArray(parsed.tools) ? parsed.tools.length : 0;
+      mcpStatus = { ...mcpStatus, [id]: `Connected (${count} tools)` };
+    } catch (e) {
+      mcpStatus = { ...mcpStatus, [id]: `Failed: ${e instanceof Error ? e.message : String(e)}` };
+    } finally {
+      mcpTesting = { ...mcpTesting, [id]: false };
+    }
+  }
 </script>
 
 {#if visible}
@@ -122,6 +197,8 @@
     onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onkeydown={handleKeydown}
     role="dialog"
+    aria-modal="true"
+    tabindex="-1"
   >
     <div class="w-[960px] max-h-[88vh] min-h-[560px] glass-panel-solid border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
       <!-- Header -->
@@ -130,6 +207,7 @@
         <button
           class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
           onclick={onClose}
+          aria-label="Close settings"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="18" y1="6" x2="6" y2="18"/>
@@ -238,6 +316,24 @@
                   <option value="bar">Bar</option>
                 </select>
               </div>
+
+              <!-- Terminal style -->
+              <div class="flex justify-between items-center py-6 px-7">
+                <div>
+                  <div class="text-text-primary text-[13.5px]">Terminal style</div>
+                  <div class="text-text-muted text-[12px] mt-1">Visual preset for terminal panels</div>
+                </div>
+                <select
+                  class="bg-bg-primary border border-border/40 rounded-lg px-4 py-2 text-text-primary text-[13.5px] outline-none focus:border-accent/40 transition-colors"
+                  value={$settings.terminalStylePreset}
+                  onchange={(e) => updateSetting("terminalStylePreset", e.currentTarget.value as AppSettings["terminalStylePreset"])}
+                >
+                  <option value="metal">Brushed Metal</option>
+                  <option value="minimal">Minimal</option>
+                  <option value="retro">Retro</option>
+                  <option value="high-contrast">High Contrast</option>
+                </select>
+              </div>
             </div>
 
           {:else if activeCategory === "Editor"}
@@ -324,8 +420,8 @@
                 <div class="flex items-center gap-3">
                   <input
                     type="range"
-                    min="60"
-                    max="200"
+                    min="50"
+                    max="240"
                     step="5"
                     value={Math.round($uiZoom * 100)}
                     oninput={(e) => {
@@ -418,6 +514,54 @@
 
           {:else if activeCategory === "AI Chat"}
             <div class="space-y-6">
+
+              <!-- Chat layout/preferences -->
+              <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">Chat dock position</div>
+                    <div class="text-text-muted text-[12px] mt-1">Where AI chat appears in the workspace</div>
+                  </div>
+                  <select
+                    class="bg-bg-primary border border-border/40 rounded-lg px-4 py-2 text-text-primary text-[13.5px] outline-none focus:border-accent/40 transition-colors"
+                    value={$settings.aiChatDock}
+                    onchange={(e) => updateSetting("aiChatDock", e.currentTarget.value as AppSettings["aiChatDock"])}
+                  >
+                    <option value="right">Right</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </div>
+
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">Reload AGENTS/CLAUDE each message</div>
+                    <div class="text-text-muted text-[12px] mt-1">Keeps workspace instructions in sync while files change</div>
+                  </div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiReadInstructionsEveryMessage ? 'bg-accent' : 'bg-bg-active'}"
+                    onclick={() => updateSetting("aiReadInstructionsEveryMessage", !$settings.aiReadInstructionsEveryMessage)}
+                  >
+                    <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiReadInstructionsEveryMessage ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+                  </div>
+                </div>
+
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">Enable @ file tagging</div>
+                    <div class="text-text-muted text-[12px] mt-1">Use @ in chat input to tag workspace files and folders</div>
+                  </div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiEnableAtMentions ? 'bg-accent' : 'bg-bg-active'}"
+                    onclick={() => updateSetting("aiEnableAtMentions", !$settings.aiEnableAtMentions)}
+                  >
+                    <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiEnableAtMentions ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+                  </div>
+                </div>
+              </div>
 
               <!-- Connection card -->
               <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
@@ -675,6 +819,134 @@
                     oninput={(e) => updateSetting("aiMaxToolIterations", Number(e.currentTarget.value))}
                   />
                 </div>
+              </div>
+
+              <!-- MCP servers card -->
+              <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
+                <div class="py-6 px-7 space-y-4">
+                  <div>
+                    <div class="text-text-primary text-[13.5px] font-medium">Remote MCP Servers (HTTP)</div>
+                    <div class="text-text-muted text-[12px] mt-1">Link HTTP MCP servers and expose their tools to AI chat.</div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      class="bg-bg-primary border border-border/40 rounded-lg px-3 py-2 text-text-primary text-[13px] outline-none focus:border-accent/40"
+                      placeholder="Server name"
+                      bind:value={newMcpName}
+                    />
+                    <input
+                      type="text"
+                      class="bg-bg-primary border border-border/40 rounded-lg px-3 py-2 text-text-primary text-[13px] outline-none focus:border-accent/40 font-mono"
+                      placeholder="https://mcp.example.com"
+                      bind:value={newMcpUrl}
+                    />
+                    <input
+                      type="password"
+                      class="bg-bg-primary border border-border/40 rounded-lg px-3 py-2 text-text-primary text-[13px] outline-none focus:border-accent/40"
+                      placeholder="Bearer token (optional)"
+                      bind:value={newMcpToken}
+                    />
+                    <input
+                      type="number"
+                      min="1000"
+                      max="120000"
+                      class="bg-bg-primary border border-border/40 rounded-lg px-3 py-2 text-text-primary text-[13px] outline-none focus:border-accent/40"
+                      placeholder="Timeout ms"
+                      bind:value={newMcpTimeoutMs}
+                    />
+                  </div>
+
+                  <textarea
+                    class="w-full bg-bg-primary border border-border/40 rounded-lg px-3 py-2 text-text-primary text-[12px] font-mono outline-none focus:border-accent/40"
+                    rows="2"
+                    placeholder="Headers JSON (optional)"
+                    bind:value={newMcpHeaders}
+                  ></textarea>
+
+                  <button
+                    class="px-3 py-2 text-[12px] rounded-md bg-accent/20 border border-accent/30 text-accent hover:bg-accent/25 transition-colors"
+                    onclick={addMcpServer}
+                  >
+                    Add MCP Server
+                  </button>
+                </div>
+
+                {#if $settings.mcpServers.length > 0}
+                  <div class="py-4 px-7 space-y-3">
+                    {#each $settings.mcpServers as server (server.id)}
+                      <div class="rounded-lg border border-border/30 bg-bg-primary/45 p-3.5">
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="text"
+                            class="flex-1 bg-transparent border border-border/30 rounded-md px-2 py-1 text-[12.5px] text-text-primary outline-none focus:border-accent/40"
+                            value={server.name}
+                            oninput={(e) => updateMcpServer(server.id, { name: e.currentTarget.value })}
+                          />
+                          <button
+                            class="px-2 py-1 text-[11px] rounded border border-border/40 text-text-muted hover:text-text-primary"
+                            onclick={() => updateMcpServer(server.id, { enabled: !server.enabled })}
+                          >
+                            {server.enabled ? 'Enabled' : 'Disabled'}
+                          </button>
+                          <button
+                            class="px-2 py-1 text-[11px] rounded border border-border/40 text-text-muted hover:text-error"
+                            onclick={() => removeMcpServer(server.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+
+                        <input
+                          type="text"
+                          class="w-full mt-2 bg-transparent border border-border/30 rounded-md px-2 py-1 text-[12px] text-text-secondary font-mono outline-none focus:border-accent/40"
+                          value={server.url}
+                          oninput={(e) => updateMcpServer(server.id, { url: e.currentTarget.value })}
+                        />
+
+                        <div class="grid grid-cols-2 gap-2 mt-2">
+                          <input
+                            type="password"
+                            class="bg-transparent border border-border/30 rounded-md px-2 py-1 text-[12px] text-text-secondary outline-none focus:border-accent/40"
+                            placeholder="Bearer token"
+                            value={server.authToken}
+                            oninput={(e) => updateMcpServer(server.id, { authToken: e.currentTarget.value })}
+                          />
+                          <input
+                            type="number"
+                            min="1000"
+                            max="120000"
+                            class="bg-transparent border border-border/30 rounded-md px-2 py-1 text-[12px] text-text-secondary outline-none focus:border-accent/40"
+                            value={server.timeoutMs}
+                            oninput={(e) => updateMcpServer(server.id, { timeoutMs: Number(e.currentTarget.value) || 20000 })}
+                          />
+                        </div>
+
+                        <textarea
+                          class="w-full mt-2 bg-transparent border border-border/30 rounded-md px-2 py-1 text-[11px] text-text-secondary font-mono outline-none focus:border-accent/40"
+                          rows="2"
+                          placeholder="Headers JSON (optional)"
+                          value={server.headersJson}
+                          oninput={(e) => updateMcpServer(server.id, { headersJson: e.currentTarget.value })}
+                        ></textarea>
+
+                        <div class="mt-2 flex items-center gap-2">
+                          <button
+                            class="px-2 py-1 text-[11px] rounded border border-border/40 text-text-muted hover:text-text-primary disabled:opacity-50"
+                            onclick={() => testMcpServer(server.id)}
+                            disabled={mcpTesting[server.id]}
+                          >
+                            {mcpTesting[server.id] ? 'Testing...' : 'Test'}
+                          </button>
+                          {#if mcpStatus[server.id]}
+                            <span class="text-[11px] text-text-muted">{mcpStatus[server.id]}</span>
+                          {/if}
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
               </div>
             </div>
           {/if}

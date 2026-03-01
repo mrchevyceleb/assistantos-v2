@@ -55,6 +55,7 @@ export interface AIChatSettings {
   enableToolUse: boolean;
   confirmWrites: boolean;
   maxToolIterations: number;
+  readInstructionsEachMessage?: boolean;
 }
 
 export const DEFAULT_AI_SETTINGS: AIChatSettings = {
@@ -66,6 +67,7 @@ export const DEFAULT_AI_SETTINGS: AIChatSettings = {
   enableToolUse: true,
   confirmWrites: true,
   maxToolIterations: 25,
+  readInstructionsEachMessage: true,
 };
 
 // UI-specific message type for the chat store

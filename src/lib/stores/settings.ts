@@ -4,6 +4,7 @@ import { writable } from "svelte/store";
 
 export interface AppSettings {
   defaultTerminalDock: "bottom" | "right" | "tab" | "left";
+  terminalStylePreset: "metal" | "minimal" | "retro" | "high-contrast";
   defaultShell: "auto" | "powershell" | "bash" | "cmd";
   terminalFontSize: number;
   terminalCursorStyle: "block" | "underline" | "bar";
@@ -24,12 +25,27 @@ export interface AppSettings {
   aiConfirmWrites: boolean;
   aiMaxToolIterations: number;
   aiFavoriteModels: string[];
+  aiChatDock: "right" | "bottom";
+  aiReadInstructionsEveryMessage: boolean;
+  aiEnableAtMentions: boolean;
+  mcpServers: MCPServerConfig[];
+}
+
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  authToken: string;
+  headersJson: string;
+  timeoutMs: number;
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────
 
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultTerminalDock: "bottom",
+  terminalStylePreset: "metal",
   defaultShell: "auto",
   terminalFontSize: 14,
   terminalCursorStyle: "bar",
@@ -49,12 +65,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiEnableToolUse: true,
   aiConfirmWrites: true,
   aiMaxToolIterations: 25,
+  aiChatDock: "bottom",
+  aiReadInstructionsEveryMessage: true,
+  aiEnableAtMentions: true,
   aiFavoriteModels: [
     'anthropic/claude-sonnet-4',
     'anthropic/claude-opus-4',
     'openai/gpt-4.1',
     'google/gemini-2.5-pro-preview',
   ],
+  mcpServers: [],
 };
 
 // ── Stores ───────────────────────────────────────────────────────────

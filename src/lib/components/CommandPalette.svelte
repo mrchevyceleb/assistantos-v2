@@ -3,6 +3,7 @@
   import { workspacePath } from "$lib/stores/workspace";
   import { openTab, updateTabContent, setTabLoading } from "$lib/stores/tabs";
   import { listAllFiles, readFileText } from "$lib/utils/tauri";
+  import { getFileColor } from "$lib/utils/file-types";
   import { settings } from "$lib/stores/settings";
   import type { FileEntry } from "$lib/utils/tauri";
 
@@ -16,7 +17,7 @@
   let allFiles = $state<FileEntry[]>([]);
   let filteredFiles = $state<FileEntry[]>([]);
   let selectedIndex = $state(0);
-  let inputEl: HTMLInputElement;
+  let inputEl = $state<HTMLInputElement | null>(null);
   let isLoading = $state(false);
 
   // Load all files when palette opens
@@ -138,16 +139,8 @@
     el?.scrollIntoView({ block: "nearest" });
   }
 
-  function getFileColor(ext?: string): string {
-    if (!ext) return "var(--color-text-muted)";
-    const map: Record<string, string> = {
-      md: "#89b4fa", ts: "#3178c6", tsx: "#3178c6",
-      js: "#f7df1e", jsx: "#f7df1e", py: "#3776ab",
-      rs: "#dea584", html: "#e34c26", css: "#264de4",
-      json: "#a6e3a1", yaml: "#a6e3a1", sql: "#f38ba8",
-      svelte: "#ff3e00",
-    };
-    return map[ext.toLowerCase()] || "var(--color-text-muted)";
+  function getEntryColor(ext?: string): string {
+    return getFileColor("file", false, ext);
   }
 
   function highlightMatch(text: string, q: string): string {
@@ -175,6 +168,8 @@
     onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onkeydown={handleKeydown}
     role="dialog"
+    aria-modal="true"
+    tabindex="-1"
   >
     <div class="w-[640px] max-h-[60vh] glass-panel-solid border border-border rounded-xl shadow-2xl glow-border flex flex-col overflow-hidden">
       <!-- Search input -->
@@ -198,7 +193,7 @@
       </div>
 
       <!-- Results -->
-      <div class="flex-1 overflow-y-auto py-1.5">
+      <div class="flex-1 overflow-y-auto py-1.5" role="listbox" aria-label="Command palette results">
         {#if filteredFiles.length === 0 && !isLoading}
           <div class="px-5 py-10 text-center text-text-muted text-base">
             {query ? "No files matching your search" : "No files found"}
@@ -216,9 +211,10 @@
             data-palette-index={i}
             role="option"
             aria-selected={i === selectedIndex}
+            tabindex={i === selectedIndex ? 0 : -1}
           >
             <!-- File icon dot -->
-            <span class="w-2.5 h-2.5 rounded-full shrink-0" style:background={getFileColor(file.ext)}></span>
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" style:background={getEntryColor(file.ext)}></span>
 
             <!-- File name + path -->
             <div class="flex-1 min-w-0">

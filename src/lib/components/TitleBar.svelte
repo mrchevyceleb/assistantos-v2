@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  const isDev = import.meta.env.DEV;
+
   let isMaximized = $state(false);
   let hoveredBtn = $state<"close" | "minimize" | "maximize" | null>(null);
 
@@ -65,6 +67,9 @@
   <!-- Center title -->
   <div class="flex-1 flex items-center justify-center pointer-events-none">
     <span class="titlebar-title">ASSISTANTOS</span>
+    {#if isDev}
+      <span class="titlebar-badge">DEV</span>
+    {/if}
   </div>
 
   <!-- Windows-style window controls (right side) -->
@@ -123,7 +128,7 @@
 
 <style>
   .titlebar {
-    height: 38px;
+    height: 42px;
     background: linear-gradient(
       180deg,
       rgba(30, 34, 49, 0.6) 0%,
@@ -157,9 +162,20 @@
     opacity: 0.7;
   }
 
+  .titlebar-badge {
+    margin-left: 8px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: #0b0d13;
+    background: linear-gradient(180deg, #9bd9ec 0%, #58b4d0 100%);
+    box-shadow: 0 0 0 1px rgba(88, 180, 208, 0.35);
+  }
+
   .win-btn {
     width: 46px;
-    height: 38px;
+    height: 42px;
     display: flex;
     align-items: center;
     justify-content: center;

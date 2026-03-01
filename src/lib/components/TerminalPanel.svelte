@@ -24,7 +24,9 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
-  import { TERM_THEME } from "$lib/utils/terminal-theme";
+  import { getTerminalTheme, type TerminalStylePreset } from "$lib/utils/terminal-theme";
+  import ContextMenu from "./ContextMenu.svelte";
+  import type { MenuItem } from "./ContextMenu.svelte";
 
   interface Props {
     dock?: TerminalDock;
@@ -44,6 +46,13 @@
   let unlistenOutput: (() => void) | null = null;
   let unlistenClosed: (() => void) | null = null;
 
+  let contextMenu = $state<{
+    visible: boolean;
+    x: number;
+    y: number;
+    termId: string | null;
+  }>({ visible: false, x: 0, y: 0, termId: null });
+
   // Select the right list and active ID based on dock position
   let instances = $derived(
     dock === "right" ? $rightTerminals :
@@ -55,6 +64,68 @@
     dock === "left" ? $activeLeftTerminalId :
     $activeTerminalId
   );
+
+  let terminalPreset = $derived($settings.terminalStylePreset as TerminalStylePreset);
+
+  function closeContextMenu() {
+    contextMenu = { visible: false, x: 0, y: 0, termId: null };
+  }
+
+  async function writeClipboardText(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+  }
+
+  async function readClipboardText(): Promise<string> {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      return "";
+    }
+  }
+
+  function getContextMenuItems(termId: string): MenuItem[] {
+    const term = terminals.get(termId);
+    const hasSelection = !!term?.hasSelection();
+    return [
+      {
+        label: "Copy",
+        shortcut: "Ctrl+C",
+        disabled: !hasSelection,
+        action: () => {
+          if (term && term.hasSelection()) {
+            writeClipboardText(term.getSelection());
+          }
+        },
+      },
+      {
+        label: "Paste",
+        shortcut: "Ctrl+V",
+        action: async () => {
+          const text = await readClipboardText();
+          if (text) {
+            await writeTerminal(termId, text);
+          }
+        },
+      },
+      {
+        label: "Select All",
+        action: () => term?.selectAll(),
+      },
+      {
+        label: "Clear",
+        action: () => term?.clear(),
+      },
+    ];
+  }
 
   function setActiveId(id: string) {
     if (dock === "right") {
@@ -72,6 +143,11 @@
   }
 
   async function handleCloseTerminal(id: string) {
+    const inst = $terminalInstances.find((t) => t.id === id);
+    if (!window.confirm(`Close ${inst?.title || "terminal"}? This will end the session.`)) {
+      return;
+    }
+
     try {
       await closeTerminal(id);
     } catch (_) {}
@@ -102,7 +178,7 @@
     if (terminals.has(id)) return;
 
     const term = new Terminal({
-      theme: TERM_THEME,
+      theme: getTerminalTheme(terminalPreset),
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
       fontSize: Math.round($settings.terminalFontSize * $uiZoom),
       fontWeight: "400",
@@ -145,6 +221,35 @@
 
     terminals.set(id, term);
     fitAddons.set(id, fitAddon);
+
+    term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
+      const mod = ev.ctrlKey || ev.metaKey;
+      const key = ev.key.toLowerCase();
+      if (mod && key === "c" && ev.type === "keydown") {
+        if (term.hasSelection()) {
+          writeClipboardText(term.getSelection());
+        } else {
+          writeTerminal(id, "\u0003").catch(() => {});
+        }
+        return false;
+      }
+
+      if (mod && key === "v" && ev.type === "keydown") {
+        readClipboardText().then((text) => {
+          if (text) {
+            writeTerminal(id, text).catch(() => {});
+          }
+        });
+        return false;
+      }
+
+      return true;
+    });
+
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      contextMenu = { visible: true, x: e.clientX, y: e.clientY, termId: id };
+    });
 
     term.onData((data: string) => {
       writeTerminal(id, data).catch((err) => {
@@ -214,6 +319,7 @@
     const newSize = Math.round(BASE_TERM_FONT_SIZE * zoom);
     for (const [id, term] of terminals.entries()) {
       term.options.fontSize = newSize;
+      term.options.theme = getTerminalTheme(terminalPreset);
       const fa = fitAddons.get(id);
       if (fa) try { fa.fit(); } catch {}
     }
@@ -264,7 +370,7 @@
   });
 </script>
 
-<div class="term-panel flex flex-col h-full" bind:this={termContainerEl}>
+<div class="term-panel flex flex-col h-full" class:term-minimal={terminalPreset === "minimal"} class:term-retro={terminalPreset === "retro"} class:term-high-contrast={terminalPreset === "high-contrast"} bind:this={termContainerEl}>
   <!-- Terminal tab bar -->
   <div class="term-tabbar flex items-center">
     {#each instances as inst (inst.id)}
@@ -398,18 +504,44 @@
   </div>
 </div>
 
+{#if contextMenu.visible && contextMenu.termId}
+  <ContextMenu
+    x={contextMenu.x}
+    y={contextMenu.y}
+    items={getContextMenuItems(contextMenu.termId)}
+    onClose={closeContextMenu}
+  />
+{/if}
+
 <style>
   .term-panel {
     background: #08090e;
   }
 
+  .term-panel.term-minimal {
+    background: #0a0b10;
+  }
+
+  .term-panel.term-retro {
+    background: #081109;
+  }
+
+  .term-panel.term-high-contrast {
+    background: #030305;
+  }
+
   /* ── Tab bar ─────────────────────────────────────────────────────── */
   .term-tabbar {
-    background: #0a0a12;
-    border-bottom: 1px solid #1a1a2e;
-    min-height: 38px;
-    padding: 0 4px;
+    background:
+      linear-gradient(180deg, rgba(57, 64, 80, 0.76) 0%, rgba(20, 24, 35, 0.92) 52%, rgba(11, 13, 19, 0.96) 100%),
+      repeating-linear-gradient(95deg, rgba(255, 255, 255, 0.02) 0, rgba(255, 255, 255, 0.02) 2px, rgba(0, 0, 0, 0.012) 2px, rgba(0, 0, 0, 0.012) 4px);
+    border-bottom: 1px solid #293246;
+    min-height: 40px;
+    padding: 0 6px;
     gap: 2px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.5);
   }
 
   .term-tab {
@@ -429,12 +561,21 @@
 
   .term-tab:hover {
     color: var(--color-text-secondary);
-    background: #13131f;
+    background: linear-gradient(180deg, rgba(34, 39, 56, 0.56) 0%, rgba(14, 17, 27, 0.65) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
   }
 
   .term-tab.active {
     color: var(--color-text-primary);
-    background: #0c0c14;
+    background:
+      linear-gradient(180deg, rgba(63, 71, 90, 0.76) 0%, rgba(26, 31, 44, 0.95) 46%, rgba(13, 16, 26, 0.98) 100%),
+      linear-gradient(130deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.04) 44%, transparent 70%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.66),
+      inset 1px 0 0 rgba(255, 255, 255, 0.05),
+      inset -1px 0 0 rgba(0, 0, 0, 0.34),
+      0 8px 18px rgba(0, 0, 0, 0.32);
   }
 
   .term-tab.active::after {
@@ -443,7 +584,7 @@
     bottom: -1px;
     left: 8px;
     right: 8px;
-    height: 2px;
+    height: 3px;
     background: var(--color-accent);
     border-radius: 2px 2px 0 0;
   }
@@ -508,15 +649,19 @@
 
   /* ── Terminal viewport ───────────────────────────────────────────── */
   .term-viewport {
-    background: #060710;
-    padding: 6px 8px 8px 8px;
+    background: linear-gradient(180deg, #090b13 0%, #06070f 100%);
+    padding: 7px 9px 9px 9px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.52);
   }
 
   .term-container {
-    border: 1px solid #1e1e30;
+    border: 1px solid #313c55;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: inset 0 0 20px rgba(88, 180, 208, 0.03);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 0 30px rgba(88, 180, 208, 0.045),
+      0 8px 16px rgba(0, 0, 0, 0.3);
   }
 
   .term-empty-btn {

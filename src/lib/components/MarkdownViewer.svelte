@@ -1,7 +1,6 @@
 <script lang="ts">
   import { renderMarkdown } from "$lib/utils/markdown";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
 
   interface Props {
     content: string;
@@ -10,7 +9,7 @@
 
   let { content, filePath }: Props = $props();
   let renderedHtml = $state("");
-  let container: HTMLDivElement;
+  let container = $state<HTMLDivElement | null>(null);
 
   /** Get the directory containing the current file */
   function getFileDir(fp: string): string {
@@ -77,12 +76,19 @@
       }
     }
   }
+
+  $effect(() => {
+    if (!container) return;
+    container.addEventListener("click", handleClick);
+    return () => {
+      container?.removeEventListener("click", handleClick);
+    };
+  });
 </script>
 
 <div
   class="h-full overflow-y-auto"
   bind:this={container}
-  onclick={handleClick}
 >
   <div class="markdown-body">
     {@html renderedHtml}

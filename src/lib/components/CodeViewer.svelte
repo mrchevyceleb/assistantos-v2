@@ -13,8 +13,8 @@
 </script>
 
 <div class="h-full overflow-auto bg-bg-primary">
-  <div class="p-4">
-    <pre class="text-sm font-mono leading-relaxed"><code>{#each lines as line, i}<span class="inline-block w-12 text-right pr-4 text-text-muted select-none">{i + 1}</span><span class="text-text-primary">{line}</span>
+  <div class="p-4" style="font-size: calc(0.92rem * var(--content-zoom));">
+    <pre class="font-mono leading-relaxed"><code>{#each lines as line, i}<span class="inline-block w-12 text-right pr-4 text-text-muted select-none">{i + 1}</span><span class="text-text-primary">{line}</span>
 {/each}</code></pre>
   </div>
 </div>

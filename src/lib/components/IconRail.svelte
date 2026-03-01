@@ -71,7 +71,7 @@
 
 <style>
   .icon-rail {
-    width: 48px;
+    width: 56px;
     background: linear-gradient(
       180deg,
       rgba(16, 18, 26, 0.9) 0%,
@@ -83,8 +83,8 @@
   }
 
   .rail-icon {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -108,7 +108,7 @@
   .rail-icon.active::before {
     content: "";
     position: absolute;
-    left: -6px;
+    left: -8px;
     top: 25%;
     bottom: 25%;
     width: 3px;

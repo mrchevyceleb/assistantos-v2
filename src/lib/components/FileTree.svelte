@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { get } from "svelte/store";
   import { workspacePath, fileTree, isLoadingTree, workspaceName } from "$lib/stores/workspace";
   import { openTab } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
   import { settings } from "$lib/stores/settings";
-  import { readDirectoryTree, readDirectoryChildren, readFileText, createFile, renamePath, deletePath } from "$lib/utils/tauri";
+  import { readDirectoryTree, readFileText, createFile, renamePath, deletePath } from "$lib/utils/tauri";
   import { updateTabContent, setTabLoading } from "$lib/stores/tabs";
-  import { getFileIcon } from "$lib/utils/file-types";
   import type { FileNode } from "$lib/utils/tauri";
   import FileTreeNode from "./FileTreeNode.svelte";
   import ContextMenu from "./ContextMenu.svelte";
@@ -96,6 +96,11 @@
     handleFileClick(node);
   }
 
+  function handleOpenTerminalHere(node: FileNode) {
+    const cwd = node.is_dir ? node.path : getParentPath(node.path);
+    addTerminal(cwd, get(settings).defaultTerminalDock);
+  }
+
   async function handleNewFile(parentPath: string) {
     const name = window.prompt("New file name:");
     if (!name) return;
@@ -166,6 +171,8 @@
         { label: "New File", action: () => handleNewFile(node.path) },
         { label: "New Folder", action: () => handleNewFolder(node.path) },
         { label: "", separator: true, action: () => {} },
+        { label: "Open Terminal Here", action: () => handleOpenTerminalHere(node), shortcut: "Ctrl+`" },
+        { label: "", separator: true, action: () => {} },
         { label: "Copy Path", action: () => handleCopyPath(node) },
         { label: "Rename", action: () => handleRename(node) },
         { label: "", separator: true, action: () => {} },
@@ -174,6 +181,7 @@
     } else {
       return [
         { label: "Open", action: () => handleOpen(node) },
+        { label: "Open Terminal Here", action: () => handleOpenTerminalHere(node), shortcut: "Ctrl+`" },
         { label: "", separator: true, action: () => {} },
         { label: "Copy Path", action: () => handleCopyPath(node) },
         { label: "Rename", action: () => handleRename(node) },
@@ -205,10 +213,10 @@
   });
 </script>
 
-<div class="flex flex-col h-full glass-panel-solid">
+<div class="flex flex-col h-full metal-inset panel-lift rounded-xl overflow-hidden">
   <!-- Header -->
-  <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 10px 14px;">
-    <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: 11.5px;" title={$workspaceName}>
+  <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 14px 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -1px 0 rgba(0,0,0,0.45);">
+    <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: 12px;" title={$workspaceName}>
       {$workspaceName}
     </span>
     <div class="flex items-center gap-1 shrink-0">
@@ -216,7 +224,7 @@
         <!-- New File button -->
         <button
           onclick={() => handleNewFile($workspacePath!)}
-          class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded hover:bg-bg-hover"
+          class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
           title="New File"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -229,7 +237,7 @@
         <!-- New Folder button -->
         <button
           onclick={() => handleNewFolder($workspacePath!)}
-          class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded hover:bg-bg-hover"
+          class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
           title="New Folder"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -242,7 +250,7 @@
       <!-- Open Folder button -->
       <button
         onclick={handleOpenFolder}
-        class="text-text-muted hover:text-text-primary transition-colors p-1.5 rounded hover:bg-bg-hover"
+        class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
         title="Open Folder"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -254,14 +262,14 @@
 
   <!-- Filter -->
   {#if $fileTree}
-    <div style="padding: 8px 14px;">
+    <div style="padding: 10px 16px;">
       <input
         type="text"
         placeholder="Filter files..."
         bind:value={filterText}
-        class="w-full bg-bg-primary text-text-primary rounded-md border border-border
+        class="w-full bg-bg-primary/90 text-text-primary rounded-md border border-border
                focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(88,180,208,0.15)] placeholder-text-muted"
-        style="font-size: 13px; padding: 7px 12px;"
+        style="font-size: 14px; padding: 10px 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);"
       />
     </div>
   {/if}

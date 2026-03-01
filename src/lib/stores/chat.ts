@@ -4,6 +4,8 @@ export interface UIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  mentions?: string[];
+  steer?: string;
   isStreaming: boolean;
   toolCalls: UIToolCall[];
   timestamp: number;
@@ -31,17 +33,25 @@ export const chatMessages = writable<UIMessage[]>([]);
 export const chatIsLoading = writable(false);
 export const chatPanelVisible = writable(false);
 export const chatPanelWidth = writable(420);
+export const chatPanelHeight = writable(300);
+export const chatPanelDock = writable<'right' | 'bottom'>('right');
 export const pendingConfirmation = writable<PendingConfirmation | null>(null);
 export const currentSessionId = writable<string | null>(null);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-export function addUIMessage(role: UIMessage['role'], content: string): string {
+export function addUIMessage(
+  role: UIMessage['role'],
+  content: string,
+  options?: { mentions?: string[]; steer?: string },
+): string {
   const id = `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const msg: UIMessage = {
     id,
     role,
     content,
+    mentions: options?.mentions,
+    steer: options?.steer,
     isStreaming: false,
     toolCalls: [],
     timestamp: Date.now(),

@@ -203,3 +203,32 @@ export async function deleteChatSession(
 ): Promise<void> {
   return invoke("delete_chat_session", { sessionId });
 }
+
+// ── MCP HTTP wrappers ───────────────────────────────────────────────
+
+export async function mcpListTools(
+  serverUrl: string,
+  authToken?: string,
+  headersJson?: string,
+  timeoutMs?: number,
+): Promise<string> {
+  return invoke("mcp_list_tools", { serverUrl, authToken, headersJson, timeoutMs });
+}
+
+export async function mcpCallTool(
+  serverUrl: string,
+  toolName: string,
+  argumentsJson: string,
+  authToken?: string,
+  headersJson?: string,
+  timeoutMs?: number,
+): Promise<string> {
+  return invoke("mcp_call_tool", {
+    serverUrl,
+    toolName,
+    argumentsJson,
+    authToken,
+    headersJson,
+    timeoutMs,
+  });
+}

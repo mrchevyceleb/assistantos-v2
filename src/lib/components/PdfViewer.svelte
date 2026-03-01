@@ -40,6 +40,7 @@
     <iframe
       src="{blobUrl}#view=FitH"
       class="w-full h-full border-none"
+      style="transform: scale(var(--content-zoom)); transform-origin: top left; width: calc(100% / var(--content-zoom)); height: calc(100% / var(--content-zoom));"
       title="PDF Viewer"
     ></iframe>
   {:else if loadError}

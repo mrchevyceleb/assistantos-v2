@@ -1,11 +1,13 @@
 <script lang="ts">
   import { get } from "svelte/store";
-  import { tabs, activeTabId, closeTab, moveTab } from "$lib/stores/tabs";
+  import { tabs, activeTabId, closeTab, moveTab, reopenLastClosedTab, closedTabs, updateTabContent, setTabLoading } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
   import { workspacePath } from "$lib/stores/workspace";
   import { settings } from "$lib/stores/settings";
   import ContextMenu from "./ContextMenu.svelte";
   import type { MenuItem } from "./ContextMenu.svelte";
+  import { getFileColor } from "$lib/utils/file-types";
+  import { readFileText } from "$lib/utils/tauri";
 
   // Context menu state
   let contextMenu = $state<{
@@ -24,6 +26,13 @@
     activeTabId.set(id);
   }
 
+  function handleTabKeydown(e: KeyboardEvent, id: string) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleTabClick(id);
+    }
+  }
+
   function handleClose(e: MouseEvent, id: string) {
     e.stopPropagation();
     safeCloseTab(id);
@@ -32,7 +41,10 @@
   function handleMiddleClick(e: MouseEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault();
-      safeCloseTab(id);
+      // Require Shift+middle-click to avoid accidental tab loss.
+      if (e.shiftKey) {
+        safeCloseTab(id);
+      }
     }
   }
 
@@ -135,9 +147,15 @@
 
   function safeCloseTab(tabId: string) {
     const currentSettings = get(settings);
+    const currentTabs = get(tabs);
+    const tab = currentTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    if (tab.viewerType === "terminal") {
+      if (!window.confirm(`Close terminal tab \"${tab.name}\"? This will end the session.`)) return;
+    }
+
     if (currentSettings.confirmCloseUnsaved) {
-      const currentTabs = get(tabs);
-      const tab = currentTabs.find((t) => t.id === tabId);
       if (tab?.isModified) {
         if (!window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
       }
@@ -206,12 +224,12 @@
     const hasOthers = currentTabs.length > 1;
 
     return [
-      { label: "Close", action: () => safeCloseTab(tabId) },
+      { label: "Close", action: () => safeCloseTab(tabId), shortcut: "Ctrl+W" },
       ...(hasOthers ? [{ label: "Close Others", action: () => closeOtherTabs(tabId) }] : []),
       ...(hasLeft ? [{ label: "Close to the Left", action: () => closeTabsToLeft(tabId) }] : []),
       ...(hasRight ? [{ label: "Close to the Right", action: () => closeTabsToRight(tabId) }] : []),
       { label: "", separator: true, action: () => {} },
-      { label: "Copy Path", action: () => handleCopyTabPath(tabId) },
+      { label: "Copy Path", action: () => handleCopyTabPath(tabId), shortcut: "Ctrl+C" },
       { label: "Rename Tab", action: () => handleRenameTab(tabId) },
       { label: "", separator: true, action: () => {} },
       { label: "Close All", action: () => closeAllTabs(), danger: true },
@@ -222,6 +240,12 @@
 
   function getBarContextMenuItems(): MenuItem[] {
     return [
+      {
+        label: "Reopen Closed Tab",
+        shortcut: "Ctrl+Shift+T",
+        action: () => reopenClosedFromMenu(),
+        disabled: $closedTabs.length === 0,
+      },
       { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
       ...(get(tabs).length > 0 ? [
         { label: "", separator: true, action: () => {} },
@@ -230,46 +254,43 @@
     ];
   }
 
+  function reopenClosedFromMenu() {
+    const tabId = reopenLastClosedTab();
+    if (!tabId) return;
+    const reopened = get(tabs).find((t) => t.id === tabId);
+    if (reopened && reopened.isLoading && !reopened.path.startsWith("__terminal__:")) {
+      readFileText(reopened.path)
+        .then((content) => updateTabContent(tabId, content))
+        .catch(() => setTabLoading(tabId, false));
+    }
+  }
+
   function getExtColor(ext?: string): string {
-    if (!ext) return "var(--color-text-muted)";
-    const colors: Record<string, string> = {
-      md: "#58b4d0",
-      ts: "#3178c6",
-      tsx: "#3178c6",
-      js: "#f7df1e",
-      jsx: "#f7df1e",
-      py: "#3776ab",
-      rs: "#dea584",
-      html: "#e34c26",
-      css: "#264de4",
-      json: "#a6e3a1",
-      sql: "#f38ba8",
-      svelte: "#ff3e00",
-    };
-    return colors[ext.toLowerCase()] || "var(--color-text-muted)";
+    return getFileColor("tab", false, ext);
   }
 </script>
 
 {#if $tabs.length > 0}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="flex items-center bg-bg-tertiary border-b border-border overflow-x-auto metal-sheen"
-    style="min-height: 44px;"
+    class="flex items-center bg-bg-tertiary border-b border-border overflow-x-auto metal-sheen panel-lift"
+    style="min-height: 54px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -2px 0 rgba(0,0,0,0.45), 0 8px 22px rgba(0,0,0,0.32);"
     oncontextmenu={handleBarContextMenu}
   >
     {#each $tabs as tab, i (tab.id)}
       <div
-        class="flex items-center gap-2.5 border-r border-border whitespace-nowrap
-               transition-colors cursor-grab group min-w-0 shrink-0 relative"
-        style="padding: 12px 20px; font-size: 13px;"
-        class:bg-bg-primary={$activeTabId === tab.id}
+        class="flex items-center gap-3.5 border-r border-border whitespace-nowrap
+               transition-all cursor-grab group min-w-0 shrink-0 relative"
+        style="padding: 14px 22px; font-size: 13.5px;"
+        class:tab-active-metal={$activeTabId === tab.id}
         class:text-text-primary={$activeTabId === tab.id}
-        class:bg-bg-tertiary={$activeTabId !== tab.id}
+        class:tab-inactive-metal={$activeTabId !== tab.id}
         class:text-text-muted={$activeTabId !== tab.id}
         class:hover:bg-bg-hover={$activeTabId !== tab.id}
         class:opacity-50={dragTabId === tab.id}
         data-tab-id={tab.id}
         onclick={() => handleTabClick(tab.id)}
+        onkeydown={(e) => handleTabKeydown(e, tab.id)}
         onmousedown={(e) => handleMiddleClick(e, tab.id)}
         oncontextmenu={(e) => handleTabContextMenu(e, tab.id)}
         draggable="true"
@@ -296,18 +317,18 @@
         <span class="truncate max-w-[180px]">{tab.name}</span>
 
         <!-- Close button -->
-        <span
-          class="ml-1 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active transition-opacity cursor-pointer"
+        <button
+          type="button"
+          class="ml-1 p-2 rounded-md opacity-0 group-hover:opacity-100 hover:bg-bg-active transition-opacity cursor-pointer"
           onclick={(e) => handleClose(e, tab.id)}
-          title="Close"
-          role="button"
-          tabindex="0"
+          title={`Close ${tab.name}`}
+          aria-label={`Close ${tab.name}`}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
             <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
-        </span>
+        </button>
 
         <!-- Drop indicator right -->
         {#if dragOverTabId === tab.id && dragSide === "right"}
@@ -320,8 +341,8 @@
   <!-- Empty tab bar — still right-clickable for new terminal -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="bg-bg-tertiary border-b border-border metal-sheen"
-    style="min-height: 44px;"
+    class="bg-bg-tertiary border-b border-border metal-sheen panel-lift"
+    style="min-height: 54px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -2px 0 rgba(0,0,0,0.45), 0 8px 22px rgba(0,0,0,0.32);"
     oncontextmenu={handleBarContextMenu}
   ></div>
 {/if}
@@ -335,3 +356,25 @@
     onClose={closeContextMenu}
   />
 {/if}
+
+<style>
+  .tab-active-metal {
+    background:
+      linear-gradient(180deg, rgba(56, 63, 79, 0.92) 0%, rgba(26, 31, 44, 0.97) 38%, rgba(14, 17, 27, 0.98) 100%),
+      linear-gradient(130deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.03) 42%, transparent 70%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.66),
+      inset 1px 0 0 rgba(255, 255, 255, 0.06),
+      inset -1px 0 0 rgba(0, 0, 0, 0.35),
+      0 10px 24px rgba(0, 0, 0, 0.38);
+    border-bottom: 3px solid rgba(88, 180, 208, 0.92);
+  }
+
+  .tab-inactive-metal {
+    background: linear-gradient(180deg, rgba(14, 17, 26, 0.93) 0%, rgba(8, 10, 16, 0.95) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.48);
+  }
+</style>

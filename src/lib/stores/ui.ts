@@ -4,9 +4,9 @@ import { writable, get } from "svelte/store";
 
 export const uiZoom = writable(1.0);
 
-const MIN_ZOOM = 0.6;
-const MAX_ZOOM = 2.0;
-const ZOOM_STEP = 0.05;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.4;
+const ZOOM_STEP = 0.1;
 
 export function zoomIn() {
   uiZoom.update((z) => {
@@ -33,6 +33,13 @@ const BASE_FONT_SIZE = 14.5;
 
 export function applyZoom(level: number) {
   document.documentElement.style.fontSize = `${level * BASE_FONT_SIZE}px`;
+  document.documentElement.style.setProperty("--ui-zoom", String(level));
+
+  // Non-terminal viewers need a stronger response than global chrome zoom.
+  const contentZoom = level >= 1
+    ? 1 + (level - 1) * 1.35
+    : 1 - (1 - level) * 0.9;
+  document.documentElement.style.setProperty("--content-zoom", String(Number(contentZoom.toFixed(3))));
 }
 
 /** Call on startup to apply persisted zoom level */

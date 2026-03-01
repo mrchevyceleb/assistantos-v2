@@ -14,8 +14,20 @@ export interface Tab {
   editMode: boolean;
 }
 
+export interface ClosedTabEntry {
+  path: string;
+  name: string;
+  ext?: string;
+  viewerType: ViewerType;
+  content?: string;
+  editMode: boolean;
+  isModified: boolean;
+}
+
 export const tabs = writable<Tab[]>([]);
 export const activeTabId = writable<string | null>(null);
+export const closedTabs = writable<ClosedTabEntry[]>([]);
+const MAX_CLOSED_TABS = 40;
 
 export const activeTab = derived([tabs, activeTabId], ([$tabs, $activeTabId]) => {
   return $tabs.find((t) => t.id === $activeTabId) || null;
@@ -52,6 +64,21 @@ export function closeTab(id: string) {
   const idx = currentTabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
 
+  const closingTab = currentTabs[idx];
+  // Track recently closed tabs so users can recover accidental closes.
+  if (!closingTab.path.startsWith("__terminal__:")) {
+    const entry: ClosedTabEntry = {
+      path: closingTab.path,
+      name: closingTab.name,
+      ext: closingTab.ext,
+      viewerType: closingTab.viewerType,
+      content: closingTab.content,
+      editMode: closingTab.editMode,
+      isModified: closingTab.isModified,
+    };
+    closedTabs.update((history) => [entry, ...history].slice(0, MAX_CLOSED_TABS));
+  }
+
   tabs.update((t) => t.filter((tab) => tab.id !== id));
 
   const $activeTabId = get(activeTabId);
@@ -64,6 +91,37 @@ export function closeTab(id: string) {
       activeTabId.set(null);
     }
   }
+}
+
+export function reopenLastClosedTab(): string | null {
+  const history = get(closedTabs);
+  const entry = history[0];
+  if (!entry) return null;
+
+  const currentTabs = get(tabs);
+  const existing = currentTabs.find((t) => t.path === entry.path);
+  if (existing) {
+    activeTabId.set(existing.id);
+    closedTabs.update((h) => h.slice(1));
+    return existing.id;
+  }
+
+  const reopened: Tab = {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    path: entry.path,
+    name: entry.name,
+    ext: entry.ext,
+    viewerType: entry.viewerType,
+    content: entry.content,
+    isModified: entry.isModified,
+    isLoading: entry.content === undefined,
+    editMode: entry.editMode,
+  };
+
+  tabs.update((t) => [...t, reopened]);
+  activeTabId.set(reopened.id);
+  closedTabs.update((h) => h.slice(1));
+  return reopened.id;
 }
 
 export function updateTabContent(id: string, content: string) {

@@ -14,7 +14,9 @@
   import { workspacePath } from "$lib/stores/workspace";
   import { uiZoom } from "$lib/stores/ui";
   import { settings } from "$lib/stores/settings";
-  import { TERM_THEME } from "$lib/utils/terminal-theme";
+  import { getTerminalTheme, type TerminalStylePreset } from "$lib/utils/terminal-theme";
+  import ContextMenu from "./ContextMenu.svelte";
+  import type { MenuItem } from "./ContextMenu.svelte";
 
   interface Props {
     terminalId: string;
@@ -32,6 +34,66 @@
   let unlistenClosed: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let movedAway = false;
+  let terminalPreset = $derived($settings.terminalStylePreset as TerminalStylePreset);
+
+  let contextMenu = $state({
+    visible: false,
+    x: 0,
+    y: 0,
+  });
+
+  function closeContextMenu() {
+    contextMenu = { visible: false, x: 0, y: 0 };
+  }
+
+  async function writeClipboardText(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+  }
+
+  async function readClipboardText(): Promise<string> {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      return "";
+    }
+  }
+
+  function getContextMenuItems(): MenuItem[] {
+    const hasSelection = !!term?.hasSelection();
+    return [
+      {
+        label: "Copy",
+        shortcut: "Ctrl+C",
+        disabled: !hasSelection,
+        action: () => {
+          if (term && term.hasSelection()) {
+            writeClipboardText(term.getSelection());
+          }
+        },
+      },
+      {
+        label: "Paste",
+        shortcut: "Ctrl+V",
+        action: async () => {
+          const text = await readClipboardText();
+          if (text) {
+            await writeTerminal(terminalId, text);
+          }
+        },
+      },
+      { label: "Select All", action: () => term?.selectAll() },
+      { label: "Clear", action: () => term?.clear() },
+    ];
+  }
 
   function handleMove(target: "bottom" | "right" | "left") {
     movedAway = true;
@@ -45,7 +107,7 @@
 
   onMount(async () => {
     term = new Terminal({
-      theme: TERM_THEME,
+      theme: getTerminalTheme(terminalPreset),
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
       fontSize: Math.round($settings.terminalFontSize * $uiZoom),
       fontWeight: "400",
@@ -78,6 +140,34 @@
     }
 
     fitAddon.fit();
+
+    term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
+      const mod = ev.ctrlKey || ev.metaKey;
+      const key = ev.key.toLowerCase();
+      if (mod && key === "c" && ev.type === "keydown") {
+        if (term && term.hasSelection()) {
+          writeClipboardText(term.getSelection());
+        } else {
+          writeTerminal(terminalId, "\u0003").catch(() => {});
+        }
+        return false;
+      }
+
+      if (mod && key === "v" && ev.type === "keydown") {
+        readClipboardText().then((text) => {
+          if (text) {
+            writeTerminal(terminalId, text).catch(() => {});
+          }
+        });
+        return false;
+      }
+      return true;
+    });
+
+    containerEl.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      contextMenu = { visible: true, x: e.clientX, y: e.clientY };
+    });
 
     // Replay buffered output (preserves scrollback when moving between docks)
     const buf = getTerminalBuffer(terminalId);
@@ -131,6 +221,7 @@
     const zoom = $uiZoom;
     if (term && fitAddon) {
       term.options.fontSize = Math.round(BASE_TERM_FONT_SIZE * zoom);
+      term.options.theme = getTerminalTheme(terminalPreset);
       try { fitAddon.fit(); } catch {}
     }
   });
@@ -159,7 +250,7 @@
   });
 </script>
 
-<div class="term-tab-wrapper flex flex-col h-full" bind:this={wrapperEl}>
+<div class="term-tab-wrapper flex flex-col h-full" class:term-minimal={terminalPreset === "minimal"} class:term-retro={terminalPreset === "retro"} class:term-high-contrast={terminalPreset === "high-contrast"} bind:this={wrapperEl}>
   <!-- Mini toolbar -->
   <div class="term-tab-toolbar">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="term-tab-toolbar-icon">
@@ -207,19 +298,45 @@
   </div>
 </div>
 
+{#if contextMenu.visible}
+  <ContextMenu
+    x={contextMenu.x}
+    y={contextMenu.y}
+    items={getContextMenuItems()}
+    onClose={closeContextMenu}
+  />
+{/if}
+
 <style>
   .term-tab-wrapper {
     background: #08090e;
     position: relative;
   }
 
+  .term-tab-wrapper.term-minimal {
+    background: #0a0b10;
+  }
+
+  .term-tab-wrapper.term-retro {
+    background: #081109;
+  }
+
+  .term-tab-wrapper.term-high-contrast {
+    background: #030305;
+  }
+
   .term-tab-toolbar {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 12px;
-    background: #0a0a12;
-    border-bottom: 1px solid #1a1a2e;
+    padding: 6px 12px;
+    background:
+      linear-gradient(180deg, rgba(57, 64, 80, 0.76) 0%, rgba(20, 24, 35, 0.92) 52%, rgba(11, 13, 19, 0.96) 100%),
+      repeating-linear-gradient(95deg, rgba(255, 255, 255, 0.02) 0, rgba(255, 255, 255, 0.02) 2px, rgba(0, 0, 0, 0.012) 2px, rgba(0, 0, 0, 0.012) 4px);
+    border-bottom: 1px solid #293246;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.5);
   }
 
   .term-tab-toolbar-icon {
@@ -242,20 +359,25 @@
 
   .term-tab-toolbar-btn:hover {
     color: var(--color-text-primary);
-    background: #1a1a2e;
+    background: linear-gradient(180deg, rgba(34, 39, 56, 0.56) 0%, rgba(14, 17, 27, 0.65) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
   }
 
   .term-tab-viewport {
-    background: #060710;
-    padding: 6px 8px 8px 8px;
+    background: linear-gradient(180deg, #090b13 0%, #06070f 100%);
+    padding: 7px 9px 9px 9px;
     overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.52);
   }
 
   .term-tab-content {
     height: 100%;
-    border: 1px solid #1e1e30;
+    border: 1px solid #313c55;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: inset 0 0 20px rgba(88, 180, 208, 0.03);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 0 30px rgba(88, 180, 208, 0.045),
+      0 8px 16px rgba(0, 0, 0, 0.3);
   }
 </style>

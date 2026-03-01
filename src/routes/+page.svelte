@@ -17,12 +17,12 @@
   import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal, leftPanelVisible, leftPanelWidth } from "$lib/stores/terminal";
   import { readDirectoryTree, readFileText, startWatcher, stopWatcher } from "$lib/utils/tauri";
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
-  import { tabs, updateTabContent } from "$lib/stores/tabs";
+  import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { zoomIn, zoomOut, resetZoom, initZoom } from "$lib/stores/ui";
   import { settingsVisible, settings } from "$lib/stores/settings";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
-  import { chatPanelVisible, chatPanelWidth } from "$lib/stores/chat";
+  import { chatPanelVisible, chatPanelWidth, chatPanelHeight, chatPanelDock } from "$lib/stores/chat";
   import UpdateNotification from "$lib/components/UpdateNotification.svelte";
 
   let paletteVisible = $state(false);
@@ -152,7 +152,7 @@
   });
 
   function handleSidebarResize(delta: number) {
-    sidebarWidth.update((w) => Math.max(150, Math.min(600, w + delta)));
+    sidebarWidth.update((w) => Math.max(240, Math.min(720, w + delta)));
   }
 
   function handleTerminalResize(delta: number) {
@@ -168,8 +168,16 @@
   }
 
   function handleChatPanelResize(delta: number) {
-    chatPanelWidth.update((w) => Math.max(300, Math.min(800, w - delta)));
+    if ($chatPanelDock === "right") {
+      chatPanelWidth.update((w) => Math.max(340, Math.min(900, w - delta)));
+    } else {
+      chatPanelHeight.update((h) => Math.max(180, Math.min(600, h - delta)));
+    }
   }
+
+  $effect(() => {
+    chatPanelDock.set($settings.aiChatDock);
+  });
 
   // Global keyboard shortcuts
   function handleKeydown(e: KeyboardEvent) {
@@ -192,6 +200,21 @@
     if (e.ctrlKey && e.key === "p") {
       e.preventDefault();
       paletteVisible = !paletteVisible;
+      return;
+    }
+
+    // Ctrl+Shift+T: Reopen closed tab
+    if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+      e.preventDefault();
+      const tabId = reopenLastClosedTab();
+      if (tabId) {
+        const reopened = get(tabs).find((t) => t.id === tabId);
+        if (reopened && reopened.isLoading && !reopened.path.startsWith("__terminal__:")) {
+          readFileText(reopened.path)
+            .then((content) => updateTabContent(tabId, content))
+            .catch(() => setTabLoading(tabId, false));
+        }
+      }
       return;
     }
 
@@ -291,9 +314,9 @@
 
     <!-- Sidebar -->
     {#if $sidebarVisible}
-      <div style:width="{$sidebarWidth}px" class="shrink-0 overflow-hidden flex flex-col">
+      <div style:width="{$sidebarWidth}px" class="shrink-0 overflow-hidden flex flex-col p-1.5">
         <!-- Sidebar content -->
-        <div class="flex-1 overflow-hidden">
+        <div class="flex-1 overflow-hidden metal-frame rounded-xl">
           {#if sidebarView === "search"}
             <SearchPanel onClose={() => sidebarView = "explorer"} />
           {:else}
@@ -306,8 +329,10 @@
 
     <!-- Left dock panel -->
     {#if $leftPanelVisible}
-      <div style:width="{$leftPanelWidth}px" class="shrink-0 overflow-hidden border-r border-border">
-        <TerminalPanel dock="left" />
+      <div style:width="{$leftPanelWidth}px" class="shrink-0 overflow-hidden border-r border-border p-1.5">
+        <div class="h-full metal-frame rounded-xl overflow-hidden">
+          <TerminalPanel dock="left" />
+        </div>
       </div>
       <ResizeHandle direction="horizontal" onResize={handleLeftPanelResize} />
     {/if}
@@ -333,10 +358,12 @@
             </div>
             <div
               style:height="{$terminalHeight}px"
-              class="shrink-0 overflow-hidden"
+              class="shrink-0 overflow-hidden p-1.5 pt-1"
               class:hidden={!$terminalVisible}
             >
-              <TerminalPanel dock="bottom" />
+              <div class="h-full metal-frame rounded-xl overflow-hidden">
+                <TerminalPanel dock="bottom" />
+              </div>
             </div>
           {/if}
         </div>
@@ -345,20 +372,30 @@
       <!-- Right panel terminal — always mounted when terminals exist to preserve PTY -->
       {#if $rightPanelVisible}
         <ResizeHandle direction="horizontal" onResize={handleRightPanelResize} />
-        <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border">
-          <TerminalPanel dock="right" />
+        <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
+          <div class="h-full metal-frame rounded-xl overflow-hidden">
+            <TerminalPanel dock="right" />
+          </div>
         </div>
       {/if}
 
-      <!-- AI Chat Panel -->
-      {#if $chatPanelVisible}
+      <!-- AI Chat Panel (right dock) -->
+      {#if $chatPanelVisible && $chatPanelDock === "right"}
         <ResizeHandle direction="horizontal" onResize={handleChatPanelResize} />
-        <div style:width="{$chatPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border">
+        <div style:width="{$chatPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
           <ChatPanel />
         </div>
       {/if}
     </div>
   </div>
+
+  <!-- AI Chat Panel (bottom dock) -->
+  {#if $chatPanelVisible && $chatPanelDock === "bottom"}
+    <ResizeHandle direction="vertical" onResize={handleChatPanelResize} />
+    <div style:height="{$chatPanelHeight}px" class="shrink-0 overflow-hidden border-t border-border p-1.5 pt-1">
+      <ChatPanel />
+    </div>
+  {/if}
 
   <!-- Status bar -->
   <StatusBar />

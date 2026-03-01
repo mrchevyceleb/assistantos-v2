@@ -89,7 +89,7 @@
         src={blobUrl}
         alt={filePath.split(/[/\\]/).pop() || ""}
         class="max-w-none transition-transform duration-100"
-        style:transform="scale({scale})"
+        style="transform: scale(calc(${scale} * var(--content-zoom)));"
         onload={handleLoad}
         onerror={handleError}
       />
