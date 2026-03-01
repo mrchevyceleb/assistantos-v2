@@ -59,12 +59,18 @@ export function openTab(path: string, name: string, ext?: string): string {
   return id;
 }
 
-export function closeTab(id: string) {
+export function closeTab(id: string, options?: { forceTerminal?: boolean }) {
   const currentTabs = get(tabs);
   const idx = currentTabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
 
   const closingTab = currentTabs[idx];
+  if (closingTab.viewerType === "terminal" && !options?.forceTerminal) {
+    // Terminal tabs require explicit force from a caller that has already
+    // confirmed intent, which prevents accidental data-loss closes.
+    return;
+  }
+
   // Track recently closed tabs so users can recover accidental closes.
   if (!closingTab.path.startsWith("__terminal__:")) {
     const entry: ClosedTabEntry = {
@@ -194,6 +200,6 @@ export function closeTerminalTab(terminalId: string) {
   const path = `__terminal__:${terminalId}`;
   const tab = currentTabs.find((t) => t.path === path);
   if (tab) {
-    closeTab(tab.id);
+    closeTab(tab.id, { forceTerminal: true });
   }
 }

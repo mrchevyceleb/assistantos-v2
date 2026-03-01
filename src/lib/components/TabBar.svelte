@@ -160,7 +160,11 @@
         if (!window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
       }
     }
-    closeTab(tabId);
+    if (tab.viewerType === "terminal") {
+      closeTab(tabId, { forceTerminal: true });
+    } else {
+      closeTab(tabId);
+    }
   }
 
   // ── Tab context menu actions ──────────────────────────────────────

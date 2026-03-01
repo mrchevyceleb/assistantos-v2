@@ -231,3 +231,77 @@ jobs:
               data: latestJson
             });
             core.info('Release published with updater manifest!');
+
+      - name: Mirror updater feed to public repo
+        if: ${{ secrets.UPDATER_FEED_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.UPDATER_FEED_TOKEN }}
+          FEED_REPO: mrchevyceleb/assistantos-v2-updates
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          mkdir -p updater-feed
+
+          cp artifacts/windows/*.nsis.zip updater-feed/
+          cp artifacts/windows/*.nsis.zip.sig updater-feed/
+          cp artifacts/macos/*.app.tar.gz updater-feed/
+          cp artifacts/macos/*.app.tar.gz.sig updater-feed/
+
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const tag = process.env.GITHUB_REF_NAME;
+          const version = tag.replace(/^v/, '');
+          const feedRepo = process.env.FEED_REPO;
+          const baseUrl = `https://github.com/${feedRepo}/releases/download/${tag}`;
+
+          const files = fs.readdirSync('updater-feed');
+          const winSigName = files.find((f) => f.endsWith('.nsis.zip.sig'));
+          const winZipName = files.find((f) => f.endsWith('.nsis.zip') && !f.endsWith('.sig'));
+          const macSigName = files.find((f) => f.endsWith('.app.tar.gz.sig'));
+          const macTarName = files.find((f) => f.endsWith('.app.tar.gz') && !f.endsWith('.sig'));
+
+          if (!winSigName || !winZipName || !macSigName || !macTarName) {
+            throw new Error('Missing updater feed artifacts while mirroring release');
+          }
+
+          const winSig = fs.readFileSync(path.join('updater-feed', winSigName), 'utf8').trim();
+          const macSig = fs.readFileSync(path.join('updater-feed', macSigName), 'utf8').trim();
+
+          const macEntry = {
+            signature: macSig,
+            url: `${baseUrl}/${macTarName}`,
+          };
+
+          const latest = {
+            version,
+            notes: `AssistantOS ${tag}`,
+            pub_date: new Date().toISOString(),
+            platforms: {
+              'windows-x86_64': {
+                signature: winSig,
+                url: `${baseUrl}/${winZipName}`,
+              },
+              'darwin-universal': macEntry,
+              'darwin-aarch64': macEntry,
+              'darwin-x86_64': macEntry,
+            },
+          };
+
+          fs.writeFileSync('updater-feed/latest.json', JSON.stringify(latest, null, 2));
+          EOF
+
+          if gh release view "$tag" -R "$FEED_REPO" > /dev/null 2>&1; then
+            gh release upload "$tag" -R "$FEED_REPO" updater-feed/* --clobber
+          else
+            gh release create "$tag" -R "$FEED_REPO" \
+              --title "AssistantOS ${tag}" \
+              --notes "Public updater feed assets for AssistantOS ${tag}." \
+              updater-feed/*
+          fi
+
+      - name: Updater feed token missing
+        if: ${{ secrets.UPDATER_FEED_TOKEN == '' }}
+        run: echo "UPDATER_FEED_TOKEN is not set, skipped mirroring public updater feed"
