@@ -1,6 +1,6 @@
 [package]
 name = "assistantos"
-version = "1.0.0"
+version = "1.0.1"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -34,4 +34,3 @@ reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
 tauri-plugin-updater = { version = "2.10.0", features = ["default"] }
 tauri-plugin-process = "2.3.1"
-
