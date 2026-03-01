@@ -10,13 +10,15 @@
   import VideoPlayer from "./VideoPlayer.svelte";
   import PdfViewer from "./PdfViewer.svelte";
   import TerminalTab from "./TerminalTab.svelte";
+  import ChatPanel from "./chat/ChatPanel.svelte";
 
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Derived: all terminal tabs that need to stay mounted
   let terminalTabs = $derived($tabs.filter((t) => t.viewerType === "terminal"));
+  let chatTabs = $derived($tabs.filter((t) => t.viewerType === "chat"));
   // Is the active tab a terminal?
-  let activeIsTerminal = $derived($activeTab?.viewerType === "terminal");
+  let activeIsSpecial = $derived($activeTab?.viewerType === "terminal" || $activeTab?.viewerType === "chat");
 
   async function handleSave(content: string) {
     const tab = $activeTab;
@@ -71,8 +73,17 @@
     </div>
   {/each}
 
+  {#each chatTabs as ctab (ctab.id)}
+    <div
+      class="absolute inset-0 p-1.5"
+      class:hidden={$activeTabId !== ctab.id}
+    >
+      <ChatPanel />
+    </div>
+  {/each}
+
   <!-- Non-terminal content: standard {#if} rendering -->
-  {#if $activeTab && !activeIsTerminal}
+  {#if $activeTab && !activeIsSpecial}
     {#if $activeTab.isLoading}
       <div class="flex-1 flex items-center justify-center text-text-muted">
         <span class="text-sm">Loading...</span>

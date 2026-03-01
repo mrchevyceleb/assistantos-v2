@@ -11,9 +11,10 @@
     onFileClick: (node: FileNode) => void;
     onContextMenu?: (node: FileNode, x: number, y: number) => void;
     filterText?: string;
+    collapseVersion?: number;
   }
 
-  let { node, depth, onFileClick, onContextMenu, filterText = "" }: Props = $props();
+  let { node, depth, onFileClick, onContextMenu, filterText = "", collapseVersion = 0 }: Props = $props();
   let expanded = $state(false);
   let children = $state<FileNode[]>([]);
   let loaded = $state(false);
@@ -64,6 +65,11 @@
         });
       }
     }
+  });
+
+  $effect(() => {
+    collapseVersion;
+    expanded = false;
   });
 
   const paddingLeft = $derived(`${depth * 27 + 16}px`);
@@ -140,6 +146,7 @@
       {onFileClick}
       {onContextMenu}
       {filterText}
+      {collapseVersion}
     />
   {/each}
 {/if}

@@ -25,7 +25,7 @@ export interface AppSettings {
   aiConfirmWrites: boolean;
   aiMaxToolIterations: number;
   aiFavoriteModels: string[];
-  aiChatDock: "right" | "bottom";
+  aiChatDock: "right" | "bottom" | "tab";
   aiReadInstructionsEveryMessage: boolean;
   aiEnableAtMentions: boolean;
   mcpServers: MCPServerConfig[];

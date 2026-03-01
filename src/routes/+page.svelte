@@ -17,7 +17,7 @@
   import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal, leftPanelVisible, leftPanelWidth } from "$lib/stores/terminal";
   import { readDirectoryTree, readFileText, startWatcher, stopWatcher } from "$lib/utils/tauri";
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
-  import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading } from "$lib/stores/tabs";
+  import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading, openChatTab, closeChatTab } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { zoomIn, zoomOut, resetZoom, initZoom } from "$lib/stores/ui";
   import { settingsVisible, settings } from "$lib/stores/settings";
@@ -170,13 +170,25 @@
   function handleChatPanelResize(delta: number) {
     if ($chatPanelDock === "right") {
       chatPanelWidth.update((w) => Math.max(340, Math.min(900, w - delta)));
-    } else {
+    } else if ($chatPanelDock === "bottom") {
       chatPanelHeight.update((h) => Math.max(180, Math.min(600, h - delta)));
     }
   }
 
   $effect(() => {
     chatPanelDock.set($settings.aiChatDock);
+  });
+
+  $effect(() => {
+    if ($chatPanelDock === "tab") {
+      if ($chatPanelVisible) {
+        openChatTab();
+      } else {
+        closeChatTab();
+      }
+    } else {
+      closeChatTab();
+    }
   });
 
   // Global keyboard shortcuts

@@ -202,6 +202,24 @@
   function modelDisplayName(model: string): string {
     return model.split('/').pop() || model;
   }
+
+  function cycleDock() {
+    let next: 'right' | 'bottom' | 'tab';
+    if ($chatPanelDock === 'right') {
+      next = 'bottom';
+    } else if ($chatPanelDock === 'bottom') {
+      next = 'tab';
+    } else {
+      next = 'right';
+    }
+    updateSetting('aiChatDock', next);
+  }
+
+  function nextDockLabel(): string {
+    if ($chatPanelDock === 'right') return 'Dock Bottom';
+    if ($chatPanelDock === 'bottom') return 'Dock Tab';
+    return 'Dock Right';
+  }
 </script>
 
 <div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift" style="font-size: calc(15px * var(--ui-zoom));">
@@ -255,10 +273,10 @@
       <button
         class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
         style="font-size: calc(13px * var(--ui-zoom));"
-        onclick={() => chatPanelDock.set($chatPanelDock === 'right' ? 'bottom' : 'right')}
+        onclick={cycleDock}
         title="Toggle chat dock"
       >
-        {$chatPanelDock === 'right' ? 'Dock Bottom' : 'Dock Right'}
+        {nextDockLabel()}
       </button>
       <button
         class="w-10 h-10 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all flex items-center justify-center"

@@ -1,6 +1,7 @@
 import { writable, derived, get } from "svelte/store";
 import type { ViewerType } from "$lib/utils/file-types";
 import { getViewerType } from "$lib/utils/file-types";
+import { chatPanelVisible, chatPanelDock } from "$lib/stores/chat";
 
 export interface Tab {
   id: string;
@@ -72,7 +73,7 @@ export function closeTab(id: string, options?: { forceTerminal?: boolean }) {
   }
 
   // Track recently closed tabs so users can recover accidental closes.
-  if (!closingTab.path.startsWith("__terminal__:")) {
+  if (!closingTab.path.startsWith("__terminal__:") && !closingTab.path.startsWith("__chat__")) {
     const entry: ClosedTabEntry = {
       path: closingTab.path,
       name: closingTab.name,
@@ -86,6 +87,12 @@ export function closeTab(id: string, options?: { forceTerminal?: boolean }) {
   }
 
   tabs.update((t) => t.filter((tab) => tab.id !== id));
+
+  if (closingTab.path.startsWith("__chat__")) {
+    if (get(chatPanelDock) === "tab") {
+      chatPanelVisible.set(false);
+    }
+  }
 
   const $activeTabId = get(activeTabId);
   if ($activeTabId === id) {
@@ -201,5 +208,41 @@ export function closeTerminalTab(terminalId: string) {
   const tab = currentTabs.find((t) => t.path === path);
   if (tab) {
     closeTab(tab.id, { forceTerminal: true });
+  }
+}
+
+const CHAT_TAB_PATH = "__chat__";
+
+/** Open AI chat as a document tab */
+export function openChatTab(): string {
+  const currentTabs = get(tabs);
+  const existing = currentTabs.find((t) => t.path === CHAT_TAB_PATH);
+  if (existing) {
+    activeTabId.set(existing.id);
+    return existing.id;
+  }
+
+  const newTab: Tab = {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    path: CHAT_TAB_PATH,
+    name: "AI Chat",
+    ext: undefined,
+    viewerType: "chat",
+    isModified: false,
+    isLoading: false,
+    editMode: false,
+  };
+
+  tabs.update((t) => [...t, newTab]);
+  activeTabId.set(newTab.id);
+  return newTab.id;
+}
+
+/** Close AI chat tab if present */
+export function closeChatTab() {
+  const currentTabs = get(tabs);
+  const tab = currentTabs.find((t) => t.path === CHAT_TAB_PATH);
+  if (tab) {
+    closeTab(tab.id);
   }
 }

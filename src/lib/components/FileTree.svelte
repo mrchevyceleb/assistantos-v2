@@ -12,6 +12,7 @@
   import type { MenuItem } from "./ContextMenu.svelte";
 
   let filterText = $state("");
+  let collapseVersion = $state(0);
 
   // Context menu state
   let contextMenu = $state<{
@@ -39,6 +40,11 @@
     if (path) {
       await loadTree(path);
     }
+  }
+
+  function handleCollapseAll() {
+    filterText = "";
+    collapseVersion += 1;
   }
 
   async function handleOpenFolder() {
@@ -246,6 +252,17 @@
             <line x1="9" y1="14" x2="15" y2="14"/>
           </svg>
         </button>
+        <!-- Collapse All button -->
+        <button
+          onclick={handleCollapseAll}
+          class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
+          title="Collapse All"
+        >
+          <svg width="20" height="20" style="width: calc(20px * var(--ui-zoom)); height: calc(20px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+            <polyline points="6 4 12 10 18 4"/>
+          </svg>
+        </button>
       {/if}
       <!-- Open Folder button -->
       <button
@@ -288,6 +305,7 @@
           onFileClick={handleFileClick}
           onContextMenu={handleContextMenu}
           {filterText}
+          {collapseVersion}
         />
       {/each}
     {:else}

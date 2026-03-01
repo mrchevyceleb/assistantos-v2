@@ -530,6 +530,7 @@
                   >
                     <option value="right">Right</option>
                     <option value="bottom">Bottom</option>
+                    <option value="tab">Tab</option>
                   </select>
                 </div>
 

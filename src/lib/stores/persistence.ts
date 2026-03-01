@@ -9,6 +9,8 @@ import {
   tabs,
   activeTabId,
   openTab,
+  openChatTab,
+  closeChatTab,
   updateTabContent,
 } from "$lib/stores/tabs";
 import { terminalVisible, terminalHeight } from "$lib/stores/terminal";
@@ -40,7 +42,7 @@ export interface AppState {
   chatPanelVisible?: boolean;
   chatPanelWidth?: number;
   chatPanelHeight?: number;
-  chatPanelDock?: "right" | "bottom";
+  chatPanelDock?: "right" | "bottom" | "tab";
 }
 
 // ── Save ─────────────────────────────────────────────────────────────
@@ -71,7 +73,7 @@ export async function saveState(): Promise<void> {
     chatPanelHeight: get(chatPanelHeight),
     chatPanelDock: get(chatPanelDock),
     openTabs: $tabs
-      .filter((t) => !t.path.startsWith("__terminal__:"))
+      .filter((t) => !t.path.startsWith("__terminal__:") && !t.path.startsWith("__chat__"))
       .map((t) => ({
         path: t.path,
         name: t.name,
@@ -130,7 +132,7 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
   if (state.openTabs && state.openTabs.length > 0) {
     for (const tab of state.openTabs) {
       // Skip terminal tabs — they can't be restored across sessions
-      if (tab.path.startsWith("__terminal__:")) continue;
+      if (tab.path.startsWith("__terminal__:") || tab.path.startsWith("__chat__")) continue;
 
       try {
         // Check if file still exists by trying to read it
@@ -165,6 +167,14 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
   }
   if (state.chatPanelDock) {
     chatPanelDock.set(state.chatPanelDock);
+  }
+
+  if (state.chatPanelDock === "tab") {
+    if (state.chatPanelVisible) {
+      openChatTab();
+    } else {
+      closeChatTab();
+    }
   }
 
   // Update sidebar view ref for future saves

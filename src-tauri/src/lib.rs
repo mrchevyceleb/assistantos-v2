@@ -1034,8 +1034,7 @@ async fn mcp_post_jsonrpc(
         return Err(format!("MCP HTTP error {}: {}", status, text));
     }
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("Invalid MCP JSON response: {}", e))?;
+    let parsed: serde_json::Value = parse_mcp_json_response(&text, body.get("id"))?;
 
     if let Some(err) = parsed.get("error") {
         return Err(format!("MCP JSON-RPC error: {}", err));
@@ -1044,12 +1043,149 @@ async fn mcp_post_jsonrpc(
     Ok((parsed, response_session_id))
 }
 
+fn parse_mcp_json_response(
+    text: &str,
+    expected_id: Option<&serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("Empty MCP response body".to_string());
+    }
+
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(expected) = expected_id {
+            if parsed.get("id") == Some(expected) {
+                return Ok(parsed);
+            }
+        } else {
+            return Ok(parsed);
+        }
+
+        if parsed.get("result").is_some() || parsed.get("error").is_some() {
+            return Ok(parsed);
+        }
+    }
+
+    let mut frames: Vec<serde_json::Value> = Vec::new();
+
+    for line in trimmed.lines() {
+        let line = line.trim();
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let payload = data.trim();
+        if payload.is_empty() || payload == "[DONE]" {
+            continue;
+        }
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(payload) {
+            if let Some(expected) = expected_id {
+                if parsed.get("id") == Some(expected) {
+                    return Ok(parsed);
+                }
+            } else {
+                return Ok(parsed);
+            }
+            frames.push(parsed);
+        }
+    }
+
+    if let Some(frame) = frames
+        .into_iter()
+        .find(|v| v.get("result").is_some() || v.get("error").is_some())
+    {
+        return Ok(frame);
+    }
+
+    Err("Invalid MCP JSON response".to_string())
+}
+
+fn push_candidate(candidates: &mut Vec<String>, candidate: String) {
+    if !candidate.is_empty() && !candidates.contains(&candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn mcp_endpoint_candidates(server_url: &str) -> Vec<String> {
+    let raw = server_url.trim();
+    if raw.is_empty() {
+        return vec![];
+    }
+
+    let mut candidates = Vec::new();
+    let normalized = raw.trim_end_matches('/').to_string();
+    push_candidate(&mut candidates, normalized.clone());
+
+    if let Ok(url) = reqwest::Url::parse(raw) {
+        let path = url.path().trim_end_matches('/');
+
+        if path.is_empty() || path == "/" {
+            for suffix in ["/mcp", "/rpc", "/api/mcp"] {
+                let mut candidate = url.clone();
+                candidate.set_path(suffix);
+                push_candidate(
+                    &mut candidates,
+                    candidate.to_string().trim_end_matches('/').to_string(),
+                );
+            }
+        } else if !path.ends_with("/mcp") {
+            let mut candidate = url.clone();
+            candidate.set_path(&format!("{}/mcp", path));
+            push_candidate(
+                &mut candidates,
+                candidate.to_string().trim_end_matches('/').to_string(),
+            );
+        }
+    }
+
+    candidates
+}
+
+async fn mcp_try_initialize_at_endpoint(
+    client: &reqwest::Client,
+    server_url: &str,
+    headers: &HeaderMap,
+    protocol_version: &str,
+) -> Result<Option<String>, String> {
+    let init_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": "assistantos-init",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": protocol_version,
+            "capabilities": {},
+            "clientInfo": {
+                "name": "AssistantOS",
+                "version": "1.0.3"
+            }
+        }
+    });
+
+    let (_init_response, mut session_id) =
+        mcp_post_jsonrpc(client, server_url, headers, None, init_body).await?;
+
+    let initialized_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    });
+
+    if let Ok((_, sid)) =
+        mcp_post_jsonrpc(client, server_url, headers, session_id.as_deref(), initialized_body).await
+    {
+        if sid.is_some() {
+            session_id = sid;
+        }
+    }
+
+    Ok(session_id)
+}
+
 async fn mcp_initialize_session(
     server_url: &str,
     auth_token: Option<String>,
     headers_json: Option<String>,
     timeout_ms: Option<u64>,
-) -> Result<(reqwest::Client, HeaderMap, Option<String>), String> {
+) -> Result<(reqwest::Client, HeaderMap, Option<String>, String), String> {
     let mut headers = parse_mcp_headers(headers_json)?;
     if let Some(token) = auth_token {
         if !token.trim().is_empty() {
@@ -1069,38 +1205,34 @@ async fn mcp_initialize_session(
         .build()
         .map_err(|e| format!("Failed to create MCP HTTP client: {}", e))?;
 
-    let init_body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": "assistantos-init",
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "AssistantOS",
-                "version": "1.0.0"
+    let endpoints = mcp_endpoint_candidates(server_url);
+    if endpoints.is_empty() {
+        return Err("MCP server URL is empty".to_string());
+    }
+
+    let protocol_versions = ["2024-11-05", "2024-10-07"];
+    let mut errors = Vec::new();
+
+    for endpoint in endpoints {
+        for protocol_version in protocol_versions {
+            match mcp_try_initialize_at_endpoint(&client, &endpoint, &headers, protocol_version).await {
+                Ok(session_id) => {
+                    return Ok((client, headers, session_id, endpoint));
+                }
+                Err(err) => {
+                    errors.push(format!(
+                        "endpoint={} protocolVersion={} error={}",
+                        endpoint, protocol_version, err
+                    ));
+                }
             }
-        }
-    });
-
-    let (_init_response, mut session_id) =
-        mcp_post_jsonrpc(&client, server_url, &headers, None, init_body).await?;
-
-    let initialized_body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized",
-        "params": {}
-    });
-
-    if let Ok((_, sid)) =
-        mcp_post_jsonrpc(&client, server_url, &headers, session_id.as_deref(), initialized_body).await
-    {
-        if sid.is_some() {
-            session_id = sid;
         }
     }
 
-    Ok((client, headers, session_id))
+    Err(format!(
+        "Failed to initialize MCP session. Tried endpoints and protocol versions: {}",
+        errors.join(" | ")
+    ))
 }
 
 #[tauri::command]
@@ -1110,7 +1242,7 @@ async fn mcp_list_tools(
     headers_json: Option<String>,
     timeout_ms: Option<u64>,
 ) -> Result<String, String> {
-    let (client, headers, session_id) =
+    let (client, headers, session_id, resolved_url) =
         mcp_initialize_session(&server_url, auth_token, headers_json, timeout_ms).await?;
 
     let tools_body = serde_json::json!({
@@ -1121,7 +1253,7 @@ async fn mcp_list_tools(
     });
 
     let (resp, _) =
-        mcp_post_jsonrpc(&client, &server_url, &headers, session_id.as_deref(), tools_body).await?;
+        mcp_post_jsonrpc(&client, &resolved_url, &headers, session_id.as_deref(), tools_body).await?;
 
     let tools = resp
         .get("result")
@@ -1141,7 +1273,7 @@ async fn mcp_call_tool(
     headers_json: Option<String>,
     timeout_ms: Option<u64>,
 ) -> Result<String, String> {
-    let (client, headers, session_id) =
+    let (client, headers, session_id, resolved_url) =
         mcp_initialize_session(&server_url, auth_token, headers_json, timeout_ms).await?;
 
     let args_value: serde_json::Value = if arguments_json.trim().is_empty() {
@@ -1162,7 +1294,7 @@ async fn mcp_call_tool(
     });
 
     let (resp, _) =
-        mcp_post_jsonrpc(&client, &server_url, &headers, session_id.as_deref(), call_body).await?;
+        mcp_post_jsonrpc(&client, &resolved_url, &headers, session_id.as_deref(), call_body).await?;
 
     Ok(resp
         .get("result")
