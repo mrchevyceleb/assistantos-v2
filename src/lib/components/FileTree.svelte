@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { get } from "svelte/store";
+  import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { workspacePath, fileTree, isLoadingTree, workspaceName } from "$lib/stores/workspace";
   import { openTab } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
   import { settings } from "$lib/stores/settings";
-  import { readDirectoryTree, readFileText, createFile, renamePath, deletePath } from "$lib/utils/tauri";
+  import { readDirectoryTree, readFileText, createFile, renamePath, deletePath, importPaths } from "$lib/utils/tauri";
   import { updateTabContent, setTabLoading } from "$lib/stores/tabs";
   import type { FileNode } from "$lib/utils/tauri";
   import FileTreeNode from "./FileTreeNode.svelte";
@@ -13,6 +15,8 @@
 
   let filterText = $state("");
   let collapseVersion = $state(0);
+  let treeRootEl: HTMLDivElement | null = null;
+  let externalDragActive = $state(false);
 
   // Context menu state
   let contextMenu = $state<{
@@ -46,6 +50,112 @@
     filterText = "";
     collapseVersion += 1;
   }
+
+  function normalizePath(path: string): string {
+    return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }
+
+  function isSubPath(parentPath: string, childPath: string): boolean {
+    const parent = normalizePath(parentPath);
+    const child = normalizePath(childPath);
+    return child === parent || child.startsWith(`${parent}/`);
+  }
+
+  function isPointInsideTree(x: number, y: number): boolean {
+    if (!treeRootEl) return false;
+    const rect = treeRootEl.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function targetDirectoryFromPoint(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const row = el?.closest("[data-tree-node-path]") as HTMLElement | null;
+    if (!row) return $workspacePath;
+
+    const nodePath = row.dataset.treeNodePath;
+    if (!nodePath) return $workspacePath;
+    const isDir = row.dataset.treeNodeDir === "true";
+    return isDir ? nodePath : getParentPath(nodePath);
+  }
+
+  async function handleMoveNode(source: { path: string; name: string; isDir: boolean }, destinationDir: string) {
+    if (!destinationDir) return;
+
+    if (source.isDir && isSubPath(source.path, destinationDir)) {
+      window.alert("You cannot move a folder into itself.");
+      return;
+    }
+
+    const sourceParent = getParentPath(source.path);
+    if (normalizePath(sourceParent) === normalizePath(destinationDir)) {
+      return;
+    }
+
+    try {
+      await importPaths([source.path], destinationDir, true);
+      await refreshTree();
+    } catch (e) {
+      console.error("Failed to move path:", e);
+      window.alert(`Failed to move "${source.name}".`);
+    }
+  }
+
+  onMount(() => {
+    let unlistenDragDrop: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const appWindow = getCurrentWebviewWindow();
+        unlistenDragDrop = await appWindow.onDragDropEvent(async (event: any) => {
+          const payload = event?.payload;
+          const type = payload?.type;
+
+          if (type === "leave") {
+            externalDragActive = false;
+            return;
+          }
+
+          const position = payload?.position;
+          if (!position || !$workspacePath) return;
+
+          const insideTree = isPointInsideTree(position.x, position.y);
+
+          if (type === "enter" || type === "over") {
+            externalDragActive = insideTree;
+            return;
+          }
+
+          if (type !== "drop") return;
+
+          externalDragActive = false;
+          if (!insideTree) return;
+
+          const droppedPaths = Array.isArray(payload?.paths) ? (payload.paths as string[]) : [];
+          if (droppedPaths.length === 0) return;
+
+          const destinationDir = targetDirectoryFromPoint(position.x, position.y) || $workspacePath;
+          if (!destinationDir) return;
+
+          const moveItems = window.confirm("Move dropped items here?\nPress Cancel to copy instead.");
+          try {
+            await importPaths(droppedPaths, destinationDir, moveItems);
+            await refreshTree();
+          } catch (e) {
+            console.error("Failed to import dropped paths:", e);
+            window.alert("Failed to import dropped files/folders.");
+          }
+        });
+      } catch (e) {
+        console.error("Failed to initialize drag-and-drop listener:", e);
+      }
+    })();
+
+    return () => {
+      if (unlistenDragDrop) {
+        unlistenDragDrop();
+      }
+    };
+  });
 
   async function handleOpenFolder() {
     try {
@@ -219,7 +329,7 @@
   });
 </script>
 
-<div class="flex flex-col h-full metal-inset panel-lift rounded-xl overflow-hidden">
+<div class="relative flex flex-col h-full metal-inset panel-lift rounded-xl overflow-hidden" bind:this={treeRootEl}>
   <!-- Header -->
   <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 14px 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -1px 0 rgba(0,0,0,0.45);">
     <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: calc(15px * var(--ui-zoom));" title={$workspaceName}>
@@ -304,6 +414,7 @@
           depth={0}
           onFileClick={handleFileClick}
           onContextMenu={handleContextMenu}
+          onMoveNode={handleMoveNode}
           {filterText}
           {collapseVersion}
         />
@@ -325,6 +436,12 @@
       </div>
     {/if}
   </div>
+
+  {#if externalDragActive}
+    <div class="pointer-events-none absolute inset-0 z-30 bg-accent/10 border-2 border-dashed border-accent/70 rounded-xl flex items-center justify-center text-text-primary" style="font-size: calc(14px * var(--ui-zoom));">
+      Drop files or folders to import
+    </div>
+  {/if}
 </div>
 
 <!-- Context Menu -->

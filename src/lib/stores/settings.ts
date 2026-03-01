@@ -23,11 +23,13 @@ export interface AppSettings {
   aiMaxTokens: number;
   aiEnableToolUse: boolean;
   aiConfirmWrites: boolean;
+  aiYoloMode: boolean;
   aiMaxToolIterations: number;
   aiFavoriteModels: string[];
   aiChatDock: "right" | "bottom" | "tab";
   aiReadInstructionsEveryMessage: boolean;
   aiEnableAtMentions: boolean;
+  aiSlashCommandDirs: string[];
   mcpServers: MCPServerConfig[];
 }
 
@@ -64,10 +66,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiMaxTokens: 16384,
   aiEnableToolUse: true,
   aiConfirmWrites: true,
+  aiYoloMode: false,
   aiMaxToolIterations: 25,
   aiChatDock: "bottom",
   aiReadInstructionsEveryMessage: true,
   aiEnableAtMentions: true,
+  aiSlashCommandDirs: [],
   aiFavoriteModels: [
     'anthropic/claude-sonnet-4',
     'anthropic/claude-opus-4',

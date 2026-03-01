@@ -52,10 +52,19 @@ export interface AIChatSettings {
   baseUrl: string;
   temperature: number;
   maxTokens: number;
+  contextWindow?: number;
   enableToolUse: boolean;
   confirmWrites: boolean;
+  yoloMode?: boolean;
   maxToolIterations: number;
   readInstructionsEachMessage?: boolean;
+}
+
+export interface ContextUsage {
+  usedTokens: number;
+  maxTokens: number;
+  remainingTokens: number;
+  usedPercent: number;
 }
 
 export const DEFAULT_AI_SETTINGS: AIChatSettings = {
@@ -64,8 +73,10 @@ export const DEFAULT_AI_SETTINGS: AIChatSettings = {
   baseUrl: 'https://openrouter.ai/api/v1',
   temperature: 0.7,
   maxTokens: 16384,
+  contextWindow: 128000,
   enableToolUse: true,
   confirmWrites: true,
+  yoloMode: false,
   maxToolIterations: 25,
   readInstructionsEachMessage: true,
 };
@@ -94,6 +105,8 @@ export interface ChatEngineCallbacks {
   onToolCall: (toolCalls: ToolCall[]) => void;
   onToolResult: (results: ToolResult[]) => void;
   onToolConfirmation: (toolCall: ToolCall) => Promise<boolean>;
+  onContextUsage?: (usage: ContextUsage) => void;
+  onCompaction?: (compactedMessageCount: number) => void;
   onDone: (fullContent: string) => void;
   onError: (error: string) => void;
 }

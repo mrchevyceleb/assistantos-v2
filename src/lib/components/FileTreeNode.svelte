@@ -10,14 +10,24 @@
     depth: number;
     onFileClick: (node: FileNode) => void;
     onContextMenu?: (node: FileNode, x: number, y: number) => void;
+    onMoveNode?: (source: { path: string; name: string; isDir: boolean }, destinationDir: string) => void;
     filterText?: string;
     collapseVersion?: number;
   }
 
-  let { node, depth, onFileClick, onContextMenu, filterText = "", collapseVersion = 0 }: Props = $props();
+  let {
+    node,
+    depth,
+    onFileClick,
+    onContextMenu,
+    onMoveNode,
+    filterText = "",
+    collapseVersion = 0,
+  }: Props = $props();
   let expanded = $state(false);
   let children = $state<FileNode[]>([]);
   let loaded = $state(false);
+  let dropActive = $state(false);
 
   $effect(() => {
     children = node.children || [];
@@ -43,6 +53,54 @@
     e.preventDefault();
     e.stopPropagation();
     onContextMenu?.(node, e.clientX, e.clientY);
+  }
+
+  function getParentPath(filePath: string): string {
+    const sep = filePath.includes("\\") ? "\\" : "/";
+    const parts = filePath.split(sep);
+    parts.pop();
+    return parts.join(sep);
+  }
+
+  function dropDestinationDirectory(): string {
+    return node.is_dir ? node.path : getParentPath(node.path);
+  }
+
+  function handleDragStart(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(
+      "application/x-assistantos-node",
+      JSON.stringify({ path: node.path, name: node.name, isDir: node.is_dir }),
+    );
+  }
+
+  function handleDragOver(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes("application/x-assistantos-node")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    dropActive = true;
+  }
+
+  function handleDragLeave() {
+    dropActive = false;
+  }
+
+  function handleDrop(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes("application/x-assistantos-node")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dropActive = false;
+
+    const payload = e.dataTransfer.getData("application/x-assistantos-node");
+    if (!payload) return;
+
+    try {
+      const source = JSON.parse(payload) as { path: string; name: string; isDir: boolean };
+      onMoveNode?.(source, dropDestinationDirectory());
+    } catch {
+      // Ignore malformed drag payloads.
+    }
   }
 
   function filteredChildren(items: FileNode[]): FileNode[] {
@@ -82,8 +140,16 @@
   style="padding-top: 11px; padding-bottom: 11px; font-size: calc(18px * var(--ui-zoom));"
   style:padding-left={paddingLeft}
   style:border-left={depth > 0 ? "1px solid rgba(148,163,184,0.16)" : "none"}
+  class:drop-target={dropActive}
   onclick={toggle}
   oncontextmenu={handleContextMenu}
+  ondragstart={handleDragStart}
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={handleDrop}
+  draggable="true"
+  data-tree-node-path={node.path}
+  data-tree-node-dir={node.is_dir ? "true" : "false"}
   role="treeitem"
   aria-selected="false"
   aria-expanded={node.is_dir ? expanded : undefined}
@@ -145,6 +211,7 @@
       depth={depth + 1}
       {onFileClick}
       {onContextMenu}
+      {onMoveNode}
       {filterText}
       {collapseVersion}
     />
@@ -161,5 +228,12 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.09),
       inset 0 -1px 0 rgba(0, 0, 0, 0.35),
       0 4px 12px rgba(0, 0, 0, 0.18);
+  }
+
+  .drop-target {
+    box-shadow:
+      inset 0 0 0 2px rgba(88, 180, 208, 0.72),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    background: rgba(88, 180, 208, 0.12);
   }
 </style>

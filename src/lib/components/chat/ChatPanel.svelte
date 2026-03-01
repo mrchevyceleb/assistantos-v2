@@ -9,28 +9,33 @@
     updateToolCallStatus, pendingConfirmation,
     type PendingConfirmation, type UIToolCall,
   } from '$lib/stores/chat';
-  import { chatPanelDock } from '$lib/stores/chat';
-  import { settings, updateSetting } from '$lib/stores/settings';
-  import { ChatEngine } from '$lib/ai/chat/chat-engine';
-  import { ChatSession } from '$lib/ai/chat/session';
-  import type { AIChatSettings, ToolCall, ToolResult } from '$lib/ai/types';
-  import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
+import { chatPanelDock } from '$lib/stores/chat';
+import { settings, updateSetting } from '$lib/stores/settings';
+import { ChatEngine } from '$lib/ai/chat/chat-engine';
+import { ChatSession } from '$lib/ai/chat/session';
+import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
+import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
+import { availableModels } from '$lib/stores/models';
 
   let messagesContainer: HTMLDivElement;
   let engine: ChatEngine | null = null;
   let currentStreamingId: string | null = null;
   let modelSwitcherOpen = $state(false);
+  let contextUsage = $state<ContextUsage | null>(null);
 
   function getAISettings(): AIChatSettings {
     const s = get(settings);
+    const model = get(availableModels).find((m) => m.id === s.aiModel);
     return {
       apiKey: s.aiApiKey.trim(),
       model: s.aiModel,
       baseUrl: s.aiBaseUrl.trim().replace(/\/+$/, ''),
       temperature: s.aiTemperature,
       maxTokens: s.aiMaxTokens,
+      contextWindow: model?.context_length || 128000,
       enableToolUse: s.aiEnableToolUse,
       confirmWrites: s.aiConfirmWrites,
+      yoloMode: s.aiYoloMode,
       maxToolIterations: s.aiMaxToolIterations,
       readInstructionsEachMessage: s.aiReadInstructionsEveryMessage,
     };
@@ -40,7 +45,7 @@
     const session = new ChatSession();
     const aiSettings = getAISettings();
 
-    return new ChatEngine(session, aiSettings, {
+    const createdEngine = new ChatEngine(session, aiSettings, {
       onChunk: (content: string) => {
         if (currentStreamingId) {
           appendToStreamingMessage(currentStreamingId, content);
@@ -87,6 +92,12 @@
           });
         });
       },
+      onContextUsage: (usage: ContextUsage) => {
+        contextUsage = usage;
+      },
+      onCompaction: (compactedMessageCount: number) => {
+        addUIMessage('system', `Context compacted (${compactedMessageCount} earlier messages summarized).`);
+      },
       onDone: (_fullContent: string) => {
         if (currentStreamingId) {
           const msgs = get(chatMessages);
@@ -125,9 +136,22 @@
         chatIsLoading.set(false);
       },
     });
+
+    contextUsage = createdEngine.getContextUsage();
+
+    return createdEngine;
   }
 
-  async function handleSend(message: string, payload?: { mentions?: string[]; steer?: string }) {
+  async function handleSend(
+    message: string,
+    payload?: {
+      mentions?: string[];
+      steer?: string;
+      slashCommandName?: string;
+      slashCommandPrompt?: string;
+      slashCommandArgs?: string;
+    },
+  ) {
     if (!message.trim()) return;
     if (get(chatIsLoading)) return;
 
@@ -170,6 +194,7 @@
     clearChat();
     engine = null;
     currentStreamingId = null;
+    contextUsage = null;
     chatIsLoading.set(false);
   }
 
@@ -199,8 +224,48 @@
     scrollToBottom();
   });
 
+  $effect(() => {
+    if ($settings.aiYoloMode && $pendingConfirmation) {
+      handleConfirm(true);
+    }
+  });
+
+  $effect(() => {
+    $settings.aiModel;
+    $settings.aiMaxTokens;
+    if (engine) {
+      engine.updateSettings(getAISettings());
+      contextUsage = engine.getContextUsage();
+    }
+  });
+
   function modelDisplayName(model: string): string {
     return model.split('/').pop() || model;
+  }
+
+  function contextText(): string {
+    if (!contextUsage) return 'Context --';
+    const remainingPct = Math.max(0, 100 - contextUsage.usedPercent);
+    return `Context ${remainingPct.toFixed(0)}% left`;
+  }
+
+  async function handleCompactNow() {
+    if (get(chatIsLoading)) return;
+    if (get(chatMessages).length === 0) return;
+    if (!engine) {
+      engine = initEngine();
+    }
+    try {
+      const { usage, compacted } = await engine.compactNow();
+      contextUsage = usage;
+      if (compacted) {
+        addUIMessage('system', 'Manual compaction complete.');
+      } else {
+        addUIMessage('system', 'No compaction needed yet.');
+      }
+    } catch (e) {
+      addUIMessage('system', `Compaction failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   function cycleDock() {
@@ -268,8 +333,20 @@
           </div>
         {/if}
       </div>
+      <div class="text-text-muted shrink-0" style="font-size: calc(12.5px * var(--ui-zoom));">
+        {contextText()}
+      </div>
     </div>
     <div class="flex items-center gap-1">
+      <button
+        class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
+        style="font-size: calc(13px * var(--ui-zoom));"
+        onclick={handleCompactNow}
+        disabled={$chatIsLoading}
+        title="Compact context now"
+      >
+        Compact
+      </button>
       <button
         class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
         style="font-size: calc(13px * var(--ui-zoom));"

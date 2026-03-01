@@ -29,6 +29,11 @@ export class ChatSession {
     return [...this.messages];
   }
 
+  replaceMessages(messages: ChatMessage[]): void {
+    this.messages = [...messages];
+    this.updatedAt = Date.now();
+  }
+
   clear(): void {
     this.messages = [];
     this.updatedAt = Date.now();

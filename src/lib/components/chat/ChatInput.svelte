@@ -1,11 +1,21 @@
 <script lang="ts">
   import { workspacePath, fileTree } from "$lib/stores/workspace";
   import { settings } from "$lib/stores/settings";
-  import { listAllFiles } from "$lib/utils/tauri";
+  import { listAllFiles, readDirectoryChildren, readFileText } from "$lib/utils/tauri";
 
   interface SendPayload {
     mentions?: string[];
     steer?: string;
+    slashCommandName?: string;
+    slashCommandPrompt?: string;
+    slashCommandArgs?: string;
+  }
+
+  interface SlashCommand {
+    name: string;
+    prompt: string;
+    description?: string;
+    sourcePath: string;
   }
 
   interface Props {
@@ -28,6 +38,10 @@
   let mentionSuggestions = $state<Array<{ path: string; kind: "file" | "folder" }>>([]);
   let mentionSelectedIndex = $state(0);
   let selectedMentions = $state<string[]>([]);
+  let slashCommands = $state<SlashCommand[]>([]);
+  let slashSuggestions = $state<SlashCommand[]>([]);
+  let slashSelectedIndex = $state(0);
+  let loadingSlashCommands = $state(false);
 
   $effect(() => {
     const root = $workspacePath;
@@ -63,6 +77,183 @@
         allMentions = [];
       });
   });
+
+  function normalizeCommandName(raw: string): string {
+    return raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9._-]/g, "");
+  }
+
+  function parseJsonSlashCommands(json: unknown, sourcePath: string): SlashCommand[] {
+    const commands: SlashCommand[] = [];
+
+    const pushCommand = (name: string, prompt: string, description?: string) => {
+      const normalized = normalizeCommandName(name);
+      const trimmedPrompt = prompt.trim();
+      if (!normalized || !trimmedPrompt) return;
+      commands.push({ name: normalized, prompt: trimmedPrompt, description, sourcePath });
+    };
+
+    if (Array.isArray(json)) {
+      for (const entry of json) {
+        if (!entry || typeof entry !== "object") continue;
+        const obj = entry as Record<string, unknown>;
+        if (typeof obj.name === "string" && typeof obj.prompt === "string") {
+          pushCommand(obj.name, obj.prompt, typeof obj.description === "string" ? obj.description : undefined);
+        }
+      }
+      return commands;
+    }
+
+    if (json && typeof json === "object") {
+      const obj = json as Record<string, unknown>;
+      if (typeof obj.name === "string" && typeof obj.prompt === "string") {
+        pushCommand(obj.name, obj.prompt, typeof obj.description === "string" ? obj.description : undefined);
+        return commands;
+      }
+
+      for (const [name, value] of Object.entries(obj)) {
+        if (typeof value === "string") {
+          pushCommand(name, value);
+        } else if (value && typeof value === "object") {
+          const nested = value as Record<string, unknown>;
+          if (typeof nested.prompt === "string") {
+            pushCommand(
+              typeof nested.name === "string" ? nested.name : name,
+              nested.prompt,
+              typeof nested.description === "string" ? nested.description : undefined,
+            );
+          }
+        }
+      }
+    }
+
+    return commands;
+  }
+
+  async function loadSlashCommands() {
+    const dirs = $settings.aiSlashCommandDirs || [];
+    if (dirs.length === 0) {
+      slashCommands = [];
+      slashSuggestions = [];
+      return;
+    }
+
+    loadingSlashCommands = true;
+    try {
+      const collected: SlashCommand[] = [];
+
+      for (const dir of dirs) {
+        try {
+          const children = await readDirectoryChildren(dir, true);
+          const commandFiles = children.filter((child) => {
+            if (child.is_dir) return false;
+            const ext = (child.ext || "").toLowerCase();
+            return ext === "md" || ext === "markdown" || ext === "json";
+          });
+
+          for (const file of commandFiles) {
+            try {
+              const content = await readFileText(file.path);
+              const ext = (file.ext || "").toLowerCase();
+              if (ext === "md" || ext === "markdown") {
+                const commandName = normalizeCommandName(file.name.replace(/\.(md|markdown)$/i, ""));
+                if (!commandName || !content.trim()) continue;
+                const firstLine = content.split(/\r?\n/).find((line) => line.trim().length > 0)?.replace(/^#+\s*/, "").trim();
+                collected.push({
+                  name: commandName,
+                  prompt: content.trim(),
+                  description: firstLine,
+                  sourcePath: file.path,
+                });
+              } else if (ext === "json") {
+                try {
+                  const parsed = JSON.parse(content);
+                  collected.push(...parseJsonSlashCommands(parsed, file.path));
+                } catch {
+                  // Ignore malformed slash-command JSON files.
+                }
+              }
+            } catch {
+              // Skip unreadable files.
+            }
+          }
+        } catch {
+          // Skip invalid slash command directory.
+        }
+      }
+
+      const deduped = new Map<string, SlashCommand>();
+      for (const command of collected) {
+        deduped.set(command.name, command);
+      }
+      slashCommands = Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name));
+      updateSlashSuggestions();
+    } finally {
+      loadingSlashCommands = false;
+    }
+  }
+
+  $effect(() => {
+    $settings.aiSlashCommandDirs;
+    void loadSlashCommands();
+  });
+
+  function updateSlashSuggestions() {
+    if (!textarea) {
+      slashSuggestions = [];
+      return;
+    }
+
+    const cursor = textarea.selectionStart;
+    const before = inputText.slice(0, cursor);
+    const tokenMatch = before.match(/^\/([^\s]*)$/);
+    if (!tokenMatch) {
+      slashSuggestions = [];
+      slashSelectedIndex = 0;
+      return;
+    }
+
+    const query = tokenMatch[1].toLowerCase();
+    slashSuggestions = slashCommands
+      .filter((cmd) => !query || cmd.name.includes(query))
+      .slice(0, 8);
+    slashSelectedIndex = 0;
+  }
+
+  function applySlashCommand(command: SlashCommand) {
+    const rest = inputText.replace(/^\/[^\s]*/, "").trimStart();
+    inputText = `/${command.name}${rest ? ` ${rest}` : " "}`;
+    slashSuggestions = [];
+
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      const cursor = inputText.length;
+      if (textarea) {
+        textarea.selectionStart = cursor;
+        textarea.selectionEnd = cursor;
+      }
+      autoResize();
+    });
+  }
+
+  function resolveSlashCommandPayload(text: string): SendPayload | undefined {
+    const match = text.match(/^\/([^\s]+)(?:\s+(.*))?$/);
+    if (!match) return undefined;
+
+    const commandName = normalizeCommandName(match[1]);
+    const command = slashCommands.find((c) => c.name === commandName);
+    if (!command) return undefined;
+
+    const args = (match[2] || "").trim();
+    return {
+      slashCommandName: command.name,
+      slashCommandPrompt: command.prompt,
+      slashCommandArgs: args,
+    };
+  }
 
   function updateMentionSuggestions() {
     if (!$settings.aiEnableAtMentions || !textarea) {
@@ -124,6 +315,29 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (slashSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slashSelectedIndex = Math.min(slashSelectedIndex + 1, slashSuggestions.length - 1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slashSelectedIndex = Math.max(slashSelectedIndex - 1, 0);
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        const selected = slashSuggestions[slashSelectedIndex];
+        if (selected) applySlashCommand(selected);
+        return;
+      }
+      if (e.key === "Escape") {
+        slashSuggestions = [];
+        return;
+      }
+    }
+
     if (mentionSuggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -164,12 +378,14 @@
     const text = inputText.trim();
     if (!text) return;
     const mentions = selectedMentions.length > 0 ? [...selectedMentions] : undefined;
+    const slashPayload = resolveSlashCommandPayload(text);
     inputText = "";
     selectedMentions = [];
     mentionSuggestions = [];
+    slashSuggestions = [];
     mentionAnchor = -1;
     if (textarea) textarea.style.height = "auto";
-    onSend(text, { mentions });
+    onSend(text, { mentions, ...slashPayload });
   }
 
   function submitSteer() {
@@ -190,6 +406,7 @@
   function handleInput() {
     autoResize();
     updateMentionSuggestions();
+    updateSlashSuggestions();
   }
 
   $effect(() => {
@@ -247,6 +464,24 @@
             {/each}
           </div>
         {/if}
+
+        {#if slashSuggestions.length > 0}
+          <div class="absolute z-50 left-3 right-3 bottom-[100%] mb-2 rounded-lg border border-border bg-bg-primary/95 max-h-52 overflow-y-auto shadow-2xl">
+            {#each slashSuggestions as suggestion, i (suggestion.name)}
+              <button
+                class="w-full text-left px-3 py-2 transition-colors {i === slashSelectedIndex ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-bg-hover'}"
+                style="font-size: calc(13px * var(--ui-zoom));"
+                onclick={() => applySlashCommand(suggestion)}
+                title={suggestion.sourcePath}
+              >
+                <div class="font-mono">/{suggestion.name}</div>
+                {#if suggestion.description}
+                  <div class="text-[12px] opacity-70 truncate">{suggestion.description}</div>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       {#if showSteerBox && isLoading}
@@ -275,9 +510,9 @@
           {#if isLoading}
             Generating...
           {:else if $settings.aiEnableAtMentions}
-            Enter to send, @ to tag files
+            Enter to send, @ for files, / for commands
           {:else}
-            Enter to send
+            Enter to send, / for commands
           {/if}
         </div>
 

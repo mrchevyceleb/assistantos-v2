@@ -2,6 +2,7 @@ import { writable, derived, get } from "svelte/store";
 import type { ViewerType } from "$lib/utils/file-types";
 import { getViewerType } from "$lib/utils/file-types";
 import { chatPanelVisible, chatPanelDock } from "$lib/stores/chat";
+import { settings } from "$lib/stores/settings";
 
 export interface Tab {
   id: string;
@@ -60,7 +61,7 @@ export function openTab(path: string, name: string, ext?: string): string {
   return id;
 }
 
-export function closeTab(id: string, options?: { forceTerminal?: boolean }) {
+export function closeTab(id: string, options?: { forceTerminal?: boolean; skipConfirm?: boolean }) {
   const currentTabs = get(tabs);
   const idx = currentTabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
@@ -70,6 +71,22 @@ export function closeTab(id: string, options?: { forceTerminal?: boolean }) {
     // Terminal tabs require explicit force from a caller that has already
     // confirmed intent, which prevents accidental data-loss closes.
     return;
+  }
+
+  if (!options?.skipConfirm) {
+    const currentSettings = get(settings);
+
+    if (closingTab.viewerType === "terminal") {
+      if (!window.confirm(`Close terminal tab "${closingTab.name}"? This will end the session.`)) {
+        return;
+      }
+    }
+
+    if (currentSettings.confirmCloseUnsaved && closingTab.isModified) {
+      if (!window.confirm(`"${closingTab.name}" has unsaved changes. Close anyway?`)) {
+        return;
+      }
+    }
   }
 
   // Track recently closed tabs so users can recover accidental closes.
@@ -207,7 +224,7 @@ export function closeTerminalTab(terminalId: string) {
   const path = `__terminal__:${terminalId}`;
   const tab = currentTabs.find((t) => t.path === path);
   if (tab) {
-    closeTab(tab.id, { forceTerminal: true });
+    closeTab(tab.id, { forceTerminal: true, skipConfirm: true });
   }
 }
 
@@ -243,6 +260,6 @@ export function closeChatTab() {
   const currentTabs = get(tabs);
   const tab = currentTabs.find((t) => t.path === CHAT_TAB_PATH);
   if (tab) {
-    closeTab(tab.id);
+    closeTab(tab.id, { skipConfirm: true });
   }
 }

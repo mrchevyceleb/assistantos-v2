@@ -240,6 +240,144 @@ fn create_file(path: String, is_dir: bool) -> Result<(), String> {
     }
 }
 
+fn copy_path_recursive(source: &Path, destination: &Path) -> Result<(), String> {
+    if source.is_dir() {
+        fs::create_dir_all(destination).map_err(|e| e.to_string())?;
+        let entries = fs::read_dir(source).map_err(|e| e.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let child_source = entry.path();
+            let child_destination = destination.join(entry.file_name());
+            copy_path_recursive(&child_source, &child_destination)?;
+        }
+        Ok(())
+    } else {
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::copy(source, destination).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+fn remove_path_recursive(path: &Path) -> Result<(), String> {
+    if path.is_dir() {
+        fs::remove_dir_all(path).map_err(|e| e.to_string())
+    } else {
+        fs::remove_file(path).map_err(|e| e.to_string())
+    }
+}
+
+fn move_path_with_fallback(source: &Path, destination: &Path) -> Result<(), String> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    match fs::rename(source, destination) {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            copy_path_recursive(source, destination)?;
+            remove_path_recursive(source)?;
+            Ok(())
+        }
+    }
+}
+
+fn unique_destination_path(destination_dir: &Path, source: &Path) -> Result<PathBuf, String> {
+    let name = source
+        .file_name()
+        .ok_or_else(|| format!("Invalid source path: {}", source.display()))?
+        .to_string_lossy()
+        .to_string();
+
+    let mut candidate = destination_dir.join(&name);
+    if !candidate.exists() {
+        return Ok(candidate);
+    }
+
+    let is_dir = source.is_dir();
+    let (stem, ext) = if is_dir {
+        (name.clone(), None)
+    } else {
+        let p = Path::new(&name);
+        (
+            p.file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or(name.clone()),
+            p.extension().map(|e| e.to_string_lossy().to_string()),
+        )
+    };
+
+    for index in 1..10_000 {
+        let suffix = if index == 1 {
+            " copy".to_string()
+        } else {
+            format!(" copy {}", index)
+        };
+
+        let new_name = match &ext {
+            Some(extension) => format!("{}{}.{}", stem, suffix, extension),
+            None => format!("{}{}", stem, suffix),
+        };
+
+        candidate = destination_dir.join(new_name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    Err("Unable to resolve non-conflicting destination path".to_string())
+}
+
+#[tauri::command]
+fn import_paths(
+    paths: Vec<String>,
+    destination_dir: String,
+    move_items: bool,
+) -> Result<Vec<String>, String> {
+    let destination = PathBuf::from(&destination_dir);
+    if !destination.exists() || !destination.is_dir() {
+        return Err(format!(
+            "Destination is not a directory: {}",
+            destination.display()
+        ));
+    }
+
+    let mut imported_paths: Vec<String> = Vec::new();
+    let destination_abs = fs::canonicalize(&destination)
+        .map_err(|e| format!("Failed to resolve destination path: {}", e))?;
+
+    for source_str in paths {
+        let source = PathBuf::from(&source_str);
+        if !source.exists() {
+            return Err(format!("Source does not exist: {}", source.display()));
+        }
+
+        if source.is_dir() {
+            let source_abs = fs::canonicalize(&source)
+                .map_err(|e| format!("Failed to resolve source path: {}", e))?;
+            if destination_abs.starts_with(&source_abs) {
+                return Err(format!(
+                    "Cannot import a folder into itself: {} -> {}",
+                    source.display(),
+                    destination.display()
+                ));
+            }
+        }
+
+        let target = unique_destination_path(&destination, &source)?;
+        if move_items {
+            move_path_with_fallback(&source, &target)?;
+        } else {
+            copy_path_recursive(&source, &target)?;
+        }
+
+        imported_paths.push(target.to_string_lossy().to_string());
+    }
+
+    Ok(imported_paths)
+}
+
 #[tauri::command]
 fn rename_path(old_path: String, new_path: String) -> Result<(), String> {
     fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
@@ -1155,7 +1293,7 @@ async fn mcp_try_initialize_at_endpoint(
             "capabilities": {},
             "clientInfo": {
                 "name": "AssistantOS",
-                "version": "1.0.4"
+                "version": "1.0.5"
             }
         }
     });
@@ -1481,6 +1619,7 @@ pub fn run() {
             read_file_binary,
             write_file_text,
             create_file,
+            import_paths,
             rename_path,
             delete_path,
             search_files,

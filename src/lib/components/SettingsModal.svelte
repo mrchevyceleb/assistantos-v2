@@ -87,6 +87,7 @@
   let newMcpTimeoutMs = $state(20000);
   let mcpTesting = $state<Record<string, boolean>>({});
   let mcpStatus = $state<Record<string, string>>({});
+  let addingSlashDir = $state(false);
 
   const categories: Category[] = [
     "Terminal",
@@ -186,6 +187,33 @@
     } finally {
       mcpTesting = { ...mcpTesting, [id]: false };
     }
+  }
+
+  async function addSlashCommandDirectory() {
+    if (addingSlashDir) return;
+    addingSlashDir = true;
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Slash Command Folder",
+      });
+
+      if (!selected || typeof selected !== "string") return;
+      if ($settings.aiSlashCommandDirs.includes(selected)) return;
+
+      updateSetting("aiSlashCommandDirs", [...$settings.aiSlashCommandDirs, selected]);
+    } finally {
+      addingSlashDir = false;
+    }
+  }
+
+  function removeSlashCommandDirectory(path: string) {
+    updateSetting(
+      "aiSlashCommandDirs",
+      $settings.aiSlashCommandDirs.filter((p) => p !== path),
+    );
   }
 </script>
 
@@ -565,6 +593,40 @@
                 </div>
               </div>
 
+              <!-- Slash command folders -->
+              <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
+                <div class="py-6 px-7 space-y-3">
+                  <div>
+                    <div class="text-text-primary text-[13.5px] font-medium">Slash Command Folders</div>
+                    <div class="text-text-muted text-[12px] mt-1">Load custom /commands from Markdown or JSON files in these folders.</div>
+                  </div>
+
+                  <button
+                    class="px-3 py-2 text-[12px] rounded-md bg-accent/20 border border-accent/30 text-accent hover:bg-accent/25 transition-colors disabled:opacity-50"
+                    onclick={addSlashCommandDirectory}
+                    disabled={addingSlashDir}
+                  >
+                    {addingSlashDir ? 'Selecting...' : 'Add Folder'}
+                  </button>
+                </div>
+
+                {#if $settings.aiSlashCommandDirs.length > 0}
+                  <div class="py-4 px-7 space-y-2.5">
+                    {#each $settings.aiSlashCommandDirs as dir}
+                      <div class="flex items-center gap-2 rounded-lg border border-border/30 bg-bg-primary/45 p-2.5">
+                        <div class="flex-1 text-[12px] text-text-secondary font-mono truncate" title={dir}>{dir}</div>
+                        <button
+                          class="px-2 py-1 text-[11px] rounded border border-border/40 text-text-muted hover:text-error"
+                          onclick={() => removeSlashCommandDirectory(dir)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
               <!-- Connection card -->
               <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
                 <!-- OpenRouter API Key -->
@@ -788,6 +850,24 @@
                   </div>
                 </div>
 
+                <!-- YOLO Mode -->
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">YOLO Mode (No Confirmations)</div>
+                    <div class="text-text-muted text-[12px] mt-1">Allow MCP, shell, and write tools without approval prompts</div>
+                  </div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiYoloMode ? 'bg-accent' : 'bg-bg-active'}"
+                    onclick={() => updateSetting("aiYoloMode", !$settings.aiYoloMode)}
+                  >
+                    <div
+                      class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiYoloMode ? 'translate-x-[22px]' : 'translate-x-[2px]'}"
+                    ></div>
+                  </div>
+                </div>
+
                 <!-- Confirm Writes -->
                 <div class="flex justify-between items-center py-6 px-7">
                   <div>
@@ -797,7 +877,7 @@
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div
-                    class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiConfirmWrites ? 'bg-accent' : 'bg-bg-active'}"
+                    class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiConfirmWrites ? 'bg-accent' : 'bg-bg-active'} {$settings.aiYoloMode ? 'opacity-40 pointer-events-none' : ''}"
                     onclick={() => updateSetting("aiConfirmWrites", !$settings.aiConfirmWrites)}
                   >
                     <div

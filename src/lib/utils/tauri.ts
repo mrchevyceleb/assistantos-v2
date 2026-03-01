@@ -60,6 +60,14 @@ export async function createFile(
   return invoke("create_file", { path, isDir });
 }
 
+export async function importPaths(
+  paths: string[],
+  destinationDir: string,
+  moveItems: boolean,
+): Promise<string[]> {
+  return invoke("import_paths", { paths, destinationDir, moveItems });
+}
+
 export async function renamePath(
   oldPath: string,
   newPath: string

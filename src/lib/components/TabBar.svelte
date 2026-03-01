@@ -34,6 +34,7 @@
   }
 
   function handleClose(e: MouseEvent, id: string) {
+    e.preventDefault();
     e.stopPropagation();
     safeCloseTab(id);
   }
@@ -146,20 +147,10 @@
   }
 
   function safeCloseTab(tabId: string) {
-    const currentSettings = get(settings);
     const currentTabs = get(tabs);
     const tab = currentTabs.find((t) => t.id === tabId);
     if (!tab) return;
 
-    if (tab.viewerType === "terminal") {
-      if (!window.confirm(`Close terminal tab \"${tab.name}\"? This will end the session.`)) return;
-    }
-
-    if (currentSettings.confirmCloseUnsaved) {
-      if (tab?.isModified) {
-        if (!window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) return;
-      }
-    }
     if (tab.viewerType === "terminal") {
       closeTab(tabId, { forceTerminal: true });
     } else {
@@ -325,6 +316,7 @@
           type="button"
           class="ml-1 p-2 rounded-md opacity-0 group-hover:opacity-100 hover:bg-bg-active transition-opacity cursor-pointer"
           onclick={(e) => handleClose(e, tab.id)}
+          onmousedown={(e) => e.stopPropagation()}
           title={`Close ${tab.name}`}
           aria-label={`Close ${tab.name}`}
         >

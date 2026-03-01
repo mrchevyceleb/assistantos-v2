@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import { get } from "svelte/store";
   import { activeTab } from "$lib/stores/tabs";
   import { terminalVisible, bottomTerminals, addTerminal } from "$lib/stores/terminal";
@@ -7,6 +9,16 @@
   import { uiZoom } from "$lib/stores/ui";
   import { settings, settingsVisible } from "$lib/stores/settings";
   import { chatPanelVisible } from "$lib/stores/chat";
+
+  let appVersion = $state("...");
+
+  onMount(async () => {
+    try {
+      appVersion = await getVersion();
+    } catch {
+      appVersion = "dev";
+    }
+  });
 
   function toggleTerminal() {
     const dock = get(settings).defaultTerminalDock;
@@ -45,7 +57,7 @@
         <span class="text-accent">Modified</span>
       {/if}
     {:else}
-      <span>AssistantOS v0.1.0</span>
+      <span>AssistantOS v{appVersion}</span>
     {/if}
   </div>
 
