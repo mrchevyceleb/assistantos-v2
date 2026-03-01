@@ -233,12 +233,17 @@ jobs:
             core.info('Release published with updater manifest!');
 
       - name: Mirror updater feed to public repo
-        if: ${{ secrets.UPDATER_FEED_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.UPDATER_FEED_TOKEN }}
           FEED_REPO: mrchevyceleb/assistantos-v2-updates
         run: |
           set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "UPDATER_FEED_TOKEN is not set, skipped mirroring public updater feed"
+            exit 0
+          fi
+
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
           mkdir -p updater-feed
@@ -301,7 +306,3 @@ jobs:
               --notes "Public updater feed assets for AssistantOS ${tag}." \
               updater-feed/*
           fi
-
-      - name: Updater feed token missing
-        if: ${{ secrets.UPDATER_FEED_TOKEN == '' }}
-        run: echo "UPDATER_FEED_TOKEN is not set, skipped mirroring public updater feed"
