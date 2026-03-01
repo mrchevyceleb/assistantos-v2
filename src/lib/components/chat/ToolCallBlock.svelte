@@ -17,7 +17,7 @@
   const config = $derived(statusConfig[toolCall.status]);
 </script>
 
-<div class="rounded-lg border {config.bg} text-[11px] overflow-hidden">
+<div class="rounded-lg border {config.bg} overflow-hidden" style="font-size: calc(13px * var(--ui-zoom));">
   <button
     class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-bg-hover/30 transition-colors text-left"
     onclick={() => expanded = !expanded}
@@ -48,8 +48,8 @@
     <div class="px-2.5 py-2 border-t border-border/15 space-y-2">
       {#if toolCall.arguments}
         <div>
-          <div class="text-text-muted text-[9px] uppercase tracking-wider mb-1 font-medium">Args</div>
-          <pre class="text-text-secondary font-mono text-[10px] whitespace-pre-wrap break-all max-h-32 overflow-auto
+          <div class="text-text-muted uppercase tracking-wider mb-1 font-medium" style="font-size: calc(11.5px * var(--ui-zoom));">Args</div>
+          <pre class="text-text-secondary font-mono whitespace-pre-wrap break-all max-h-32 overflow-auto
             bg-bg-tertiary/50 rounded-md p-2 border border-border/15">{(() => {
             try { return JSON.stringify(JSON.parse(toolCall.arguments), null, 2); }
             catch { return toolCall.arguments; }
@@ -58,8 +58,8 @@
       {/if}
       {#if toolCall.result}
         <div>
-          <div class="text-text-muted text-[9px] uppercase tracking-wider mb-1 font-medium">Result</div>
-          <pre class="text-text-secondary font-mono text-[10px] whitespace-pre-wrap break-all max-h-48 overflow-auto
+          <div class="text-text-muted uppercase tracking-wider mb-1 font-medium" style="font-size: calc(11.5px * var(--ui-zoom));">Result</div>
+          <pre class="text-text-secondary font-mono whitespace-pre-wrap break-all max-h-48 overflow-auto
             bg-bg-tertiary/50 rounded-md p-2 border border-border/15">{toolCall.result}</pre>
         </div>
       {/if}

@@ -44,22 +44,23 @@
     <!-- Content -->
     <div class="min-w-0 flex-1 overflow-hidden">
       <!-- Role label -->
-      <div class="text-[11px] font-semibold uppercase tracking-wider mb-1.5
-        {isUser ? 'text-accent/50' : 'text-text-muted/60'}">
+      <div class="font-semibold uppercase tracking-wider mb-1.5
+        {isUser ? 'text-accent/50' : 'text-text-muted/60'}"
+        style="font-size: calc(13px * var(--ui-zoom));">
         {isUser ? 'You' : 'Assistant'}
       </div>
 
       <!-- Message body -->
-      <div class="text-[14px] leading-[1.7] text-text-primary">
+      <div class="leading-[1.7] text-text-primary" style="font-size: calc(17px * var(--ui-zoom));">
         {#if message.mentions && message.mentions.length > 0}
           <div class="mb-1.5 flex flex-wrap gap-1.5">
             {#each message.mentions as mention}
-              <span class="text-[10.5px] px-2 py-0.5 rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono">@{mention}</span>
+              <span class="px-2 py-0.5 rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono" style="font-size: calc(13px * var(--ui-zoom));">@{mention}</span>
             {/each}
           </div>
         {/if}
         {#if message.steer}
-          <div class="mb-1.5 text-[11px] text-warning/90">Steer: {message.steer}</div>
+          <div class="mb-1.5 text-warning/90" style="font-size: calc(13px * var(--ui-zoom));">Steer: {message.steer}</div>
         {/if}
         {#if isUser}
           <div class="whitespace-pre-wrap break-words">{message.content}</div>

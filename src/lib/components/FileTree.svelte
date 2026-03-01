@@ -216,7 +216,7 @@
 <div class="flex flex-col h-full metal-inset panel-lift rounded-xl overflow-hidden">
   <!-- Header -->
   <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 14px 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -1px 0 rgba(0,0,0,0.45);">
-    <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: 12px;" title={$workspaceName}>
+    <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: calc(15px * var(--ui-zoom));" title={$workspaceName}>
       {$workspaceName}
     </span>
     <div class="flex items-center gap-1 shrink-0">
@@ -227,7 +227,7 @@
           class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
           title="New File"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="20" height="20" style="width: calc(20px * var(--ui-zoom)); height: calc(20px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
             <line x1="12" y1="11" x2="12" y2="17"/>
@@ -240,7 +240,7 @@
           class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
           title="New Folder"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="20" height="20" style="width: calc(20px * var(--ui-zoom)); height: calc(20px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             <line x1="12" y1="11" x2="12" y2="17"/>
             <line x1="9" y1="14" x2="15" y2="14"/>
@@ -253,7 +253,7 @@
         class="text-text-muted hover:text-text-primary transition-colors p-2 rounded-md hover:bg-bg-hover"
         title="Open Folder"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="20" height="20" style="width: calc(20px * var(--ui-zoom)); height: calc(20px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
       </button>
@@ -269,7 +269,7 @@
         bind:value={filterText}
         class="w-full bg-bg-primary/90 text-text-primary rounded-md border border-border
                focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(88,180,208,0.15)] placeholder-text-muted"
-        style="font-size: 14px; padding: 10px 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);"
+        style="font-size: calc(16.5px * var(--ui-zoom)); padding: 12px 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);"
       />
     </div>
   {/if}

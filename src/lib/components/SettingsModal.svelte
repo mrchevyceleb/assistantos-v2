@@ -219,16 +219,17 @@
       <!-- Body: sidebar + content -->
       <div class="flex flex-1 overflow-hidden">
         <!-- Left sidebar -->
-        <div class="w-[230px] border-r border-border/40 py-5 shrink-0 flex flex-col gap-1.5">
+        <div class="w-[280px] border-r border-border/40 py-5 shrink-0 flex flex-col gap-1.5">
           {#each categories as cat}
             <button
-              class="flex items-center gap-3.5 mx-3 px-4 py-3.5 text-[13.5px] text-left rounded-lg transition-all
+              class="flex items-center gap-3.5 mx-3 px-4 py-3.5 text-left rounded-lg transition-all
                 {activeCategory === cat
                   ? 'bg-accent/10 text-accent font-medium'
                   : 'text-text-muted hover:bg-bg-hover/60 hover:text-text-primary'}"
+              style="font-size: calc(16.5px * var(--ui-zoom));"
               onclick={() => activeCategory = cat}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+              <svg width="22" height="22" style="width: calc(22px * var(--ui-zoom)); height: calc(22px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
                 <path d={categoryIcons[cat]}/>
               </svg>
               {cat}

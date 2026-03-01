@@ -66,14 +66,14 @@
     }
   });
 
-  const paddingLeft = $derived(`${depth * 24 + 14}px`);
+  const paddingLeft = $derived(`${depth * 27 + 16}px`);
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="tree-row w-full flex items-center gap-3.5 text-left hover:bg-bg-hover transition-colors cursor-pointer group select-none rounded-lg"
-  style="padding-top: 9px; padding-bottom: 9px; font-size: 15px;"
+  style="padding-top: 11px; padding-bottom: 11px; font-size: calc(18px * var(--ui-zoom));"
   style:padding-left={paddingLeft}
   style:border-left={depth > 0 ? "1px solid rgba(148,163,184,0.16)" : "none"}
   onclick={toggle}
@@ -86,7 +86,7 @@
   <!-- Expand arrow for dirs -->
   {#if node.is_dir}
       <svg
-        width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"
+        width="15" height="15" style="width: calc(15px * var(--ui-zoom)); height: calc(15px * var(--ui-zoom));" viewBox="0 0 24 24" fill="currentColor" stroke="none"
         class="shrink-0 text-text-muted/80 transition-transform duration-150"
         class:rotate-90={expanded}
       >
@@ -99,17 +99,17 @@
   <!-- Icon -->
   {#if node.is_dir}
     {#if expanded}
-      <svg width="18" height="18" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.name, true, node.ext)}>
+      <svg width="22" height="22" style="width: calc(22px * var(--ui-zoom)); height: calc(22px * var(--ui-zoom));" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.name, true, node.ext)}>
         <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v1H2V6z" fill="currentColor" opacity="0.4"/>
         <path d="M2 9h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V9z" fill="currentColor" opacity="0.7"/>
       </svg>
     {:else}
-      <svg width="18" height="18" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.name, true, node.ext)}>
+      <svg width="22" height="22" style="width: calc(22px * var(--ui-zoom)); height: calc(22px * var(--ui-zoom));" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.name, true, node.ext)}>
         <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" fill="currentColor" opacity="0.7"/>
       </svg>
     {/if}
   {:else}
-    <svg width="18" height="18" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.name, false, node.ext)}>
+    <svg width="22" height="22" style="width: calc(22px * var(--ui-zoom)); height: calc(22px * var(--ui-zoom));" viewBox="0 0 24 24" class="shrink-0" style:color={getFileColor(node.name, false, node.ext)}>
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/>
       <polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="1.5"/>
     </svg>
@@ -126,7 +126,7 @@
   </span>
 
   {#if !node.is_dir && node.ext}
-    <span class="text-[11px] px-2 py-0.5 rounded-md bg-bg-secondary/70 border border-border/50 text-text-muted uppercase tracking-wide ml-auto mr-2">
+    <span class="px-2 py-0.5 rounded-md bg-bg-secondary/70 border border-border/50 text-text-muted uppercase tracking-wide ml-auto mr-2" style="font-size: calc(12.5px * var(--ui-zoom));">
       {node.ext}
     </span>
   {/if}

@@ -855,24 +855,38 @@ async fn ai_chat_stream(
     }
 
     let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    let mut buffer: Vec<u8> = Vec::new();
 
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&text);
+                buffer.extend_from_slice(&bytes);
 
-                // Process complete lines from the buffer
-                while let Some(newline_pos) = buffer.find('\n') {
-                    let line = buffer[..newline_pos].trim().to_string();
-                    buffer = buffer[newline_pos + 1..].to_string();
+                // Process complete lines from the byte buffer to avoid corrupting
+                // multibyte UTF-8 characters split across network chunks.
+                while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let mut line_bytes: Vec<u8> = buffer.drain(..=newline_pos).collect();
 
-                    if line.is_empty() {
+                    if line_bytes.last() == Some(&b'\n') {
+                        line_bytes.pop();
+                    }
+                    if line_bytes.last() == Some(&b'\r') {
+                        line_bytes.pop();
+                    }
+                    if line_bytes.is_empty() {
                         continue;
                     }
 
-                    if let Some(data) = line.strip_prefix("data: ") {
+                    let line = match String::from_utf8(line_bytes) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            continue;
+                        }
+                    };
+
+                    if let Some(raw_data) = line.strip_prefix("data:") {
+                        let data = raw_data.strip_prefix(' ').unwrap_or(raw_data);
+
                         if data.trim() == "[DONE]" {
                             let _ = app.emit(
                                 "ai-stream-done",
