@@ -8,7 +8,12 @@
   let isDownloading = $state(false);
   let downloadProgress = $state(0);
   let isInstalling = $state(false);
+  let isChecking = $state(false);
+  let isAutoInstalling = $state(false);
+  let restartReady = $state(false);
   let error = $state("");
+  let snoozeUntil = $state(0);
+  let currentUpdate: any = null;
 
   onMount(() => {
     // Check for updates 3 seconds after launch, then every 30 minutes
@@ -22,26 +27,40 @@
   });
 
   async function checkForUpdate() {
+    if (isChecking || isAutoInstalling) return;
+    if (Date.now() < snoozeUntil) return;
+    if (restartReady) {
+      updateAvailable = true;
+      return;
+    }
+
+    isChecking = true;
     try {
       const update = await check();
       if (update) {
+        currentUpdate = update;
         updateAvailable = true;
         updateVersion = update.version;
-
-        // Store the update reference for later download
-        (window as any).__tauriUpdate = update;
+        void installUpdate();
       }
     } catch (e) {
       console.warn("Update check failed:", e);
+    } finally {
+      isChecking = false;
     }
   }
 
   async function installUpdate() {
-    const update = (window as any).__tauriUpdate;
+    if (isAutoInstalling || restartReady) return;
+
+    const update = currentUpdate;
     if (!update) return;
 
     try {
+      isAutoInstalling = true;
       isDownloading = true;
+      isInstalling = false;
+      downloadProgress = 0;
       error = "";
 
       let totalBytes = 0;
@@ -61,18 +80,29 @@
         }
       });
 
-      // Relaunch the app after install
-      await relaunch();
+      isDownloading = false;
+      isInstalling = false;
+      restartReady = true;
+      updateAvailable = true;
     } catch (e: any) {
       isDownloading = false;
       isInstalling = false;
       error = e?.message || "Update failed";
       console.error("Update failed:", e);
+    } finally {
+      isAutoInstalling = false;
     }
+  }
+
+  async function restartNow() {
+    await relaunch();
   }
 
   function dismiss() {
     updateAvailable = false;
+    if (restartReady) {
+      snoozeUntil = Date.now() + 10 * 60 * 1000;
+    }
   }
 </script>
 
@@ -86,6 +116,30 @@
             <p class="text-xs text-secondary mt-1">{error}</p>
           </div>
           <button onclick={dismiss} class="text-tertiary hover:text-primary text-lg leading-none">&times;</button>
+        </div>
+      {:else if restartReady}
+        <div class="flex items-start gap-3">
+          <div class="flex-1">
+            <p class="text-sm font-medium text-primary">Update ready</p>
+            <p class="text-xs text-secondary mt-1">Version {updateVersion} is installed. Restart to apply it.</p>
+          </div>
+          <button onclick={dismiss} class="text-tertiary hover:text-primary text-lg leading-none">&times;</button>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button
+            onclick={restartNow}
+            class="px-3 py-1.5 text-xs font-medium rounded-md"
+            style="background: var(--color-accent); color: var(--color-bg-primary);"
+          >
+            Restart now
+          </button>
+          <button
+            onclick={dismiss}
+            class="px-3 py-1.5 text-xs font-medium rounded-md text-secondary hover:text-primary"
+            style="background: var(--color-bg-secondary);"
+          >
+            Later
+          </button>
         </div>
       {:else if isInstalling}
         <div class="flex items-center gap-3">
@@ -109,7 +163,7 @@
         <div class="flex items-start gap-3">
           <div class="flex-1">
             <p class="text-sm font-medium text-primary">Update available</p>
-            <p class="text-xs text-secondary mt-1">Version {updateVersion} is ready to install.</p>
+            <p class="text-xs text-secondary mt-1">Version {updateVersion} found. Downloading and installing in background.</p>
           </div>
           <button onclick={dismiss} class="text-tertiary hover:text-primary text-lg leading-none">&times;</button>
         </div>
@@ -119,7 +173,7 @@
             class="px-3 py-1.5 text-xs font-medium rounded-md"
             style="background: var(--color-accent); color: var(--color-bg-primary);"
           >
-            Update now
+            Install now
           </button>
           <button
             onclick={dismiss}

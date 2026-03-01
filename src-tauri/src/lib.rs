@@ -1155,7 +1155,7 @@ async fn mcp_try_initialize_at_endpoint(
             "capabilities": {},
             "clientInfo": {
                 "name": "AssistantOS",
-                "version": "1.0.3"
+                "version": "1.0.4"
             }
         }
     });
