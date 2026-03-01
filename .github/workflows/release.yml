@@ -248,10 +248,21 @@ jobs:
           version="${tag#v}"
           mkdir -p updater-feed
 
-          cp artifacts/windows/*.nsis.zip updater-feed/
-          cp artifacts/windows/*.nsis.zip.sig updater-feed/
-          cp artifacts/macos/*.app.tar.gz updater-feed/
-          cp artifacts/macos/*.app.tar.gz.sig updater-feed/
+          win_zip="$(find artifacts/windows -type f -name '*.nsis.zip' | head -n 1 || true)"
+          win_sig="$(find artifacts/windows -type f -name '*.nsis.zip.sig' | head -n 1 || true)"
+          mac_tar="$(find artifacts/macos -type f -name '*.app.tar.gz' | head -n 1 || true)"
+          mac_sig="$(find artifacts/macos -type f -name '*.app.tar.gz.sig' | head -n 1 || true)"
+
+          if [ -z "$win_zip" ] || [ -z "$win_sig" ] || [ -z "$mac_tar" ] || [ -z "$mac_sig" ]; then
+            echo "Missing updater artifacts in downloaded action artifacts"
+            find artifacts -type f | sort
+            exit 1
+          fi
+
+          cp "$win_zip" updater-feed/
+          cp "$win_sig" updater-feed/
+          cp "$mac_tar" updater-feed/
+          cp "$mac_sig" updater-feed/
 
           node <<'EOF'
           const fs = require('fs');
