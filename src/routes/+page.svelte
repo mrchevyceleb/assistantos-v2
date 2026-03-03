@@ -19,8 +19,8 @@
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
   import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading, openChatTab, closeChatTab } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
-  import { zoomIn, zoomOut, resetZoom, initZoom } from "$lib/stores/ui";
-  import { settingsVisible, settings } from "$lib/stores/settings";
+  import { initZoom } from "$lib/stores/ui";
+  import { settingsVisible, settings, updateSetting } from "$lib/stores/settings";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import { chatPanelVisible, chatPanelWidth, chatPanelHeight, chatPanelDock } from "$lib/stores/chat";
   import UpdateNotification from "$lib/components/UpdateNotification.svelte";
@@ -230,24 +230,27 @@
       return;
     }
 
-    // Ctrl+= / Ctrl++: Zoom in
+    // Ctrl+= / Ctrl++: Increase terminal + chat font size
     if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
       e.preventDefault();
-      zoomIn();
+      updateSetting("terminalFontSize", Math.min(32, $settings.terminalFontSize + 1));
+      updateSetting("aiChatFontSize", Math.min(32, $settings.aiChatFontSize + 1));
       return;
     }
 
-    // Ctrl+-: Zoom out
+    // Ctrl+-: Decrease terminal + chat font size
     if (e.ctrlKey && e.key === "-") {
       e.preventDefault();
-      zoomOut();
+      updateSetting("terminalFontSize", Math.max(8, $settings.terminalFontSize - 1));
+      updateSetting("aiChatFontSize", Math.max(8, $settings.aiChatFontSize - 1));
       return;
     }
 
-    // Ctrl+0: Reset zoom
+    // Ctrl+0: Reset terminal + chat font size
     if (e.ctrlKey && e.key === "0") {
       e.preventDefault();
-      resetZoom();
+      updateSetting("terminalFontSize", 14);
+      updateSetting("aiChatFontSize", 15);
       return;
     }
 

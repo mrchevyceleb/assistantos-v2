@@ -164,6 +164,14 @@
       return true;
     });
 
+    // Block native paste event — we handle Ctrl+V manually above via
+    // attachCustomKeyEventHandler + readClipboardText. Without this, the
+    // browser also fires a 'paste' event that xterm processes separately,
+    // causing double-paste.
+    containerEl.addEventListener("paste", (e) => {
+      e.preventDefault();
+    });
+
     containerEl.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       contextMenu = { visible: true, x: e.clientX, y: e.clientY };

@@ -4,6 +4,8 @@
   import ToolCallBlock from './ToolCallBlock.svelte';
   import { renderMarkdown } from '$lib/utils/markdown';
 
+  const chatFs = $derived($settings.aiChatFontSize);
+
   interface Props {
     message: UIMessage;
   }
@@ -35,7 +37,7 @@
   const thinkingHidden = $derived(thinkingText.length > thinkingPreview.length);
 </script>
 
-<div class="group px-4 py-3.5 transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15">
+<div class="group px-5 py-4 transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15">
   <div class="flex gap-3.5 max-w-full">
     <!-- Avatar -->
     <div class="shrink-0 mt-0.5">
@@ -58,27 +60,27 @@
     <!-- Content -->
     <div class="min-w-0 flex-1 overflow-hidden">
       <!-- Role label -->
-      <div class="font-semibold uppercase tracking-wider mb-1.5
+      <div class="font-semibold uppercase tracking-wider mb-2
         {isUser ? 'text-accent/50' : 'text-text-muted/60'}"
-        style="font-size: calc(13px * var(--ui-zoom));">
+        style="font-size: {chatFs - 3}px;">
         {isUser ? 'You' : 'Assistant'}
       </div>
 
       <!-- Message body -->
-      <div class="leading-[1.7] text-text-primary" style="font-size: calc(17px * var(--ui-zoom));">
+      <div class="leading-[1.75] text-text-primary" style="font-size: {chatFs}px;">
         {#if !isUser && thinkingText && $settings.aiThinkingMode !== 'none'}
-          <div class="mb-2 rounded-lg border border-accent/20 bg-accent/6 px-3 py-2">
-            <div class="mb-1 text-text-muted uppercase tracking-wider" style="font-size: calc(11px * var(--ui-zoom));">Thinking</div>
+          <div class="mb-3 rounded-lg border border-accent/20 bg-accent/6 px-4 py-3">
+            <div class="mb-1.5 text-text-muted uppercase tracking-wider" style="font-size: {chatFs - 4}px;">Thinking</div>
             {#if $settings.aiThinkingMode === 'all'}
-              <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: calc(13px * var(--ui-zoom));">{thinkingText}</div>
+              <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: {chatFs - 2}px;">{thinkingText}</div>
             {:else}
-              <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: calc(13px * var(--ui-zoom));">
+              <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: {chatFs - 2}px;">
                 {showFullThinking ? thinkingText : thinkingPreview}
               </div>
               {#if thinkingHidden}
                 <button
                   class="mt-1.5 text-accent/85 hover:text-accent transition-colors"
-                  style="font-size: calc(12px * var(--ui-zoom));"
+                  style="font-size: {chatFs - 3}px;"
                   onclick={() => (showFullThinking = !showFullThinking)}
                 >
                   {showFullThinking ? 'Hide full thinking' : 'Show full thinking'}
@@ -89,14 +91,14 @@
         {/if}
 
         {#if message.mentions && message.mentions.length > 0}
-          <div class="mb-1.5 flex flex-wrap gap-1.5">
+          <div class="mb-2 flex flex-wrap gap-1.5">
             {#each message.mentions as mention}
-              <span class="px-2 py-0.5 rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono" style="font-size: calc(13px * var(--ui-zoom));">@{mention}</span>
+              <span class="px-2 py-0.5 rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono" style="font-size: {chatFs - 2}px;">@{mention}</span>
             {/each}
           </div>
         {/if}
         {#if message.steer}
-          <div class="mb-1.5 text-warning/90" style="font-size: calc(13px * var(--ui-zoom));">Steer: {message.steer}</div>
+          <div class="mb-2 text-warning/90" style="font-size: {chatFs - 2}px;">Steer: {message.steer}</div>
         {/if}
         {#if isUser}
           <div class="whitespace-pre-wrap break-words">{message.content}</div>

@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { activeTab, tabs, activeTabId, toggleEditMode, updateTabContent, setTabModified } from "$lib/stores/tabs";
-  import { writeFileText } from "$lib/utils/tauri";
+  import { activeTab, tabs, activeTabId, toggleEditMode, updateTabContent, setTabModified, openChatTab } from "$lib/stores/tabs";
+  import { writeFileText, createFile, readDirectoryTree } from "$lib/utils/tauri";
   import { settings } from "$lib/stores/settings";
+  import { workspacePath, fileTree, workspaceName } from "$lib/stores/workspace";
+  import { addTerminal } from "$lib/stores/terminal";
   import MarkdownViewer from "./MarkdownViewer.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import CodeViewer from "./CodeViewer.svelte";
@@ -11,8 +13,94 @@
   import PdfViewer from "./PdfViewer.svelte";
   import TerminalTab from "./TerminalTab.svelte";
   import ChatPanel from "./chat/ChatPanel.svelte";
+  import ContextMenu from "./ContextMenu.svelte";
+  import type { MenuItem } from "./ContextMenu.svelte";
 
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Context menu state for empty area
+  let contextMenu = $state<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+
+  function handleEmptyAreaContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    contextMenu = { visible: true, x: e.clientX, y: e.clientY };
+  }
+
+  function closeContextMenu() {
+    contextMenu = { visible: false, x: 0, y: 0 };
+  }
+
+  function joinPath(...parts: string[]): string {
+    const sep = parts[0]?.includes("\\") ? "\\" : "/";
+    return parts.join(sep);
+  }
+
+  async function refreshTree() {
+    const path = $workspacePath;
+    if (!path) return;
+    try {
+      const tree = await readDirectoryTree(path, $settings.showHiddenFiles);
+      fileTree.set(tree);
+      workspaceName.set(tree.name);
+    } catch (e) {
+      console.error("Failed to refresh tree:", e);
+    }
+  }
+
+  function getEmptyAreaMenuItems(): MenuItem[] {
+    const items: MenuItem[] = [
+      {
+        label: "New Terminal",
+        shortcut: "Ctrl+`",
+        action: () => {
+          const cwd = $workspacePath || "";
+          addTerminal(cwd, $settings.defaultTerminalDock);
+        },
+      },
+      {
+        label: "New Chat",
+        action: () => {
+          openChatTab();
+        },
+      },
+    ];
+
+    if ($workspacePath) {
+      items.push(
+        { label: "", separator: true, action: () => {} },
+        {
+          label: "New File",
+          action: async () => {
+            const name = window.prompt("New file name:");
+            if (!name) return;
+            try {
+              const fullPath = joinPath($workspacePath!, name);
+              await createFile(fullPath, false);
+              await refreshTree();
+            } catch (e) {
+              console.error("Failed to create file:", e);
+            }
+          },
+        },
+        {
+          label: "New Folder",
+          action: async () => {
+            const name = window.prompt("New folder name:");
+            if (!name) return;
+            try {
+              const fullPath = joinPath($workspacePath!, name);
+              await createFile(fullPath, true);
+              await refreshTree();
+            } catch (e) {
+              console.error("Failed to create folder:", e);
+            }
+          },
+        },
+      );
+    }
+
+    return items;
+  }
 
   // Derived: all terminal tabs that need to stay mounted
   let terminalTabs = $derived($tabs.filter((t) => t.viewerType === "terminal"));
@@ -153,10 +241,15 @@
     {/if}
   {:else if !$activeTab}
     <!-- Empty state -->
-    <div class="flex-1 flex items-center justify-center text-text-muted">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="flex-1 flex items-center justify-center text-text-muted"
+      oncontextmenu={handleEmptyAreaContextMenu}
+    >
       <div class="text-center">
         <h2 class="text-3xl font-light mb-3 text-text-secondary" style="text-shadow: 0 0 30px rgba(88, 180, 208, 0.15);">AssistantOS</h2>
         <p class="text-base">Open a file from the sidebar to get started</p>
+        <p class="text-sm text-text-muted mt-1">Right-click for quick actions</p>
         <div class="mt-8 text-sm space-y-2.5">
           <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+O</kbd> Open Folder</p>
           <p><kbd class="px-2 py-1 bg-bg-secondary rounded-md border border-border text-text-secondary">Ctrl+P</kbd> Quick Open</p>
@@ -168,3 +261,13 @@
     </div>
   {/if}
 </div>
+
+<!-- Empty area context menu -->
+{#if contextMenu.visible}
+  <ContextMenu
+    x={contextMenu.x}
+    y={contextMenu.y}
+    items={getEmptyAreaMenuItems()}
+    onClose={closeContextMenu}
+  />
+{/if}

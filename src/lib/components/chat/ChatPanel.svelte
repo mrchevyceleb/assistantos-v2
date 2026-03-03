@@ -344,11 +344,11 @@
   }
 </script>
 
-<div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift" style="font-size: calc(15px * var(--ui-zoom));">
+<div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift" style="font-size: {$settings.aiChatFontSize}px;">
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 h-[52px] shrink-0 border-b border-border/40 bg-bg-secondary/65 backdrop-blur-sm metal-sheen">
+  <div class="flex items-center justify-between px-4 h-[48px] shrink-0 border-b border-border/40 bg-bg-secondary/65 backdrop-blur-sm metal-sheen">
     <div class="flex items-center gap-3 min-w-0">
-      <div class="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent">
           <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
         </svg>
@@ -358,7 +358,7 @@
         <button
           class="flex items-center gap-1.5 font-medium hover:text-accent transition-colors min-w-0
             {modelSwitcherOpen ? 'text-accent' : 'text-text-secondary'}"
-          style="font-size: calc(16.5px * var(--ui-zoom));"
+          style="font-size: {$settings.aiChatFontSize + 1}px;"
           onclick={() => modelSwitcherOpen = !modelSwitcherOpen}
         >
           <span class="truncate">{modelDisplayName($settings.aiModel)}</span>
@@ -373,19 +373,19 @@
           <div class="absolute top-full left-0 mt-2 z-50 min-w-[240px] max-w-[320px]
             bg-bg-secondary border border-border/50 rounded-lg shadow-2xl shadow-black/40 overflow-hidden">
             {#if $settings.aiFavoriteModels.length > 0}
-              <div class="px-3 pt-2.5 pb-1 text-text-muted uppercase tracking-wider font-medium" style="font-size: calc(13px * var(--ui-zoom));">Favorites</div>
+              <div class="px-3 pt-2.5 pb-1 text-text-muted uppercase tracking-wider font-medium" style="font-size: {$settings.aiChatFontSize - 2}px;">Favorites</div>
               {#each $settings.aiFavoriteModels as fav}
                 <button
                   class="w-full text-left px-3 py-2.5 font-mono hover:bg-bg-hover transition-colors truncate
                     {fav === $settings.aiModel ? 'text-accent bg-accent/8' : 'text-text-secondary hover:text-text-primary'}"
-                  style="font-size: calc(15px * var(--ui-zoom));"
+                    style="font-size: {$settings.aiChatFontSize}px;"
                   onclick={() => { updateSetting("aiModel", fav); modelSwitcherOpen = false; }}
                 >
                   {fav}
                 </button>
               {/each}
             {:else}
-              <div class="px-3 py-3 text-text-muted" style="font-size: calc(13px * var(--ui-zoom));">Star models in Settings to add favorites</div>
+              <div class="px-3 py-3 text-text-muted" style="font-size: {$settings.aiChatFontSize - 2}px;">Star models in Settings to add favorites</div>
             {/if}
           </div>
         {/if}
@@ -394,21 +394,23 @@
     <div class="flex items-center gap-1">
       <button
         class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
-        style="font-size: calc(13px * var(--ui-zoom));"
+        style="font-size: {$settings.aiChatFontSize - 2}px;"
         onclick={cycleDock}
         title="Toggle chat dock"
       >
         {nextDockLabel()}
       </button>
       <button
-        class="w-10 h-10 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all flex items-center justify-center"
+        class="h-8 rounded-md px-2.5 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all flex items-center justify-center gap-1.5"
+        style="font-size: {$settings.aiChatFontSize - 2}px;"
         onclick={handleNewChat}
-        title="New Chat"
+        title="Clear chat and start a new conversation"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
+        <span>New</span>
       </button>
     </div>
   </div>
@@ -420,14 +422,14 @@
         <div class="h-1.5 rounded-full bg-bg-active overflow-hidden">
           <div class="h-full rounded-full bg-accent/80 transition-all duration-300" style={`width: ${contextProgressWidth()};`}></div>
         </div>
-        <div class="mt-1.5 flex items-center justify-between text-text-muted" style="font-size: calc(12px * var(--ui-zoom));">
+        <div class="mt-1.5 flex items-center justify-between text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;">
           <span>{contextPercentText()}</span>
           <span class="font-mono">{contextTokenText()}</span>
         </div>
       </div>
       <button
         class="h-9 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
-        style="font-size: calc(12.5px * var(--ui-zoom));"
+        style="font-size: {$settings.aiChatFontSize - 2}px;"
         onclick={handleCompactNow}
         disabled={$chatIsLoading}
         title="Compact context now"
@@ -439,7 +441,7 @@
 
   <!-- Messages -->
   <div
-    class="flex-1 overflow-y-auto metal-inset mx-2 mt-2 rounded-lg"
+    class="flex-1 overflow-y-auto metal-inset mx-2.5 mt-2.5 rounded-lg"
     bind:this={messagesContainer}
   >
     {#if $chatMessages.length === 0}
@@ -450,14 +452,14 @@
           </svg>
         </div>
         <div class="space-y-2">
-          <div class="text-text-secondary font-medium" style="font-size: calc(18px * var(--ui-zoom));">Ask about your workspace</div>
-          <div class="text-text-muted leading-relaxed max-w-[280px]" style="font-size: calc(15px * var(--ui-zoom));">
+          <div class="text-text-secondary font-medium" style="font-size: {$settings.aiChatFontSize + 3}px;">Ask about your workspace</div>
+          <div class="text-text-muted leading-relaxed max-w-[280px]" style="font-size: {$settings.aiChatFontSize}px;">
             Read files, search code, edit files, and run commands
           </div>
         </div>
       </div>
     {:else}
-      <div class="py-3">
+      <div class="py-4">
         {#each $chatMessages as message (message.id)}
           <ChatMessage {message} />
         {/each}
@@ -473,18 +475,18 @@
           <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
-        <span class="text-text-primary font-medium" style="font-size: calc(14px * var(--ui-zoom));">{$pendingConfirmation.toolName}</span>
+        <span class="text-text-primary font-medium" style="font-size: {$settings.aiChatFontSize - 1}px;">{$pendingConfirmation.toolName}</span>
       </div>
-      <div class="text-text-muted font-mono mb-2.5 max-h-20 overflow-auto pl-[22px]" style="font-size: calc(13px * var(--ui-zoom));">{$pendingConfirmation.arguments}</div>
+      <div class="text-text-muted font-mono mb-2.5 max-h-20 overflow-auto pl-[22px]" style="font-size: {$settings.aiChatFontSize - 2}px;">{$pendingConfirmation.arguments}</div>
       <div class="flex gap-2 pl-[22px]">
         <button
           class="px-3 py-1.5 rounded-md bg-accent text-bg-primary font-medium hover:opacity-90 transition-opacity"
-          style="font-size: calc(13px * var(--ui-zoom));"
+          style="font-size: {$settings.aiChatFontSize - 2}px;"
           onclick={() => handleConfirm(true)}
         >Allow</button>
         <button
           class="px-3 py-1.5 rounded-md border border-border/60 text-text-muted hover:text-text-primary hover:border-border transition-colors"
-          style="font-size: calc(13px * var(--ui-zoom));"
+          style="font-size: {$settings.aiChatFontSize - 2}px;"
           onclick={() => handleConfirm(false)}
         >Deny</button>
       </div>

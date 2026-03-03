@@ -14,6 +14,7 @@ export interface AppSettings {
   autoSaveDelay: number;
   theme: string;
   showHiddenFiles: boolean;
+  fileTreeFontSize: number;
   restoreSession: boolean;
   confirmCloseUnsaved: boolean;
   aiProvider: "openrouter" | "anthropic" | "openai";
@@ -34,6 +35,7 @@ export interface AppSettings {
   aiYoloMode: boolean;
   aiMaxToolIterations: number;
   aiFavoriteModels: string[];
+  aiChatFontSize: number;
   aiChatDock: "right" | "bottom" | "tab";
   aiReadInstructionsEveryMessage: boolean;
   aiEnableAtMentions: boolean;
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoSaveDelay: 2000,
   theme: "catppuccin-mocha",
   showHiddenFiles: false,
+  fileTreeFontSize: 14,
   restoreSession: true,
   confirmCloseUnsaved: true,
   aiProvider: "openrouter",
@@ -85,6 +88,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiConfirmWrites: true,
   aiYoloMode: false,
   aiMaxToolIterations: 25,
+  aiChatFontSize: 15,
   aiChatDock: "bottom",
   aiReadInstructionsEveryMessage: true,
   aiEnableAtMentions: true,

@@ -644,7 +644,27 @@
             </div>
 
           {:else if activeCategory === "File Explorer"}
-            <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
+            <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
+              <!-- File tree font size -->
+              <div class="flex justify-between items-center py-6 px-7">
+                <div>
+                  <div class="text-text-primary text-[13.5px]">Font size</div>
+                  <div class="text-text-muted text-[12px] mt-1">File tree text size in pixels</div>
+                </div>
+                <div class="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="10"
+                    max="24"
+                    step="1"
+                    value={$settings.fileTreeFontSize}
+                    oninput={(e) => updateSetting("fileTreeFontSize", Number(e.currentTarget.value))}
+                    class="w-24 accent-[var(--color-accent)]"
+                  />
+                  <span class="text-[13px] text-text-primary bg-bg-primary px-2.5 py-1 rounded-md border border-border/30 min-w-[3rem] text-center font-mono">{$settings.fileTreeFontSize}px</span>
+                </div>
+              </div>
+
               <!-- Show hidden files -->
               <div class="flex justify-between items-center py-6 px-7">
                 <div>
@@ -708,6 +728,26 @@
 
               <!-- Chat layout/preferences -->
               <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden divide-y divide-border/15">
+                <!-- Chat font size -->
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">Chat font size</div>
+                    <div class="text-text-muted text-[12px] mt-1">Message text size in pixels (Ctrl+/- to adjust)</div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="10"
+                      max="24"
+                      step="1"
+                      value={$settings.aiChatFontSize}
+                      oninput={(e) => updateSetting("aiChatFontSize", Number(e.currentTarget.value))}
+                      class="w-24 accent-[var(--color-accent)]"
+                    />
+                    <span class="text-[13px] text-text-primary bg-bg-primary px-2.5 py-1 rounded-md border border-border/30 min-w-[3rem] text-center font-mono">{$settings.aiChatFontSize}px</span>
+                  </div>
+                </div>
+
                 <div class="flex justify-between items-center py-6 px-7">
                   <div>
                     <div class="text-text-primary text-[13.5px]">Chat dock position</div>
