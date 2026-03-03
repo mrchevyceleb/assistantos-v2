@@ -1,8 +1,14 @@
 // Core types matching OpenAI API format
 
+export interface ImageAttachment {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  base64: string;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  images?: ImageAttachment[];
   tool_calls?: ToolCall[];
   tool_call_id?: string;  // for role='tool' messages
   name?: string;          // tool name for role='tool' messages

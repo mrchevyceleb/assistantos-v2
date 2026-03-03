@@ -152,6 +152,10 @@
               friendlyError = 'Rate limited. Wait a moment and try again.';
             } else if (error.includes('403')) {
               friendlyError = 'Access denied. Your API key may not have access to this model.\n\n' + error;
+            } else if (error.includes('404') && error.toLowerCase().includes('image')) {
+              friendlyError = 'This model does not support image input. Try a vision-capable model (e.g. GPT-4o, Claude 3.5 Sonnet, Gemini Pro Vision).';
+            } else if (error.includes('404')) {
+              friendlyError = 'Model or endpoint not found. Check your model selection and API base URL.\n\n' + error;
             } else if (error.includes('400')) {
               friendlyError = 'Bad request. The model may not support the current settings.\n\n' + error;
             } else if (error.toLowerCase().includes('network') || error.toLowerCase().includes('failed to fetch')) {
@@ -176,12 +180,13 @@
     payload?: {
       mentions?: string[];
       steer?: string;
+      images?: Array<{ mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; base64: string }>;
       slashCommandName?: string;
       slashCommandPrompt?: string;
       slashCommandArgs?: string;
     },
   ) {
-    if (!message.trim()) return;
+    if (!message.trim() && !(payload?.images?.length)) return;
     if (get(chatIsLoading)) return;
 
     const aiSettings = getAISettings();
@@ -282,8 +287,15 @@
     $settings.aiMaxTokens;
     $availableModels;
     if (engine) {
-      engine.updateSettings(getAISettings());
+      const prevProvider = engine.currentProvider;
+      const newSettings = getAISettings();
+      engine.updateSettings(newSettings);
       contextUsage = engine.getContextUsage();
+
+      // Notify when provider changes mid-conversation
+      if (prevProvider && prevProvider !== newSettings.provider && get(chatMessages).length > 0) {
+        addUIMessage('system', `Switched to ${newSettings.provider} provider. Context has been preserved.`);
+      }
     }
   });
 
@@ -346,10 +358,10 @@
 
 <div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift" style="font-size: {$settings.aiChatFontSize}px;">
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 h-[48px] shrink-0 border-b border-border/40 bg-bg-secondary/65 backdrop-blur-sm metal-sheen">
-    <div class="flex items-center gap-3 min-w-0">
-      <div class="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent">
+  <div class="flex items-center justify-between shrink-0 border-b border-border/40 bg-bg-secondary/65 metal-sheen" style="padding: 0 12px; height: 48px;">
+    <div class="flex items-center gap-2 min-w-0 overflow-hidden">
+      <div class="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent">
           <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
         </svg>
       </div>
@@ -391,9 +403,9 @@
         {/if}
       </div>
     </div>
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-0.5 shrink-0 ml-2">
       <button
-        class="h-10 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
+        class="h-8 rounded-md px-2 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all whitespace-nowrap"
         style="font-size: {$settings.aiChatFontSize - 2}px;"
         onclick={cycleDock}
         title="Toggle chat dock"
@@ -401,35 +413,33 @@
         {nextDockLabel()}
       </button>
       <button
-        class="h-8 rounded-md px-2.5 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all flex items-center justify-center gap-1.5"
-        style="font-size: {$settings.aiChatFontSize - 2}px;"
+        class="h-8 w-8 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all flex items-center justify-center"
         onclick={handleNewChat}
-        title="Clear chat and start a new conversation"
+        title="New chat"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-        <span>New</span>
       </button>
     </div>
   </div>
 
   <!-- Context bar -->
-  <div class="px-4 py-2.5 border-b border-border/30 bg-bg-secondary/45">
-    <div class="flex items-center gap-3">
+  <div class="border-b border-border/30 bg-bg-secondary/45" style="padding: 8px 12px;">
+    <div class="flex items-center" style="gap: 8px;">
       <div class="flex-1 min-w-0">
         <div class="h-1.5 rounded-full bg-bg-active overflow-hidden">
           <div class="h-full rounded-full bg-accent/80 transition-all duration-300" style={`width: ${contextProgressWidth()};`}></div>
         </div>
-        <div class="mt-1.5 flex items-center justify-between text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;">
-          <span>{contextPercentText()}</span>
-          <span class="font-mono">{contextTokenText()}</span>
+        <div class="mt-1 flex items-center gap-2 text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;">
+          <span class="shrink-0">{contextPercentText()}</span>
+          <span class="font-mono truncate">{contextTokenText()}</span>
         </div>
       </div>
       <button
-        class="h-9 rounded-md px-3 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
-        style="font-size: {$settings.aiChatFontSize - 2}px;"
+        class="rounded-md shrink-0 whitespace-nowrap border border-border/40 bg-bg-secondary/60 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 hover:border-border/60 transition-all"
+        style="font-size: {$settings.aiChatFontSize - 3}px; height: 28px; padding: 0 10px;"
         onclick={handleCompactNow}
         disabled={$chatIsLoading}
         title="Compact context now"
@@ -441,7 +451,7 @@
 
   <!-- Messages -->
   <div
-    class="flex-1 overflow-y-auto metal-inset mx-2.5 mt-2.5 rounded-lg"
+    class="flex-1 overflow-y-auto metal-inset rounded-lg" style="margin: 10px 10px 4px 10px;"
     bind:this={messagesContainer}
   >
     {#if $chatMessages.length === 0}
@@ -459,7 +469,7 @@
         </div>
       </div>
     {:else}
-      <div class="py-4">
+      <div style="padding: 16px 0 32px 0;">
         {#each $chatMessages as message (message.id)}
           <ChatMessage {message} />
         {/each}

@@ -1358,6 +1358,7 @@
     font-size: calc(15px * var(--ui-zoom));
   }
 
+  /* ── Spacing overrides (Tailwind 4 JIT doesn't generate these) ── */
   .settings-panel :global(.py-6) {
     padding-top: 1.9rem;
     padding-bottom: 1.9rem;
@@ -1376,6 +1377,178 @@
   .settings-panel :global(.py-5) {
     padding-top: 1.55rem;
     padding-bottom: 1.55rem;
+  }
+
+  .settings-panel :global(.px-10) {
+    padding-left: 2.5rem;
+    padding-right: 2.5rem;
+  }
+
+  .settings-panel :global(.py-8) {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+
+  .settings-panel :global(.py-4) {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .settings-panel :global(.px-4) {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .settings-panel :global(.py-2) {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .settings-panel :global(.px-2) {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .settings-panel :global(.py-1) {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .settings-panel :global(.py-3) {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .settings-panel :global(.mx-3) {
+    margin-left: 0.75rem;
+    margin-right: 0.75rem;
+  }
+
+  .settings-panel :global(.mb-8) {
+    margin-bottom: 2rem;
+  }
+
+  .settings-panel :global(.mb-3) {
+    margin-bottom: 0.75rem;
+  }
+
+  .settings-panel :global(.mt-1) {
+    margin-top: 0.25rem;
+  }
+
+  .settings-panel :global(.mt-2) {
+    margin-top: 0.5rem;
+  }
+
+  .settings-panel :global(.mt-4) {
+    margin-top: 1rem;
+  }
+
+  .settings-panel :global(.mb-1) {
+    margin-bottom: 0.25rem;
+  }
+
+  .settings-panel :global(.mb-2) {
+    margin-bottom: 0.5rem;
+  }
+
+  .settings-panel :global(.mb-4) {
+    margin-bottom: 1rem;
+  }
+
+  .settings-panel :global(.ml-1) {
+    margin-left: 0.25rem;
+  }
+
+  .settings-panel :global(.px-1) {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+
+  .settings-panel :global(.px-3) {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .settings-panel :global(.pl-10) {
+    padding-left: 2.5rem;
+  }
+
+  .settings-panel :global(.p-3) {
+    padding: 0.75rem;
+  }
+
+  /* Fractional spacing classes */
+  .settings-panel :global(.gap-1) {
+    gap: 0.25rem;
+  }
+
+  .settings-panel :global(.gap-1\.5) {
+    gap: 0.375rem;
+  }
+
+  .settings-panel :global(.gap-2) {
+    gap: 0.5rem;
+  }
+
+  .settings-panel :global(.gap-3) {
+    gap: 0.75rem;
+  }
+
+  .settings-panel :global(.gap-3\.5) {
+    gap: 0.875rem;
+  }
+
+  .settings-panel :global(.gap-4) {
+    gap: 1rem;
+  }
+
+  .settings-panel :global(.gap-5) {
+    gap: 1.25rem;
+  }
+
+  .settings-panel :global(.py-1\.5) {
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+
+  .settings-panel :global(.py-2\.5) {
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+  }
+
+  .settings-panel :global(.py-3\.5) {
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+  }
+
+  .settings-panel :global(.px-2\.5) {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .settings-panel :global(.p-2\.5) {
+    padding: 0.625rem;
+  }
+
+  .settings-panel :global(.p-3\.5) {
+    padding: 0.875rem;
+  }
+
+  .settings-panel :global(.mt-1\.5) {
+    margin-top: 0.375rem;
+  }
+
+  .settings-panel :global(.mb-1\.5) {
+    margin-bottom: 0.375rem;
+  }
+
+  .settings-panel :global(.pb-0\.5) {
+    padding-bottom: 0.125rem;
+  }
+
+  .settings-panel :global(.pt-5) {
+    padding-top: 1.25rem;
   }
 
   .settings-panel :global(.text-\[13\.5px\]),

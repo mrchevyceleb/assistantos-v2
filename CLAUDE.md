@@ -78,6 +78,24 @@ Terminals have a unique architecture: each terminal instance has a `dock` proper
 
 The Rust backend filters these directories from the tree: `.git`, `node_modules`, `.svelte-kit`, `.next`, `.nuxt`, `.vscode`, `.idea`, `__pycache__`, `.DS_Store`, `target`, `dist`, `.playwright-mcp`, `.vault-pilot`, `build`. Defined as `HIDDEN_DIRS` in `lib.rs`.
 
+## TailwindCSS 4 Gotcha: Broken Utility Classes
+
+TailwindCSS 4's JIT content detection (via Vite module graph) is **unreliable** in this project. Utility classes like `px-3`, `py-2`, `pr-8`, `pt-4`, `mb-1` etc. can be present in the HTML but have **zero computed effect** because Tailwind never generates the corresponding CSS rules.
+
+**Always use inline `style` attributes for spacing (padding, margin, gap, width, height) instead of Tailwind utility classes.** This has been verified with Playwright browser inspection. Tailwind classes for colors, borders, flex, display, and other non-spacing properties generally work fine.
+
+Bad (may silently fail):
+```svelte
+<div class="px-3 py-2 mt-4">
+```
+
+Good (guaranteed to work):
+```svelte
+<div style="padding: 8px 12px; margin-top: 16px;">
+```
+
+This applies especially to the chat components (`ChatPanel`, `ChatMessage`, `ChatInput`) but may affect any component. When debugging UI spacing issues, always verify with Playwright browser inspection (`window.getComputedStyle()`) that the CSS is actually being applied.
+
 ## Key Patterns
 
 - **SPA-only**: `adapter-static` with `fallback: "index.html"`. No server-side rendering.

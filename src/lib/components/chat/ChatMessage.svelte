@@ -37,7 +37,7 @@
   const thinkingHidden = $derived(thinkingText.length > thinkingPreview.length);
 </script>
 
-<div class="group px-5 py-4 transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15">
+<div class="group transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15" style="padding: 16px 32px 16px 20px;">
   <div class="flex gap-3.5 max-w-full">
     <!-- Avatar -->
     <div class="shrink-0 mt-0.5">
@@ -67,7 +67,7 @@
       </div>
 
       <!-- Message body -->
-      <div class="leading-[1.75] text-text-primary" style="font-size: {chatFs}px;">
+      <div class="leading-[1.75] text-text-primary select-text" style="font-size: {chatFs}px;">
         {#if !isUser && thinkingText && $settings.aiThinkingMode !== 'none'}
           <div class="mb-3 rounded-lg border border-accent/20 bg-accent/6 px-4 py-3">
             <div class="mb-1.5 text-text-muted uppercase tracking-wider" style="font-size: {chatFs - 4}px;">Thinking</div>
@@ -99,6 +99,17 @@
         {/if}
         {#if message.steer}
           <div class="mb-2 text-warning/90" style="font-size: {chatFs - 2}px;">Steer: {message.steer}</div>
+        {/if}
+        {#if message.images && message.images.length > 0}
+          <div class="mb-2 flex flex-wrap gap-2">
+            {#each message.images as img}
+              <img
+                src="data:{img.mediaType};base64,{img.base64}"
+                alt="Attached screenshot"
+                class="max-w-[300px] max-h-[240px] object-contain rounded-lg border border-border/30"
+              />
+            {/each}
+          </div>
         {/if}
         {#if isUser}
           <div class="whitespace-pre-wrap break-words">{message.content}</div>

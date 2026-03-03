@@ -3,9 +3,15 @@
   import { settings } from "$lib/stores/settings";
   import { listAllFiles, readDirectoryChildren, readFileText } from "$lib/utils/tauri";
 
+  interface ImageAttachment {
+    mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+    base64: string;
+  }
+
   interface SendPayload {
     mentions?: string[];
     steer?: string;
+    images?: ImageAttachment[];
     slashCommandName?: string;
     slashCommandPrompt?: string;
     slashCommandArgs?: string;
@@ -31,6 +37,8 @@
   let steerText = $state("");
   let textarea = $state<HTMLTextAreaElement | null>(null);
   let showSteerBox = $state(false);
+
+  let attachedImages = $state<ImageAttachment[]>([]);
 
   let allMentions = $state<Array<{ path: string; kind: "file" | "folder" }>>([]);
   let mentionQuery = $state("");
@@ -376,16 +384,18 @@
 
   function send() {
     const text = inputText.trim();
-    if (!text) return;
+    if (!text && attachedImages.length === 0) return;
     const mentions = selectedMentions.length > 0 ? [...selectedMentions] : undefined;
+    const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
     const slashPayload = resolveSlashCommandPayload(text);
     inputText = "";
     selectedMentions = [];
+    attachedImages = [];
     mentionSuggestions = [];
     slashSuggestions = [];
     mentionAnchor = -1;
     if (textarea) textarea.style.height = "auto";
-    onSend(text, { mentions, ...slashPayload });
+    onSend(text || "(image attached)", { mentions, images, ...slashPayload });
   }
 
   function submitSteer() {
@@ -409,19 +419,70 @@
     updateSlashSuggestions();
   }
 
+  function handlePaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        const mediaType = file.type as ImageAttachment['mediaType'];
+        if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(mediaType)) continue;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(',')[1];
+          if (base64) {
+            attachedImages = [...attachedImages, { mediaType, base64 }];
+          }
+        };
+        reader.readAsDataURL(file);
+        return; // Only handle the first image
+      }
+    }
+  }
+
+  function removeImage(index: number) {
+    attachedImages = attachedImages.filter((_, i) => i !== index);
+  }
+
   $effect(() => {
     inputText;
     autoResize();
   });
 </script>
 
-<div class="px-3 pb-3 pt-2">
+<div style="padding: 16px 12px 12px 12px;">
   {#if disabled}
     <div class="text-text-muted text-center py-4 bg-bg-secondary/40 rounded-xl border border-border/20" style="font-size: calc(15px * var(--ui-zoom));">
       Set your API key in Settings to get started
     </div>
   {:else}
     <div class="bg-bg-secondary/60 border border-border/30 rounded-xl focus-within:border-accent/30 focus-within:shadow-[0_0_12px_rgba(88,180,208,0.06)] transition-all duration-200">
+      {#if attachedImages.length > 0}
+        <div class="px-3 pt-2.5 flex flex-wrap gap-2">
+          {#each attachedImages as img, i}
+            <div class="relative group">
+              <img
+                src="data:{img.mediaType};base64,{img.base64}"
+                alt="Attached screenshot"
+                class="h-16 max-w-[120px] object-cover rounded-md border border-border/40"
+              />
+              <button
+                class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-error/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                style="font-size: 11px;"
+                onclick={() => removeImage(i)}
+                title="Remove image"
+              >×</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       {#if selectedMentions.length > 0}
         <div class="px-3 pt-2 flex flex-wrap gap-1.5">
           {#each selectedMentions as mention}
@@ -443,6 +504,7 @@
           bind:value={inputText}
           onkeydown={handleKeydown}
           oninput={handleInput}
+          onpaste={handlePaste}
           placeholder="Ask about your workspace... Use @ to tag files"
           rows="2"
           class="w-full bg-transparent text-text-primary resize-none outline-none leading-[1.6] placeholder:text-text-muted/50 px-4 pt-3 pb-2"

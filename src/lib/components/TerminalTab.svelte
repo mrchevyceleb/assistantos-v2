@@ -164,13 +164,14 @@
       return true;
     });
 
-    // Block native paste event — we handle Ctrl+V manually above via
-    // attachCustomKeyEventHandler + readClipboardText. Without this, the
-    // browser also fires a 'paste' event that xterm processes separately,
-    // causing double-paste.
+    // Block native paste event in capture phase — we handle Ctrl+V manually
+    // above via attachCustomKeyEventHandler + readClipboardText. Without this,
+    // xterm's internal textarea processes the paste event before it bubbles to
+    // the container, causing double-paste.
     containerEl.addEventListener("paste", (e) => {
       e.preventDefault();
-    });
+      e.stopPropagation();
+    }, true);
 
     containerEl.addEventListener("contextmenu", (e) => {
       e.preventDefault();

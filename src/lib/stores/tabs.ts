@@ -3,6 +3,7 @@ import type { ViewerType } from "$lib/utils/file-types";
 import { getViewerType } from "$lib/utils/file-types";
 import { chatPanelVisible, chatPanelDock } from "$lib/stores/chat";
 import { settings } from "$lib/stores/settings";
+import { ask } from "@tauri-apps/plugin-dialog";
 
 export interface Tab {
   id: string;
@@ -61,7 +62,7 @@ export function openTab(path: string, name: string, ext?: string): string {
   return id;
 }
 
-export function closeTab(id: string, options?: { forceTerminal?: boolean; skipConfirm?: boolean }) {
+export async function closeTab(id: string, options?: { forceTerminal?: boolean; skipConfirm?: boolean }) {
   const currentTabs = get(tabs);
   const idx = currentTabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
@@ -77,15 +78,19 @@ export function closeTab(id: string, options?: { forceTerminal?: boolean; skipCo
     const currentSettings = get(settings);
 
     if (closingTab.viewerType === "terminal") {
-      if (!window.confirm(`Close terminal tab "${closingTab.name}"? This will end the session.`)) {
-        return;
-      }
+      const confirmed = await ask(`Close terminal tab "${closingTab.name}"? This will end the session.`, {
+        title: "Close Terminal",
+        kind: "warning",
+      });
+      if (!confirmed) return;
     }
 
     if (currentSettings.confirmCloseUnsaved && closingTab.isModified) {
-      if (!window.confirm(`"${closingTab.name}" has unsaved changes. Close anyway?`)) {
-        return;
-      }
+      const confirmed = await ask(`"${closingTab.name}" has unsaved changes. Close anyway?`, {
+        title: "Unsaved Changes",
+        kind: "warning",
+      });
+      if (!confirmed) return;
     }
   }
 

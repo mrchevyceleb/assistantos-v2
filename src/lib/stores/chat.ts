@@ -1,5 +1,10 @@
 import { writable, derived, get } from 'svelte/store';
 
+export interface UIImageAttachment {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  base64: string;
+}
+
 export interface UIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -7,6 +12,7 @@ export interface UIMessage {
   thinking?: string;
   mentions?: string[];
   steer?: string;
+  images?: UIImageAttachment[];
   isStreaming: boolean;
   toolCalls: UIToolCall[];
   timestamp: number;
@@ -44,7 +50,7 @@ export const currentSessionId = writable<string | null>(null);
 export function addUIMessage(
   role: UIMessage['role'],
   content: string,
-  options?: { mentions?: string[]; steer?: string },
+  options?: { mentions?: string[]; steer?: string; images?: UIImageAttachment[] },
 ): string {
   const id = `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const msg: UIMessage = {
@@ -54,6 +60,7 @@ export function addUIMessage(
     thinking: '',
     mentions: options?.mentions,
     steer: options?.steer,
+    images: options?.images,
     isStreaming: false,
     toolCalls: [],
     timestamp: Date.now(),

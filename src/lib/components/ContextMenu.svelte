@@ -24,22 +24,26 @@ export interface MenuItem {
   let visible = $state(false);
 
   $effect(() => {
+    visible = false;
     adjustedX = x;
     adjustedY = y;
 
-    // Adjust position to avoid viewport overflow
+    // Adjust position to avoid viewport overflow after layout is complete
     if (menuEl) {
-      const rect = menuEl.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+      // Use double rAF to ensure the menu has fully rendered before measuring
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!menuEl) return;
+          const rect = menuEl.getBoundingClientRect();
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
 
-      adjustedX = x + rect.width > vw ? vw - rect.width - 8 : x;
-      adjustedY = y + rect.height > vh ? vh - rect.height - 8 : y;
+          adjustedX = x + rect.width > vw ? Math.max(8, vw - rect.width - 8) : x;
+          adjustedY = y + rect.height > vh ? Math.max(8, vh - rect.height - 8) : y;
+          visible = true;
+        });
+      });
     }
-    // Trigger fade-in on next tick
-    requestAnimationFrame(() => {
-      visible = true;
-    });
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -73,7 +77,7 @@ export interface MenuItem {
 <!-- Context menu -->
 <div
   bind:this={menuEl}
-  class="fixed z-[101] min-w-[200px] py-1.5 rounded-lg border border-border glass-panel glow-border shadow-xl shadow-black/40 transition-opacity duration-100"
+  class="fixed z-[101] min-w-[200px] max-w-[calc(100vw-16px)] py-1.5 rounded-lg border border-border glass-panel glow-border shadow-xl shadow-black/40 transition-opacity duration-100"
   class:opacity-0={!visible}
   class:opacity-100={visible}
   style:left="{adjustedX}px"
@@ -86,7 +90,7 @@ export interface MenuItem {
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="flex items-center gap-2.5 px-4 py-2.5 text-[13px] transition-colors mx-1 rounded
+        class="flex items-center gap-2.5 px-4 py-2.5 text-[13px] whitespace-nowrap transition-colors mx-1 rounded
           {item.disabled
             ? 'text-text-muted/40 cursor-not-allowed'
             : item.danger

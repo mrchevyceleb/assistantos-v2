@@ -41,13 +41,28 @@ export class ChatEngine {
     return this.isRunning;
   }
 
+  get currentProvider(): string {
+    return this.settings.provider;
+  }
+
   abort(): void {
     this.abortController?.abort();
     this.isRunning = false;
   }
 
   updateSettings(settings: AIChatSettings): void {
+    const oldProvider = this.settings.provider;
+    const oldContextWindow = this.getContextWindow();
     this.settings = settings;
+    const newContextWindow = this.getContextWindow();
+
+    // If context window shrunk, auto-compact to fit
+    if (newContextWindow < oldContextWindow && this.session.getMessages().length > 0) {
+      const usage = this.getContextUsage();
+      if (usage.usedPercent > 90) {
+        this.compactSession(true, 2).catch(() => {});
+      }
+    }
   }
 
   getSession(): ChatSession {
@@ -95,6 +110,7 @@ export class ChatEngine {
     options?: {
       mentions?: string[];
       steer?: string;
+      images?: Array<{ mediaType: string; base64: string }>;
       slashCommandName?: string;
       slashCommandPrompt?: string;
       slashCommandArgs?: string;
@@ -133,7 +149,14 @@ export class ChatEngine {
         enrichedUserContent = `${enrichedUserContent}\n\nSteering:\n${options.steer}`;
       }
 
-      this.session.addMessage({ role: 'user', content: enrichedUserContent });
+      const userMessage: ChatMessage = { role: 'user', content: enrichedUserContent };
+      if (options?.images?.length) {
+        userMessage.images = options.images.map(img => ({
+          mediaType: img.mediaType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif',
+          base64: img.base64,
+        }));
+      }
+      this.session.addMessage(userMessage);
       await this.compactSession(false, 1);
       this.emitContextUsage();
 

@@ -57,12 +57,36 @@ export async function streamOpenAICompatibleCompletion(
   const requestId = `req-${Date.now()}-${++requestCounter}`;
   const processor = new StreamProcessor();
 
-  // Build request body
+  // Build request body - convert messages with images to multimodal format
+  const apiMessages = messages.map(m => {
+    if (m.images?.length && m.role === 'user') {
+      const content: Array<Record<string, unknown>> = [];
+      for (const img of m.images) {
+        content.push({
+          type: 'image_url',
+          image_url: { url: `data:${img.mediaType};base64,${img.base64}` },
+        });
+      }
+      if (m.content) {
+        content.push({ type: 'text', text: m.content });
+      }
+      return { role: m.role, content };
+    }
+    // Strip images field from non-image messages
+    const { images, ...rest } = m as unknown as Record<string, unknown>;
+    return rest;
+  });
+
+  // Cap max_tokens so it never exceeds the model's context window.
+  // Reserve at least 25% of context for input + tool definitions.
+  const contextLimit = settings.contextWindow || 128000;
+  const safeMaxTokens = Math.min(settings.maxTokens, Math.floor(contextLimit * 0.75));
+
   const body: Record<string, unknown> = {
     model: settings.model,
-    messages,
+    messages: apiMessages,
     temperature: settings.temperature,
-    max_tokens: settings.maxTokens,
+    max_tokens: safeMaxTokens,
     stream: true,
   };
 

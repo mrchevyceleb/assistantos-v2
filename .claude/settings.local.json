@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run check)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx svelte-check --tsconfig ./tsconfig.json)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 50660 //F)"
+    ]
+  }
+}

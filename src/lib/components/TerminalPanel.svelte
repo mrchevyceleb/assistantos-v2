@@ -27,6 +27,7 @@
   import { getTerminalTheme, type TerminalStylePreset } from "$lib/utils/terminal-theme";
   import ContextMenu from "./ContextMenu.svelte";
   import type { MenuItem } from "./ContextMenu.svelte";
+  import { ask } from "@tauri-apps/plugin-dialog";
 
   interface Props {
     dock?: TerminalDock;
@@ -144,9 +145,11 @@
 
   async function handleCloseTerminal(id: string) {
     const inst = $terminalInstances.find((t) => t.id === id);
-    if (!window.confirm(`Close ${inst?.title || "terminal"}? This will end the session.`)) {
-      return;
-    }
+    const confirmed = await ask(`Close ${inst?.title || "terminal"}? This will end the session.`, {
+      title: "Close Terminal",
+      kind: "warning",
+    });
+    if (!confirmed) return;
 
     try {
       await closeTerminal(id);
@@ -246,13 +249,14 @@
       return true;
     });
 
-    // Block native paste event — we handle Ctrl+V manually above via
-    // attachCustomKeyEventHandler + readClipboardText. Without this, the
-    // browser also fires a 'paste' event that xterm processes separately,
-    // causing double-paste.
+    // Block native paste event in capture phase — we handle Ctrl+V manually
+    // above via attachCustomKeyEventHandler + readClipboardText. Without this,
+    // xterm's internal textarea processes the paste event before it bubbles to
+    // the container, causing double-paste.
     el.addEventListener("paste", (e) => {
       e.preventDefault();
-    });
+      e.stopPropagation();
+    }, true);
 
     el.addEventListener("contextmenu", (e) => {
       e.preventDefault();

@@ -8,6 +8,7 @@
   import type { MenuItem } from "./ContextMenu.svelte";
   import { getFileColor } from "$lib/utils/file-types";
   import { readFileText } from "$lib/utils/tauri";
+  import { ask } from "@tauri-apps/plugin-dialog";
 
   // Context menu state
   let contextMenu = $state<{
@@ -146,7 +147,7 @@
     dragSide = null;
   }
 
-  function safeCloseTab(tabId: string) {
+  async function safeCloseTab(tabId: string) {
     const currentTabs = get(tabs);
     const tab = currentTabs.find((t) => t.id === tabId);
     if (!tab) return;
@@ -154,15 +155,19 @@
     const currentSettings = get(settings);
 
     if (tab.viewerType === "terminal") {
-      if (!window.confirm(`Close terminal tab "${tab.name}"? This will end the session.`)) {
-        return;
-      }
+      const confirmed = await ask(`Close terminal tab "${tab.name}"? This will end the session.`, {
+        title: "Close Terminal",
+        kind: "warning",
+      });
+      if (!confirmed) return;
     }
 
     if (currentSettings.confirmCloseUnsaved && tab.isModified) {
-      if (!window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`)) {
-        return;
-      }
+      const confirmed = await ask(`"${tab.name}" has unsaved changes. Close anyway?`, {
+        title: "Unsaved Changes",
+        kind: "warning",
+      });
+      if (!confirmed) return;
     }
 
     if (tab.viewerType === "terminal") {

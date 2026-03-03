@@ -168,16 +168,34 @@ function toAnthropicPayload(
       continue;
     }
 
+    const userBlocks: Array<Record<string, unknown>> = [];
+    if (message.images?.length) {
+      for (const img of message.images) {
+        userBlocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: img.mediaType,
+            data: img.base64,
+          },
+        });
+      }
+    }
+    userBlocks.push({ type: 'text', text: message.content || '' });
     anthropicMessages.push({
       role: 'user',
-      content: [{ type: 'text', text: message.content || '' }],
+      content: userBlocks,
     });
   }
+
+  // Cap max_tokens so it never exceeds the model's context window.
+  const contextLimit = settings.contextWindow || 128000;
+  const safeMaxTokens = Math.min(settings.maxTokens, Math.floor(contextLimit * 0.75));
 
   const payload: Record<string, unknown> = {
     model: normalizeAnthropicModel(settings.model),
     stream: true,
-    max_tokens: settings.maxTokens,
+    max_tokens: safeMaxTokens,
     temperature: settings.temperature,
     messages: anthropicMessages,
   };
