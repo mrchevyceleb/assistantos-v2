@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
 
   const isDev = import.meta.env.DEV;
+  const isMac = navigator.userAgent.includes("Mac");
 
   let isMaximized = $state(false);
   let hoveredBtn = $state<"close" | "minimize" | "maximize" | null>(null);
@@ -28,12 +29,16 @@
 
   async function handleDrag(e: MouseEvent) {
     if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
+    // On macOS with titleBarStyle: "Overlay", the native titlebar handles drag
+    if (isMac) return;
     const win = await getWindow();
     await win.startDragging();
   }
 
   async function handleDoubleClick(e: MouseEvent) {
     if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
+    // On macOS, native titlebar handles double-click-to-maximize
+    if (isMac) return;
     await handleMaximize();
   }
 
@@ -61,8 +66,8 @@
   onmousedown={handleDrag}
   ondblclick={handleDoubleClick}
 >
-  <!-- Left spacer to balance window controls -->
-  <div class="w-[138px] shrink-0"></div>
+  <!-- Left spacer: on macOS leaves room for native traffic lights, on Windows balances controls -->
+  <div style="width: {isMac ? 80 : 138}px;" class="shrink-0"></div>
 
   <!-- Center title -->
   <div class="flex-1 flex items-center justify-center pointer-events-none">
@@ -72,58 +77,63 @@
     {/if}
   </div>
 
-  <!-- Windows-style window controls (right side) -->
-  <div class="flex items-center shrink-0" data-no-drag>
-    <!-- Minimize -->
-    <button
-      class="win-btn"
-      class:win-btn-hover={hoveredBtn === "minimize"}
-      onmouseenter={() => hoveredBtn = "minimize"}
-      onmouseleave={() => hoveredBtn = null}
-      onclick={handleMinimize}
-      title="Minimize"
-    >
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-        <line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1"/>
-      </svg>
-    </button>
-
-    <!-- Maximize / Restore -->
-    <button
-      class="win-btn"
-      class:win-btn-hover={hoveredBtn === "maximize"}
-      onmouseenter={() => hoveredBtn = "maximize"}
-      onmouseleave={() => hoveredBtn = null}
-      onclick={handleMaximize}
-      title={isMaximized ? "Restore Down" : "Maximize"}
-    >
-      {#if isMaximized}
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1">
-          <rect x="0.5" y="2.5" width="7" height="7" rx="0.5"/>
-          <path d="M2.5 2.5V1a.5.5 0 01.5-.5H9.5A.5.5 0 0110 1V7.5a.5.5 0 01-.5.5H7.5"/>
-        </svg>
-      {:else}
+  <!-- Windows-style window controls (right side, hidden on macOS) -->
+  {#if !isMac}
+    <div class="flex items-center shrink-0" data-no-drag>
+      <!-- Minimize -->
+      <button
+        class="win-btn"
+        class:win-btn-hover={hoveredBtn === "minimize"}
+        onmouseenter={() => hoveredBtn = "minimize"}
+        onmouseleave={() => hoveredBtn = null}
+        onclick={handleMinimize}
+        title="Minimize"
+      >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" stroke-width="1"/>
+          <line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1"/>
         </svg>
-      {/if}
-    </button>
+      </button>
 
-    <!-- Close -->
-    <button
-      class="win-btn win-btn-close"
-      class:win-btn-close-hover={hoveredBtn === "close"}
-      onmouseenter={() => hoveredBtn = "close"}
-      onmouseleave={() => hoveredBtn = null}
-      onclick={handleClose}
-      title="Close"
-    >
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2">
-        <line x1="1" y1="1" x2="9" y2="9"/>
-        <line x1="9" y1="1" x2="1" y2="9"/>
-      </svg>
-    </button>
-  </div>
+      <!-- Maximize / Restore -->
+      <button
+        class="win-btn"
+        class:win-btn-hover={hoveredBtn === "maximize"}
+        onmouseenter={() => hoveredBtn = "maximize"}
+        onmouseleave={() => hoveredBtn = null}
+        onclick={handleMaximize}
+        title={isMaximized ? "Restore Down" : "Maximize"}
+      >
+        {#if isMaximized}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1">
+            <rect x="0.5" y="2.5" width="7" height="7" rx="0.5"/>
+            <path d="M2.5 2.5V1a.5.5 0 01.5-.5H9.5A.5.5 0 0110 1V7.5a.5.5 0 01-.5.5H7.5"/>
+          </svg>
+        {:else}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" stroke-width="1"/>
+          </svg>
+        {/if}
+      </button>
+
+      <!-- Close -->
+      <button
+        class="win-btn win-btn-close"
+        class:win-btn-close-hover={hoveredBtn === "close"}
+        onmouseenter={() => hoveredBtn = "close"}
+        onmouseleave={() => hoveredBtn = null}
+        onclick={handleClose}
+        title="Close"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2">
+          <line x1="1" y1="1" x2="9" y2="9"/>
+          <line x1="9" y1="1" x2="1" y2="9"/>
+        </svg>
+      </button>
+    </div>
+  {:else}
+    <!-- Right spacer on macOS to balance the traffic light spacer -->
+    <div style="width: 80px;" class="shrink-0"></div>
+  {/if}
 </div>
 
 <style>
