@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { aiChatStream } from '$lib/utils/tauri';
 import { StreamProcessor } from '../chat/stream-processor';
 import type { ChatMessage, StreamChunk, ToolDefinition, AIChatSettings } from '../types';
+import { inferModelSettings } from '../model-registry';
 
 interface StreamCallbacks {
   onChunk: (chunk: StreamChunk) => void;
@@ -77,10 +78,10 @@ export async function streamOpenAICompatibleCompletion(
     return rest;
   });
 
-  // Cap max_tokens so it never exceeds the model's context window.
-  // Reserve at least 25% of context for input + tool definitions.
+  // Cap max_tokens: use model registry's maxOutputTokens if known, else 75% of context.
   const contextLimit = settings.contextWindow || 128000;
-  const safeMaxTokens = Math.min(settings.maxTokens, Math.floor(contextLimit * 0.75));
+  const { maxOutputTokens: registryMax } = inferModelSettings(settings.model);
+  const safeMaxTokens = Math.min(settings.maxTokens, registryMax, Math.floor(contextLimit * 0.75));
 
   const body: Record<string, unknown> = {
     model: settings.model,
@@ -90,7 +91,10 @@ export async function streamOpenAICompatibleCompletion(
     stream: true,
   };
 
-  if (tools && tools.length > 0 && settings.enableToolUse) {
+  // Only send tools if the model/provider actually supports them
+  const { supportsTools: modelSupportsTools } = inferModelSettings(settings.model);
+  const providerSupportsTools = settings.provider !== 'lmstudio';
+  if (tools && tools.length > 0 && settings.enableToolUse && modelSupportsTools && providerSupportsTools) {
     body.tools = tools;
   }
 

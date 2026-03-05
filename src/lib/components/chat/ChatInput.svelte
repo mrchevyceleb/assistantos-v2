@@ -456,7 +456,7 @@
   });
 </script>
 
-<div style="padding: 16px 12px 12px 12px;">
+<div style="padding: 16px 16px 14px 16px;">
   {#if disabled}
     <div class="text-text-muted text-center py-4 bg-bg-secondary/40 rounded-xl border border-border/20" style="font-size: calc(15px * var(--ui-zoom));">
       Set your API key in Settings to get started
@@ -507,9 +507,8 @@
           onpaste={handlePaste}
           placeholder="Ask about your workspace... Use @ to tag files"
           rows="2"
-          class="w-full bg-transparent text-text-primary resize-none outline-none leading-[1.6] placeholder:text-text-muted/50 px-4 pt-3 pb-2"
-          style:font-size="calc(18px * var(--ui-zoom))"
-          style="min-height: 3.2em;"
+          class="w-full bg-transparent text-text-primary resize-none outline-none leading-[1.6] placeholder:text-text-muted/50"
+          style="padding: 14px 18px 10px 18px; font-size: calc(18px * var(--ui-zoom)); min-height: 3.2em;"
           disabled={isLoading}
         ></textarea>
 

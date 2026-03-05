@@ -1,7 +1,6 @@
 import { writable, derived, get } from "svelte/store";
 import type { ViewerType } from "$lib/utils/file-types";
 import { getViewerType } from "$lib/utils/file-types";
-import { chatPanelVisible, chatPanelDock } from "$lib/stores/chat";
 import { settings } from "$lib/stores/settings";
 import { ask } from "@tauri-apps/plugin-dialog";
 
@@ -109,12 +108,6 @@ export async function closeTab(id: string, options?: { forceTerminal?: boolean; 
   }
 
   tabs.update((t) => t.filter((tab) => tab.id !== id));
-
-  if (closingTab.path.startsWith("__chat__")) {
-    if (get(chatPanelDock) === "tab") {
-      chatPanelVisible.set(false);
-    }
-  }
 
   const $activeTabId = get(activeTabId);
   if ($activeTabId === id) {
@@ -264,6 +257,42 @@ export function openChatTab(): string {
 export function closeChatTab() {
   const currentTabs = get(tabs);
   const tab = currentTabs.find((t) => t.path === CHAT_TAB_PATH);
+  if (tab) {
+    closeTab(tab.id, { skipConfirm: true });
+  }
+}
+
+/** Open a chat instance as a document tab */
+export function openChatInstanceTab(chatId: string, title: string): string {
+  const currentTabs = get(tabs);
+  const path = `__chat__:${chatId}`;
+  const existing = currentTabs.find((t) => t.path === path);
+  if (existing) {
+    activeTabId.set(existing.id);
+    return existing.id;
+  }
+
+  const newTab: Tab = {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    path,
+    name: title,
+    ext: undefined,
+    viewerType: "chat",
+    isModified: false,
+    isLoading: false,
+    editMode: false,
+  };
+
+  tabs.update((t) => [...t, newTab]);
+  activeTabId.set(newTab.id);
+  return newTab.id;
+}
+
+/** Remove chat instance tabs for a given chat ID */
+export function closeChatInstanceTab(chatId: string) {
+  const currentTabs = get(tabs);
+  const path = `__chat__:${chatId}`;
+  const tab = currentTabs.find((t) => t.path === path);
   if (tab) {
     closeTab(tab.id, { skipConfirm: true });
   }

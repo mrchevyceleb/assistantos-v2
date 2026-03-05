@@ -226,6 +226,7 @@
   function providerDisplayName(provider: AIProvider): string {
     if (provider === "anthropic") return "Anthropic Direct";
     if (provider === "openai") return "OpenAI Direct (Codex)";
+    if (provider === "lmstudio") return "LM Studio (Local)";
     return "OpenRouter";
   }
 
@@ -242,6 +243,7 @@
       updateSetting("aiOpenAIApiKey", value);
       return;
     }
+    if ($settings.aiProvider === "lmstudio") return; // no API key needed
     updateSetting("aiOpenRouterApiKey", value);
     updateSetting("aiApiKey", value);
   }
@@ -259,6 +261,10 @@
       updateSetting("aiOpenAIBaseUrl", value);
       return;
     }
+    if ($settings.aiProvider === "lmstudio") {
+      updateSetting("aiLMStudioBaseUrl", value);
+      return;
+    }
     updateSetting("aiOpenRouterBaseUrl", value);
     updateSetting("aiBaseUrl", value);
   }
@@ -273,6 +279,10 @@
     }
     if (provider === "openrouter" && !$settings.aiModel.includes("/")) {
       updateSetting("aiModel", "anthropic/claude-sonnet-4");
+    }
+    if (provider === "lmstudio") {
+      // LM Studio models don't have prefixes; auto-fetch available models
+      fetchModels();
     }
     modelSearch = "";
     modelDropdownOpen = false;
@@ -748,6 +758,25 @@
                   </div>
                 </div>
 
+                <!-- Chat font family -->
+                <div class="flex justify-between items-center py-6 px-7">
+                  <div>
+                    <div class="text-text-primary text-[13.5px]">Chat font</div>
+                    <div class="text-text-muted text-[12px] mt-1">Font family for chat messages</div>
+                  </div>
+                  <select
+                    class="bg-bg-primary border border-border/40 rounded-lg px-4 py-2 text-text-primary text-[13.5px] outline-none focus:border-accent/40 transition-colors"
+                    value={$settings.aiChatFontFamily}
+                    onchange={(e) => updateSetting("aiChatFontFamily", e.currentTarget.value)}
+                  >
+                    <option value="system">System Default</option>
+                    <option value="inter">Inter</option>
+                    <option value="jetbrains">JetBrains Mono</option>
+                    <option value="cascadia">Cascadia Code</option>
+                    <option value="fira">Fira Code</option>
+                  </select>
+                </div>
+
                 <div class="flex justify-between items-center py-6 px-7">
                   <div>
                     <div class="text-text-primary text-[13.5px]">Chat dock position</div>
@@ -859,6 +888,7 @@
                       <option value="openrouter">OpenRouter</option>
                       <option value="anthropic">Anthropic Direct</option>
                       <option value="openai">OpenAI Direct (Codex)</option>
+                      <option value="lmstudio">LM Studio (Local)</option>
                     </select>
                   </div>
 
@@ -888,7 +918,8 @@
                     class="w-full bg-bg-primary border border-border/40 rounded-lg px-4 py-2.5 text-text-primary text-[13.5px] font-mono outline-none focus:border-accent/40 transition-colors"
                     value={activeApiKey()}
                     oninput={(e) => setActiveApiKey(e.currentTarget.value)}
-                    placeholder={$settings.aiProvider === "openrouter" ? "sk-or-..." : $settings.aiProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
+                    disabled={$settings.aiProvider === "lmstudio"}
+                    placeholder={$settings.aiProvider === "lmstudio" ? "Not required" : $settings.aiProvider === "openrouter" ? "sk-or-..." : $settings.aiProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
                   />
                 </div>
 
@@ -941,7 +972,7 @@
                         class="px-3 py-2 text-[12px] rounded-md border border-border/40 text-text-primary hover:border-accent/30 transition-colors"
                         onclick={openProviderLogin}
                       >
-                        Open {$settings.aiProvider === "anthropic" ? "Anthropic" : "OpenAI"} Portal
+                        Open {$settings.aiProvider === "anthropic" ? "Anthropic" : $settings.aiProvider === "lmstudio" ? "LM Studio" : "OpenAI"} Portal
                       </button>
                     {/if}
                   </div>
@@ -960,7 +991,7 @@
                       class="px-4 py-2 text-[13px] rounded-lg border border-border/40 text-text-muted hover:text-text-primary hover:border-accent/30 transition-colors flex items-center gap-2
                         {$modelsLoading ? 'opacity-50 pointer-events-none' : ''}"
                       onclick={() => fetchModels()}
-                      disabled={$modelsLoading || (!activeApiKey() && $settings.aiProvider !== "anthropic")}
+                      disabled={$modelsLoading || (!activeApiKey() && $settings.aiProvider !== "anthropic" && $settings.aiProvider !== "lmstudio")}
                     >
                       {#if $modelsLoading}
                         <span class="inline-block w-3.5 h-3.5 border-2 border-accent/50 border-t-transparent rounded-full animate-spin"></span>
@@ -1045,7 +1076,7 @@
                         {/if}
                       </div>
                     {/if}
-                  {:else if !activeApiKey() && $settings.aiProvider !== "anthropic"}
+                  {:else if !activeApiKey() && $settings.aiProvider !== "anthropic" && $settings.aiProvider !== "lmstudio"}
                     <div class="text-text-muted text-[13px]">Add your API key above, then click Load Models</div>
                   {/if}
 

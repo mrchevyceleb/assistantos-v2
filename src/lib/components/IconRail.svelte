@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { settingsVisible } from "$lib/stores/settings";
-  import { chatPanelVisible } from "$lib/stores/chat";
+  import { settingsVisible, settings } from "$lib/stores/settings";
+  import { chatInstances, chatVisible, addChat } from "$lib/stores/chat-instances";
+  import { get } from "svelte/store";
 
   interface Props {
     activeView: "explorer" | "search";
@@ -40,8 +41,15 @@
     <!-- AI Chat -->
     <button
       class="rail-icon"
-      class:active={$chatPanelVisible}
-      onclick={() => chatPanelVisible.update((v) => !v)}
+      class:active={$chatVisible && $chatInstances.length > 0}
+      onclick={() => {
+        if ($chatInstances.length === 0) {
+          const s = get(settings);
+          addChat(s.aiModel, s.aiProvider, s.aiChatDock);
+        } else {
+          chatVisible.update((v) => !v);
+        }
+      }}
       title="AI Chat (Ctrl+L)"
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">

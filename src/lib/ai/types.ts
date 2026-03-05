@@ -37,6 +37,8 @@ export interface StreamChunk {
   content?: string;
   toolCall?: ToolCall;
   finishReason?: string | null;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
 }
 
 export interface ToolDefinition {
@@ -53,7 +55,7 @@ export interface ToolDefinition {
 }
 
 export interface AIChatSettings {
-  provider: 'openrouter' | 'openai' | 'anthropic';
+  provider: 'openrouter' | 'openai' | 'anthropic' | 'lmstudio';
   authMode?: 'apiKey' | 'oauth';
   apiKey: string;
   model: string;
@@ -73,13 +75,15 @@ export interface ContextUsage {
   maxTokens: number;
   remainingTokens: number;
   usedPercent: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
 }
 
 export const DEFAULT_AI_SETTINGS: AIChatSettings = {
   provider: 'openrouter',
   authMode: 'apiKey',
   apiKey: '',
-  model: 'anthropic/claude-sonnet-4',
+  model: 'anthropic/claude-sonnet-4-6',
   baseUrl: 'https://openrouter.ai/api/v1',
   temperature: 0.7,
   maxTokens: 16384,

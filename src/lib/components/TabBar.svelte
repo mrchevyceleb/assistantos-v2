@@ -67,77 +67,92 @@
     contextMenu = { visible: false, x: 0, y: 0, tabId: null };
   }
 
-  // ── Drag to reorder ───────────────────────────────────────────────
-  function handleDragStart(e: DragEvent, tabId: string) {
-    dragTabId = tabId;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", tabId);
-    }
-    // Make the dragged tab active
-    activeTabId.set(tabId);
+  // ── Pointer-based drag to reorder ─────────────────────────────────
+  let pointerStartX = 0;
+  let pointerStartY = 0;
+  let pendingDragTabId: string | null = null;
+  let isDragging = $state(false);
+  let tabBarEl: HTMLDivElement | undefined = $state(undefined);
+
+  const DEAD_ZONE = 5;
+
+  function handlePointerDown(e: PointerEvent, tabId: string) {
+    // Only primary button; ignore close button clicks
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button")) return;
+
+    pointerStartX = e.clientX;
+    pointerStartY = e.clientY;
+    pendingDragTabId = tabId;
+    isDragging = false;
   }
 
-  function handleDragOver(e: DragEvent, tabId: string) {
-    e.preventDefault();
-    if (!dragTabId || dragTabId === tabId) {
-      dragOverTabId = null;
-      dragSide = null;
-      return;
+  function handlePointerMove(e: PointerEvent) {
+    if (!pendingDragTabId) return;
+
+    if (!isDragging) {
+      const dx = e.clientX - pointerStartX;
+      const dy = e.clientY - pointerStartY;
+      if (Math.sqrt(dx * dx + dy * dy) < DEAD_ZONE) return;
+
+      // Start dragging
+      isDragging = true;
+      dragTabId = pendingDragTabId;
+      activeTabId.set(dragTabId);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     }
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = "move";
+
+    if (!isDragging || !dragTabId) return;
+
+    // Find which tab element the pointer is over
+    const tabEls = tabBarEl?.querySelectorAll<HTMLElement>("[data-tab-id]");
+    if (!tabEls) return;
+
+    let foundId: string | null = null;
+    let foundSide: "left" | "right" | null = null;
+
+    for (const el of tabEls) {
+      const rect = el.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const id = el.getAttribute("data-tab-id");
+        if (id && id !== dragTabId) {
+          foundId = id;
+          foundSide = e.clientX < rect.left + rect.width / 2 ? "left" : "right";
+        }
+        break;
+      }
     }
-    // Determine left/right side based on mouse position
-    const target = (e.currentTarget as HTMLElement);
-    const rect = target.getBoundingClientRect();
-    const midX = rect.left + rect.width / 2;
-    dragOverTabId = tabId;
-    dragSide = e.clientX < midX ? "left" : "right";
+
+    dragOverTabId = foundId;
+    dragSide = foundSide;
   }
 
-  function handleDragLeave(e: DragEvent, tabId: string) {
-    if (dragOverTabId === tabId) {
-      dragOverTabId = null;
-      dragSide = null;
-    }
-  }
+  function handlePointerUp(e: PointerEvent) {
+    if (!pendingDragTabId) return;
 
-  function handleDrop(e: DragEvent, tabId: string) {
-    e.preventDefault();
-    if (!dragTabId || dragTabId === tabId) {
-      resetDrag();
-      return;
-    }
-    const currentTabs = get(tabs);
-    const fromIdx = currentTabs.findIndex((t) => t.id === dragTabId);
-    const overIdx = currentTabs.findIndex((t) => t.id === tabId);
-    if (fromIdx === -1 || overIdx === -1) {
-      resetDrag();
-      return;
+    if (isDragging && dragTabId && dragOverTabId) {
+      const currentTabs = get(tabs);
+      const fromIdx = currentTabs.findIndex((t) => t.id === dragTabId);
+      const overIdx = currentTabs.findIndex((t) => t.id === dragOverTabId);
+      if (fromIdx !== -1 && overIdx !== -1) {
+        let insertIdx: number;
+        if (dragSide === "right") {
+          insertIdx = overIdx + 1;
+        } else {
+          insertIdx = overIdx;
+        }
+        if (fromIdx < insertIdx) {
+          insertIdx -= 1;
+        }
+        insertIdx = Math.max(0, Math.min(currentTabs.length - 1, insertIdx));
+        moveTab(fromIdx, insertIdx);
+      }
     }
 
-    // Compute the target position in the array AFTER removing the dragged item
-    // 1. Remove dragged tab from its position
-    // 2. Find where to insert relative to the drop target
-    let insertIdx: number;
-    if (dragSide === "right") {
-      // Insert after the target
-      insertIdx = overIdx + 1;
-    } else {
-      // Insert before the target
-      insertIdx = overIdx;
-    }
-    // If dragging from before the insert point, account for the removal shift
-    if (fromIdx < insertIdx) {
-      insertIdx -= 1;
-    }
-    insertIdx = Math.max(0, Math.min(currentTabs.length - 1, insertIdx));
-    moveTab(fromIdx, insertIdx);
-    resetDrag();
-  }
-
-  function handleDragEnd() {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
     resetDrag();
   }
 
@@ -145,6 +160,8 @@
     dragTabId = null;
     dragOverTabId = null;
     dragSide = null;
+    pendingDragTabId = null;
+    isDragging = false;
   }
 
   async function safeCloseTab(tabId: string) {
@@ -290,29 +307,26 @@
     class="flex items-center bg-bg-tertiary border-b border-border overflow-x-auto metal-sheen panel-lift"
     style="min-height: 54px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -2px 0 rgba(0,0,0,0.45), 0 8px 22px rgba(0,0,0,0.32);"
     oncontextmenu={handleBarContextMenu}
+    onpointermove={handlePointerMove}
+    onpointerup={handlePointerUp}
+    bind:this={tabBarEl}
   >
     {#each $tabs as tab, i (tab.id)}
       <div
         class="flex items-center gap-3.5 border-r border-border whitespace-nowrap
-               transition-all cursor-grab group min-w-0 shrink-0 relative"
-        style="padding: 14px 22px; font-size: 13.5px;"
+               transition-all group min-w-0 shrink-0 relative"
+        style="padding: 14px 22px; font-size: 13.5px; cursor: {isDragging ? 'grabbing' : 'grab'}; {dragTabId === tab.id ? 'opacity: 0.5;' : ''}"
         class:tab-active-metal={$activeTabId === tab.id}
         class:text-text-primary={$activeTabId === tab.id}
         class:tab-inactive-metal={$activeTabId !== tab.id}
         class:text-text-muted={$activeTabId !== tab.id}
         class:hover:bg-bg-hover={$activeTabId !== tab.id}
-        class:opacity-50={dragTabId === tab.id}
         data-tab-id={tab.id}
         onclick={() => handleTabClick(tab.id)}
         onkeydown={(e) => handleTabKeydown(e, tab.id)}
         onmousedown={(e) => handleMiddleClick(e, tab.id)}
         oncontextmenu={(e) => handleTabContextMenu(e, tab.id)}
-        draggable="true"
-        ondragstart={(e) => handleDragStart(e, tab.id)}
-        ondragover={(e) => handleDragOver(e, tab.id)}
-        ondragleave={(e) => handleDragLeave(e, tab.id)}
-        ondrop={(e) => handleDrop(e, tab.id)}
-        ondragend={handleDragEnd}
+        onpointerdown={(e) => handlePointerDown(e, tab.id)}
         role="tab"
         tabindex="0"
       >
@@ -340,7 +354,6 @@
             e.stopPropagation();
           }}
           onmousedown={(e) => e.stopPropagation()}
-          draggable="false"
           title={`Close ${tab.name}`}
           aria-label={`Close ${tab.name}`}
         >

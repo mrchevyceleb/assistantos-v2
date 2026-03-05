@@ -24,6 +24,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
+  import { terminalLinkHandler, handleCtrlClick } from "$lib/utils/link-handler";
   import { getTerminalTheme, type TerminalStylePreset } from "$lib/utils/terminal-theme";
   import ContextMenu from "./ContextMenu.svelte";
   import type { MenuItem } from "./ContextMenu.svelte";
@@ -200,7 +201,7 @@
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new WebLinksAddon(terminalLinkHandler));
 
     term.open(el);
 
@@ -261,6 +262,13 @@
     el.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       contextMenu = { visible: true, x: e.clientX, y: e.clientY, termId: id };
+    });
+
+    // Ctrl+Click to open file paths and URLs
+    el.addEventListener("click", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        handleCtrlClick(e, el);
+      }
     });
 
     term.onData((data: string) => {

@@ -28,10 +28,8 @@ export const modelsError = writable<string | null>(null);
 export const modelsLastFetched = writable<number>(0);
 
 const ANTHROPIC_MODELS: OpenRouterModel[] = [
-  { id: 'claude-opus-4-1', name: 'Claude Opus 4.1', context_length: 200000 },
-  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', context_length: 200000 },
-  { id: 'claude-3-7-sonnet-latest', name: 'Claude 3.7 Sonnet', context_length: 200000 },
-  { id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet', context_length: 200000 },
+  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', context_length: 200000 },
+  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', context_length: 200000 },
   { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku', context_length: 200000 },
 ];
 
@@ -58,7 +56,7 @@ export async function fetchModels(): Promise<void> {
   const apiKey = getActiveAIKey(s);
   const baseUrl = getActiveAIBaseUrl(s);
 
-  if (!apiKey) {
+  if (!apiKey && s.aiProvider !== 'lmstudio') {
     modelsError.set('No API key configured');
     return;
   }

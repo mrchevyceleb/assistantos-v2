@@ -958,6 +958,7 @@ async fn ai_chat_stream(
 
     let client = reqwest::Client::builder()
         .default_headers(headers)
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -1097,6 +1098,7 @@ async fn ai_chat_stream_anthropic(
 
     let client = reqwest::Client::builder()
         .default_headers(headers)
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -1222,6 +1224,7 @@ async fn ai_fetch_models(base_url: String, api_key: String) -> Result<String, St
 
     let client = reqwest::Client::builder()
         .default_headers(headers)
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 

@@ -4,17 +4,21 @@ import {
   workspacePath,
   sidebarWidth,
   sidebarVisible,
+  expandedPaths,
 } from "$lib/stores/workspace";
 import {
   tabs,
   activeTabId,
   openTab,
-  openChatTab,
-  closeChatTab,
   updateTabContent,
 } from "$lib/stores/tabs";
 import { terminalVisible, terminalHeight } from "$lib/stores/terminal";
-import { chatPanelVisible, chatPanelWidth, chatPanelHeight, chatPanelDock } from "$lib/stores/chat";
+import { chatPanelDock } from "$lib/stores/chat";
+import {
+  chatInstances, chatVisible, chatPanelWidth, chatPanelHeight,
+  activeRightChatId, activeBottomChatId,
+  type ChatDock,
+} from "$lib/stores/chat-instances";
 import { uiZoom } from "$lib/stores/ui";
 import {
   settings,
@@ -43,6 +47,9 @@ export interface AppState {
   chatPanelWidth?: number;
   chatPanelHeight?: number;
   chatPanelDock?: "right" | "bottom" | "tab";
+  chatInstances?: Array<{ id: string; title: string; model: string; provider: string; dock: ChatDock }>;
+  chatVisible?: boolean;
+  expandedPaths?: string[];
 }
 
 // ── Save ─────────────────────────────────────────────────────────────
@@ -68,10 +75,13 @@ export async function saveState(): Promise<void> {
     sidebarView: sidebarViewRef,
     uiZoom: get(uiZoom),
     settings: get(settings),
-    chatPanelVisible: get(chatPanelVisible),
+    chatPanelVisible: get(chatVisible),
     chatPanelWidth: get(chatPanelWidth),
     chatPanelHeight: get(chatPanelHeight),
     chatPanelDock: get(chatPanelDock),
+    chatInstances: get(chatInstances).map(({ id, title, model, provider, dock }) => ({ id, title, model, provider, dock })),
+    chatVisible: get(chatVisible),
+    expandedPaths: Array.from(get(expandedPaths)),
     openTabs: $tabs
       .filter((t) => !t.path.startsWith("__terminal__:") && !t.path.startsWith("__chat__"))
       .map((t) => ({
@@ -133,6 +143,11 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
     settings.set(merged);
   }
 
+  // Restore expanded paths
+  if (state.expandedPaths) {
+    expandedPaths.set(new Set(state.expandedPaths));
+  }
+
   // Restore workspace path (caller will handle loading the file tree)
   if (state.workspacePath) {
     workspacePath.set(state.workspacePath);
@@ -166,9 +181,6 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
   }
 
   // Restore chat panel state
-  if (state.chatPanelVisible != null) {
-    chatPanelVisible.set(state.chatPanelVisible);
-  }
   if (state.chatPanelWidth != null) {
     chatPanelWidth.set(state.chatPanelWidth);
   }
@@ -179,12 +191,29 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
     chatPanelDock.set(state.chatPanelDock);
   }
 
-  if (state.chatPanelDock === "tab") {
-    if (state.chatPanelVisible) {
-      openChatTab();
-    } else {
-      closeChatTab();
+  // Restore chat instances (new multi-instance system)
+  if (state.chatInstances && state.chatInstances.length > 0) {
+    chatInstances.set(state.chatInstances);
+    // Set active IDs for each dock
+    const rightChat = state.chatInstances.find(c => c.dock === 'right');
+    const bottomChat = state.chatInstances.find(c => c.dock === 'bottom');
+    if (rightChat) activeRightChatId.set(rightChat.id);
+    if (bottomChat) activeBottomChatId.set(bottomChat.id);
+    // Restore tab-docked chats
+    for (const inst of state.chatInstances) {
+      if (inst.dock === 'tab') {
+        const { openChatInstanceTab } = await import('$lib/stores/tabs');
+        openChatInstanceTab(inst.id, inst.title);
+      }
     }
+  }
+
+  // Restore chat visibility
+  if (state.chatVisible != null) {
+    chatVisible.set(state.chatVisible);
+  } else if (state.chatPanelVisible != null) {
+    // Legacy migration
+    chatVisible.set(state.chatPanelVisible);
   }
 
   // Update sidebar view ref for future saves
@@ -217,10 +246,12 @@ export function startAutoSave() {
   unsubscribers.push(settings.subscribe(() => debouncedSave()));
   unsubscribers.push(tabs.subscribe(() => debouncedSave()));
   unsubscribers.push(activeTabId.subscribe(() => debouncedSave()));
-  unsubscribers.push(chatPanelVisible.subscribe(() => debouncedSave()));
+  unsubscribers.push(chatVisible.subscribe(() => debouncedSave()));
   unsubscribers.push(chatPanelWidth.subscribe(() => debouncedSave()));
   unsubscribers.push(chatPanelHeight.subscribe(() => debouncedSave()));
   unsubscribers.push(chatPanelDock.subscribe(() => debouncedSave()));
+  unsubscribers.push(chatInstances.subscribe(() => debouncedSave()));
+  unsubscribers.push(expandedPaths.subscribe(() => debouncedSave()));
 }
 
 export function stopAutoSave() {

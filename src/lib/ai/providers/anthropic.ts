@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { aiChatStreamAnthropic } from '$lib/utils/tauri';
 import type { AIChatSettings, ChatMessage, StreamChunk, ToolCall, ToolDefinition } from '../types';
+import { inferModelSettings } from '../model-registry';
 
 interface StreamCallbacks {
   onChunk: (chunk: StreamChunk) => void;
@@ -13,6 +14,11 @@ let requestCounter = 0;
 class AnthropicStreamProcessor {
   private accumulatedToolCalls: Map<number, ToolCall> = new Map();
   private _finishReason: string | null = null;
+  private _cacheCreationTokens = 0;
+  private _cacheReadTokens = 0;
+
+  get cacheCreationTokens(): number { return this._cacheCreationTokens; }
+  get cacheReadTokens(): number { return this._cacheReadTokens; }
 
   processLine(data: string): StreamChunk | null {
     let parsed: any;
@@ -25,14 +31,31 @@ class AnthropicStreamProcessor {
     const eventType = parsed.type;
     if (!eventType) return null;
 
+    // Track cache metrics from usage fields
+    if (eventType === 'message_start' && parsed.message?.usage) {
+      const u = parsed.message.usage;
+      this._cacheCreationTokens = u.cache_creation_input_tokens || 0;
+      this._cacheReadTokens = u.cache_read_input_tokens || 0;
+    }
+
     if (eventType === 'message_stop') {
-      return { type: 'done', finishReason: this._finishReason || 'stop' };
+      return {
+        type: 'done',
+        finishReason: this._finishReason || 'stop',
+        cacheCreationTokens: this._cacheCreationTokens || undefined,
+        cacheReadTokens: this._cacheReadTokens || undefined,
+      };
     }
 
     if (eventType === 'message_delta') {
       const stop = parsed.delta?.stop_reason;
       if (stop === 'tool_use') this._finishReason = 'tool_calls';
       if (stop === 'end_turn' || stop === 'stop_sequence') this._finishReason = 'stop';
+      // Update cache metrics from delta usage too
+      if (parsed.usage) {
+        if (parsed.usage.cache_creation_input_tokens) this._cacheCreationTokens = parsed.usage.cache_creation_input_tokens;
+        if (parsed.usage.cache_read_input_tokens) this._cacheReadTokens = parsed.usage.cache_read_input_tokens;
+      }
       return null;
     }
 
@@ -98,6 +121,8 @@ class AnthropicStreamProcessor {
   reset() {
     this.accumulatedToolCalls.clear();
     this._finishReason = null;
+    this._cacheCreationTokens = 0;
+    this._cacheReadTokens = 0;
   }
 }
 
@@ -188,9 +213,10 @@ function toAnthropicPayload(
     });
   }
 
-  // Cap max_tokens so it never exceeds the model's context window.
+  // Cap max_tokens: use model registry's maxOutputTokens if known, else 75% of context.
   const contextLimit = settings.contextWindow || 128000;
-  const safeMaxTokens = Math.min(settings.maxTokens, Math.floor(contextLimit * 0.75));
+  const { maxOutputTokens: registryMax } = inferModelSettings(settings.model);
+  const safeMaxTokens = Math.min(settings.maxTokens, registryMax, Math.floor(contextLimit * 0.75));
 
   const payload: Record<string, unknown> = {
     model: normalizeAnthropicModel(settings.model),
@@ -202,7 +228,14 @@ function toAnthropicPayload(
 
   const system = systemParts.join('\n\n').trim();
   if (system) {
-    payload.system = system;
+    // Use cache_control for the system prompt to enable Anthropic prompt caching
+    payload.system = [
+      {
+        type: 'text',
+        text: system,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
   }
 
   if (tools && tools.length > 0 && settings.enableToolUse) {

@@ -17,7 +17,7 @@
   const config = $derived(statusConfig[toolCall.status]);
 </script>
 
-<div class="rounded-lg border {config.bg} overflow-hidden" style="font-size: calc(13px * var(--ui-zoom));">
+<div class="rounded-lg border {config.bg} overflow-hidden" style="font-size: calc(13px * var(--ui-zoom)); border-left: 3px solid {toolCall.status === 'running' ? 'var(--color-accent)' : toolCall.status === 'success' ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'};">
   <button
     class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-bg-hover/30 transition-colors text-left"
     onclick={() => expanded = !expanded}

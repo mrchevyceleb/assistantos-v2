@@ -17,12 +17,15 @@
   import { terminalVisible, terminalHeight, rightPanelVisible, rightPanelWidth, bottomTerminals, addTerminal, leftPanelVisible, leftPanelWidth } from "$lib/stores/terminal";
   import { readDirectoryTree, readFileText, startWatcher, stopWatcher } from "$lib/utils/tauri";
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
-  import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading, openChatTab, closeChatTab } from "$lib/stores/tabs";
+  import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { initZoom } from "$lib/stores/ui";
   import { settingsVisible, settings, updateSetting } from "$lib/stores/settings";
-  import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
-  import { chatPanelVisible, chatPanelWidth, chatPanelHeight, chatPanelDock } from "$lib/stores/chat";
+  import ChatDockPanel from "$lib/components/chat/ChatDockPanel.svelte";
+  import {
+    chatInstances, chatVisible, chatPanelWidth, chatPanelHeight,
+    rightChats, bottomChats, addChat,
+  } from "$lib/stores/chat-instances";
   import UpdateNotification from "$lib/components/UpdateNotification.svelte";
 
   let paletteVisible = $state(false);
@@ -167,29 +170,16 @@
     leftPanelWidth.update((w) => Math.max(200, Math.min(800, w + delta)));
   }
 
-  function handleChatPanelResize(delta: number) {
-    if ($chatPanelDock === "right") {
-      chatPanelWidth.update((w) => Math.max(340, Math.min(900, w - delta)));
-    } else if ($chatPanelDock === "bottom") {
-      chatPanelHeight.update((h) => Math.max(180, Math.min(600, h - delta)));
-    }
+  function handleChatRightResize(delta: number) {
+    chatPanelWidth.update((w) => Math.max(340, Math.min(900, w - delta)));
   }
 
-  $effect(() => {
-    chatPanelDock.set($settings.aiChatDock);
-  });
+  function handleChatBottomResize(delta: number) {
+    chatPanelHeight.update((h) => Math.max(180, Math.min(600, h - delta)));
+  }
 
-  $effect(() => {
-    if ($chatPanelDock === "tab") {
-      if ($chatPanelVisible) {
-        openChatTab();
-      } else {
-        closeChatTab();
-      }
-    } else {
-      closeChatTab();
-    }
-  });
+  let hasRightChats = $derived($rightChats.length > 0);
+  let hasBottomChats = $derived($bottomChats.length > 0);
 
   // Global keyboard shortcuts
   function handleKeydown(e: KeyboardEvent) {
@@ -272,10 +262,15 @@
       });
     }
 
-    // Ctrl+L: Toggle AI Chat panel
+    // Ctrl+L: Toggle AI Chat panel (create one if none exist)
     if (e.ctrlKey && e.key === "l") {
       e.preventDefault();
-      chatPanelVisible.update((v) => !v);
+      const instances = get(chatInstances);
+      if (instances.length === 0) {
+        addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock);
+      } else {
+        chatVisible.update((v) => !v);
+      }
       return;
     }
 
@@ -395,20 +390,20 @@
       {/if}
 
       <!-- AI Chat Panel (right dock) -->
-      {#if $chatPanelVisible && $chatPanelDock === "right"}
-        <ResizeHandle direction="horizontal" onResize={handleChatPanelResize} />
+      {#if hasRightChats && $chatVisible}
+        <ResizeHandle direction="horizontal" onResize={handleChatRightResize} />
         <div style:width="{$chatPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
-          <ChatPanel />
+          <ChatDockPanel dock="right" />
         </div>
       {/if}
     </div>
   </div>
 
   <!-- AI Chat Panel (bottom dock) -->
-  {#if $chatPanelVisible && $chatPanelDock === "bottom"}
-    <ResizeHandle direction="vertical" onResize={handleChatPanelResize} />
+  {#if hasBottomChats && $chatVisible}
+    <ResizeHandle direction="vertical" onResize={handleChatBottomResize} />
     <div style:height="{$chatPanelHeight}px" class="shrink-0 overflow-hidden border-t border-border p-1.5 pt-1">
-      <ChatPanel />
+      <ChatDockPanel dock="bottom" />
     </div>
   {/if}
 

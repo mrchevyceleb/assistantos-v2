@@ -39,8 +39,6 @@ export interface PendingConfirmation {
 export const chatMessages = writable<UIMessage[]>([]);
 export const chatIsLoading = writable(false);
 export const chatPanelVisible = writable(false);
-export const chatPanelWidth = writable(420);
-export const chatPanelHeight = writable(300);
 export const chatPanelDock = writable<'right' | 'bottom' | 'tab'>('right');
 export const pendingConfirmation = writable<PendingConfirmation | null>(null);
 export const currentSessionId = writable<string | null>(null);

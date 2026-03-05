@@ -3,8 +3,18 @@
   import { settings } from '$lib/stores/settings';
   import ToolCallBlock from './ToolCallBlock.svelte';
   import { renderMarkdown } from '$lib/utils/markdown';
+  import { handleCtrlClick } from '$lib/utils/link-handler';
 
   const chatFs = $derived($settings.aiChatFontSize);
+
+  const FONT_MAP: Record<string, string> = {
+    system: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    inter: '"Inter", -apple-system, sans-serif',
+    jetbrains: '"JetBrains Mono", "Cascadia Code", monospace',
+    cascadia: '"Cascadia Code", "Fira Code", monospace',
+    fira: '"Fira Code", "JetBrains Mono", monospace',
+  };
+  const chatFont = $derived(FONT_MAP[$settings.aiChatFontFamily] || FONT_MAP.system);
 
   interface Props {
     message: UIMessage;
@@ -35,9 +45,17 @@
 
   const thinkingPreview = $derived(firstSentences(thinkingText));
   const thinkingHidden = $derived(thinkingText.length > thinkingPreview.length);
+
+  let messageBodyEl: HTMLDivElement;
+
+  function onMessageClick(e: MouseEvent) {
+    if (e.ctrlKey || e.metaKey) {
+      handleCtrlClick(e, messageBodyEl);
+    }
+  }
 </script>
 
-<div class="group transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15" style="padding: 16px 32px 16px 20px;">
+<div class="group transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15" style="padding: 20px 32px 20px 24px;">
   <div class="flex gap-3.5 max-w-full">
     <!-- Avatar -->
     <div class="shrink-0 mt-0.5">
@@ -60,14 +78,20 @@
     <!-- Content -->
     <div class="min-w-0 flex-1 overflow-hidden">
       <!-- Role label -->
-      <div class="font-semibold uppercase tracking-wider mb-2
-        {isUser ? 'text-accent/50' : 'text-text-muted/60'}"
-        style="font-size: {chatFs - 3}px;">
-        {isUser ? 'You' : 'Assistant'}
+      <div class="font-semibold uppercase tracking-wider"
+        style="font-size: {chatFs - 3}px; margin-bottom: 8px; color: {message.role === 'system' ? 'rgb(234, 179, 8)' : isUser ? 'var(--color-accent)' : 'rgb(34, 197, 94)'};">
+        {message.role === 'system' ? 'System' : isUser ? 'You' : 'Assistant'}
       </div>
 
       <!-- Message body -->
-      <div class="leading-[1.75] text-text-primary select-text" style="font-size: {chatFs}px;">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="leading-[1.75] text-text-primary select-text"
+        style="font-size: {chatFs}px; font-family: {chatFont}; -webkit-font-smoothing: antialiased;"
+        bind:this={messageBodyEl}
+        onclick={onMessageClick}
+      >
         {#if !isUser && thinkingText && $settings.aiThinkingMode !== 'none'}
           <div class="mb-3 rounded-lg border border-accent/20 bg-accent/6 px-4 py-3">
             <div class="mb-1.5 text-text-muted uppercase tracking-wider" style="font-size: {chatFs - 4}px;">Thinking</div>
@@ -181,6 +205,7 @@
     padding: 0.1em 0.35em;
     border-radius: 4px;
     font-size: 0.9em;
+    color: var(--color-accent);
   }
   .chat-prose :global(pre code) {
     background: none;
@@ -189,9 +214,15 @@
   .chat-prose :global(a) {
     color: var(--color-accent);
     text-decoration: none;
+    cursor: pointer;
   }
   .chat-prose :global(a:hover) {
     text-decoration: underline;
+  }
+  /* Ctrl+Click hint for code blocks containing file paths */
+  .chat-prose :global(code:hover) {
+    text-decoration: underline;
+    text-decoration-style: dotted;
   }
   .chat-prose :global(ul), .chat-prose :global(ol) {
     padding-left: 1.25rem;
@@ -201,19 +232,20 @@
     margin: 0.15rem 0;
   }
   .chat-prose :global(blockquote) {
-    border-left: 3px solid var(--color-accent);
+    border-left: 3px solid rgb(34, 197, 94);
     padding: 0.25rem 0.75rem;
     margin: 0.5rem 0;
     color: var(--color-text-secondary);
   }
-  .chat-prose :global(h1), .chat-prose :global(h2), .chat-prose :global(h3) {
+  .chat-prose :global(h1), .chat-prose :global(h2), .chat-prose :global(h3), .chat-prose :global(h4) {
     font-weight: 600;
     margin: 0.75rem 0 0.35rem;
-    color: var(--color-text-primary);
+    color: var(--color-accent);
   }
-  .chat-prose :global(h1) { font-size: 1.15em; }
-  .chat-prose :global(h2) { font-size: 1.05em; }
-  .chat-prose :global(h3) { font-size: 1em; }
+  .chat-prose :global(h1) { font-size: 1.2em; }
+  .chat-prose :global(h2) { font-size: 1.1em; }
+  .chat-prose :global(h3) { font-size: 1.02em; color: rgb(34, 197, 94); }
+  .chat-prose :global(h4) { font-size: 0.95em; color: var(--color-text-primary); }
   .chat-prose :global(table) {
     width: 100%;
     border-collapse: collapse;
@@ -235,7 +267,14 @@
   }
   .chat-prose :global(strong) {
     font-weight: 600;
-    color: var(--color-text-primary);
+    color: rgb(248, 250, 252);
+  }
+  .chat-prose :global(em) {
+    color: var(--color-text-secondary);
+    font-style: italic;
+  }
+  .chat-prose :global(li::marker) {
+    color: var(--color-accent);
   }
 
   .thinking-chip {

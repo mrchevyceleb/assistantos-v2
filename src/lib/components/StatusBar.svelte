@@ -8,7 +8,7 @@
   import { formatFileSize } from "$lib/utils/file-types";
   import { uiZoom } from "$lib/stores/ui";
   import { settings, settingsVisible } from "$lib/stores/settings";
-  import { chatPanelVisible } from "$lib/stores/chat";
+  import { chatInstances, chatVisible, addChat } from "$lib/stores/chat-instances";
 
   let appVersion = $state("...");
 
@@ -75,7 +75,13 @@
     <span class="text-text-muted">{Math.round($uiZoom * 100)}%</span>
     <span>UTF-8</span>
     <button
-      onclick={() => chatPanelVisible.update((v) => !v)}
+      onclick={() => {
+        if ($chatInstances.length === 0) {
+          addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock);
+        } else {
+          chatVisible.update((v) => !v);
+        }
+      }}
       class="status-btn flex items-center gap-1.5 hover:text-text-primary transition-colors"
       title="AI Chat (Ctrl+L)"
     >

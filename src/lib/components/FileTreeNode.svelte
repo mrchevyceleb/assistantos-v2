@@ -3,6 +3,7 @@
   import { readDirectoryChildren } from "$lib/utils/tauri";
   import { settings } from "$lib/stores/settings";
   import { getFileColor } from "$lib/utils/file-types";
+  import { expandedPaths, toggleExpanded, setExpanded } from "$lib/stores/workspace";
 
   const ftSize = $derived($settings.fileTreeFontSize);
   const iconSize = $derived(Math.round(ftSize * 1.3));
@@ -16,8 +17,9 @@
     onFileClick: (node: FileNode) => void;
     onContextMenu?: (node: FileNode, x: number, y: number) => void;
     onMoveNode?: (source: { path: string; name: string; isDir: boolean }, destinationDir: string) => void;
+    onDragStart?: (node: FileNode, e: PointerEvent) => void;
+    dragOverPath?: string | null;
     filterText?: string;
-    collapseVersion?: number;
   }
 
   let {
@@ -26,13 +28,15 @@
     onFileClick,
     onContextMenu,
     onMoveNode,
+    onDragStart,
+    dragOverPath = null,
     filterText = "",
-    collapseVersion = 0,
   }: Props = $props();
-  let expanded = $state(false);
+  const expanded = $derived($expandedPaths.has(node.path));
   let children = $state<FileNode[]>([]);
   let loaded = $state(false);
-  let dropActive = $state(false);
+
+  let isDropTarget = $derived(dragOverPath === node.path);
 
   $effect(() => {
     children = node.children || [];
@@ -43,8 +47,8 @@
       onFileClick(node);
       return;
     }
-    expanded = !expanded;
-    if (expanded && !loaded) {
+    toggleExpanded(node.path);
+    if (!expanded && !loaded) {
       try {
         children = await readDirectoryChildren(node.path, $settings.showHiddenFiles);
         loaded = true;
@@ -60,52 +64,10 @@
     onContextMenu?.(node, e.clientX, e.clientY);
   }
 
-  function getParentPath(filePath: string): string {
-    const sep = filePath.includes("\\") ? "\\" : "/";
-    const parts = filePath.split(sep);
-    parts.pop();
-    return parts.join(sep);
-  }
-
-  function dropDestinationDirectory(): string {
-    return node.is_dir ? node.path : getParentPath(node.path);
-  }
-
-  function handleDragStart(e: DragEvent) {
-    if (!e.dataTransfer) return;
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData(
-      "application/x-assistantos-node",
-      JSON.stringify({ path: node.path, name: node.name, isDir: node.is_dir }),
-    );
-  }
-
-  function handleDragOver(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes("application/x-assistantos-node")) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    dropActive = true;
-  }
-
-  function handleDragLeave() {
-    dropActive = false;
-  }
-
-  function handleDrop(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes("application/x-assistantos-node")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dropActive = false;
-
-    const payload = e.dataTransfer.getData("application/x-assistantos-node");
-    if (!payload) return;
-
-    try {
-      const source = JSON.parse(payload) as { path: string; name: string; isDir: boolean };
-      onMoveNode?.(source, dropDestinationDirectory());
-    } catch {
-      // Ignore malformed drag payloads.
-    }
+  function handlePointerDown(e: PointerEvent) {
+    // Only handle primary button, skip if modifier keys (context menu etc)
+    if (e.button !== 0) return;
+    onDragStart?.(node, e);
   }
 
   function filteredChildren(items: FileNode[]): FileNode[] {
@@ -120,7 +82,7 @@
 
   $effect(() => {
     if (filterText && node.is_dir && !expanded) {
-      expanded = true;
+      setExpanded(node.path, true);
       if (!loaded) {
         readDirectoryChildren(node.path, $settings.showHiddenFiles).then((c) => {
           children = c;
@@ -128,11 +90,6 @@
         });
       }
     }
-  });
-
-  $effect(() => {
-    collapseVersion;
-    expanded = false;
   });
 
   const paddingLeft = $derived(`${depth * 27 + 16}px`);
@@ -145,14 +102,10 @@
   style="padding-top: 8px; padding-bottom: 8px; font-size: {ftSize}px;"
   style:padding-left={paddingLeft}
   style:border-left={depth > 0 ? "1px solid rgba(148,163,184,0.16)" : "none"}
-  class:drop-target={dropActive}
+  class:drop-target={isDropTarget}
   onclick={toggle}
   oncontextmenu={handleContextMenu}
-  ondragstart={handleDragStart}
-  ondragover={handleDragOver}
-  ondragleave={handleDragLeave}
-  ondrop={handleDrop}
-  draggable="true"
+  onpointerdown={handlePointerDown}
   data-tree-node-path={node.path}
   data-tree-node-dir={node.is_dir ? "true" : "false"}
   role="treeitem"
@@ -217,8 +170,9 @@
       {onFileClick}
       {onContextMenu}
       {onMoveNode}
+      {onDragStart}
+      {dragOverPath}
       {filterText}
-      {collapseVersion}
     />
   {/each}
 {/if}

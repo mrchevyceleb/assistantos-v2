@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-  import { workspacePath, fileTree, isLoadingTree, workspaceName } from "$lib/stores/workspace";
+  import { workspacePath, fileTree, isLoadingTree, workspaceName, collapseAll } from "$lib/stores/workspace";
   import { openTab } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
   import { settings } from "$lib/stores/settings";
@@ -14,9 +14,113 @@
   import type { MenuItem } from "./ContextMenu.svelte";
 
   let filterText = $state("");
-  let collapseVersion = $state(0);
   let treeRootEl: HTMLDivElement | null = null;
   let externalDragActive = $state(false);
+
+  // Pointer-based drag state for internal tree node reordering
+  let dragState = $state<{
+    active: boolean;
+    sourcePath: string;
+    sourceName: string;
+    sourceIsDir: boolean;
+    startX: number;
+    startY: number;
+    pointerId: number;
+    captured: boolean;
+  } | null>(null);
+  let dragOverPath = $state<string | null>(null);
+
+  const DRAG_DEAD_ZONE = 5;
+
+  function handleTreeDragStart(node: FileNode, e: PointerEvent) {
+    // Record intent but don't start drag yet (dead zone)
+    dragState = {
+      active: false,
+      sourcePath: node.path,
+      sourceName: node.name,
+      sourceIsDir: node.is_dir,
+      startX: e.clientX,
+      startY: e.clientY,
+      pointerId: e.pointerId,
+      captured: false,
+    };
+  }
+
+  // Ghost element position for drag indicator
+  let ghostPos = $state<{ x: number; y: number } | null>(null);
+
+  function handleTreePointerMove(e: PointerEvent) {
+    if (!dragState) return;
+
+    if (!dragState.active) {
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      if (Math.abs(dx) < DRAG_DEAD_ZONE && Math.abs(dy) < DRAG_DEAD_ZONE) return;
+      // Past dead zone: activate drag
+      dragState.active = true;
+      if (!dragState.captured && treeRootEl) {
+        treeRootEl.setPointerCapture(dragState.pointerId);
+        dragState.captured = true;
+      }
+    }
+
+    // Update ghost position
+    ghostPos = { x: e.clientX, y: e.clientY };
+
+    // Find target node under pointer
+    // Release capture momentarily so elementFromPoint works
+    if (dragState.captured && treeRootEl) {
+      treeRootEl.releasePointerCapture(dragState.pointerId);
+    }
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    if (dragState.captured && treeRootEl) {
+      treeRootEl.setPointerCapture(dragState.pointerId);
+    }
+
+    const row = el?.closest("[data-tree-node-path]") as HTMLElement | null;
+    if (row) {
+      const targetPath = row.dataset.treeNodePath || null;
+      if (targetPath && targetPath !== dragState.sourcePath) {
+        dragOverPath = targetPath;
+      } else {
+        dragOverPath = null;
+      }
+    } else {
+      dragOverPath = null;
+    }
+  }
+
+  function handleTreePointerUp(e: PointerEvent) {
+    if (!dragState) return;
+
+    if (dragState.captured && treeRootEl) {
+      treeRootEl.releasePointerCapture(dragState.pointerId);
+    }
+
+    if (dragState.active && dragOverPath) {
+      // Determine destination directory
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const row = el?.closest("[data-tree-node-path]") as HTMLElement | null;
+      let destDir: string | null = null;
+      if (row) {
+        const targetPath = row.dataset.treeNodePath;
+        const isDir = row.dataset.treeNodeDir === "true";
+        if (targetPath) {
+          destDir = isDir ? targetPath : getParentPath(targetPath);
+        }
+      }
+      if (destDir) {
+        handleMoveNode(
+          { path: dragState.sourcePath, name: dragState.sourceName, isDir: dragState.sourceIsDir },
+          destDir,
+        );
+      }
+    }
+
+    dragState = null;
+    dragOverPath = null;
+    ghostPos = null;
+  }
 
   // Context menu state
   let contextMenu = $state<{
@@ -48,7 +152,7 @@
 
   function handleCollapseAll() {
     filterText = "";
-    collapseVersion += 1;
+    collapseAll();
   }
 
   function normalizePath(path: string): string {
@@ -329,7 +433,12 @@
   });
 </script>
 
-<div class="relative flex flex-col h-full metal-inset panel-lift rounded-xl overflow-hidden" bind:this={treeRootEl}>
+<div
+  class="relative flex flex-col h-full metal-inset panel-lift rounded-xl overflow-hidden"
+  bind:this={treeRootEl}
+  onpointermove={handleTreePointerMove}
+  onpointerup={handleTreePointerUp}
+>
   <!-- Header -->
   <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 14px 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -1px 0 rgba(0,0,0,0.45);">
     <span class="font-semibold text-text-secondary uppercase tracking-wide truncate min-w-0" style="font-size: {$settings.fileTreeFontSize}px;" title={$workspaceName}>
@@ -415,8 +524,9 @@
           onFileClick={handleFileClick}
           onContextMenu={handleContextMenu}
           onMoveNode={handleMoveNode}
+          onDragStart={handleTreeDragStart}
+          {dragOverPath}
           {filterText}
-          {collapseVersion}
         />
       {/each}
     {:else}
@@ -440,6 +550,21 @@
   {#if externalDragActive}
     <div class="pointer-events-none absolute inset-0 z-30 bg-accent/10 border-2 border-dashed border-accent/70 rounded-xl flex items-center justify-center text-text-primary text-sm">
       Drop files or folders to import
+    </div>
+  {/if}
+
+  <!-- Drag ghost indicator -->
+  {#if dragState?.active && ghostPos}
+    <div
+      class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-bg-secondary/95 border border-accent/50 text-text-primary shadow-lg backdrop-blur-sm"
+      style="left: {ghostPos.x + 14}px; top: {ghostPos.y - 12}px; padding: 5px 10px; font-size: {$settings.fileTreeFontSize}px; max-width: 220px;"
+    >
+      {#if dragState.sourceIsDir}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="shrink-0 text-accent/70"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" opacity="0.7"/></svg>
+      {:else}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="shrink-0 text-accent/70"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" opacity="0.5"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      {/if}
+      <span class="truncate">{dragState.sourceName}</span>
     </div>
   {/if}
 </div>

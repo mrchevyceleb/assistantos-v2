@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { activeTab, tabs, activeTabId, toggleEditMode, updateTabContent, setTabModified, openChatTab } from "$lib/stores/tabs";
+  import { activeTab, tabs, activeTabId, toggleEditMode, updateTabContent, setTabModified } from "$lib/stores/tabs";
+  import { addChat } from "$lib/stores/chat-instances";
   import { writeFileText, createFile, readDirectoryTree } from "$lib/utils/tauri";
   import { settings } from "$lib/stores/settings";
   import { workspacePath, fileTree, workspaceName } from "$lib/stores/workspace";
@@ -60,7 +61,7 @@
       {
         label: "New Chat",
         action: () => {
-          openChatTab();
+          addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock);
         },
       },
     ];
@@ -166,7 +167,7 @@
       class="absolute inset-0 p-1.5"
       class:hidden={$activeTabId !== ctab.id}
     >
-      <ChatPanel />
+      <ChatPanel instanceId={ctab.path.replace("__chat__:", "").replace("__chat__", "legacy")} />
     </div>
   {/each}
 

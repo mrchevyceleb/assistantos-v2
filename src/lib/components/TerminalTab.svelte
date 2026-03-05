@@ -11,6 +11,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { listen } from "@tauri-apps/api/event";
   import { spawnTerminal, writeTerminal, resizeTerminal, closeTerminal } from "$lib/utils/tauri";
+  import { terminalLinkHandler, handleCtrlClick } from "$lib/utils/link-handler";
   import { workspacePath } from "$lib/stores/workspace";
   import { uiZoom } from "$lib/stores/ui";
   import { settings } from "$lib/stores/settings";
@@ -126,7 +127,7 @@
 
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new WebLinksAddon(terminalLinkHandler));
 
     term.open(containerEl);
 
@@ -176,6 +177,13 @@
     containerEl.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       contextMenu = { visible: true, x: e.clientX, y: e.clientY };
+    });
+
+    // Ctrl+Click to open file paths and URLs
+    containerEl.addEventListener("click", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        handleCtrlClick(e, containerEl);
+      }
     });
 
     // Replay buffered output (preserves scrollback when moving between docks)

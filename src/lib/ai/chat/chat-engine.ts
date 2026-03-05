@@ -5,7 +5,7 @@ import { streamOpenAICompatibleCompletion } from '../providers/openrouter';
 import { streamAnthropicCompletion } from '../providers/anthropic';
 import { executeTool } from '../tools/tool-executor';
 import { getAllToolDefinitions, WRITE_TOOLS } from '../tools/tool-definitions';
-import { SYSTEM_PROMPT } from '../constants';
+import { getPromptProfile } from '../prompts/base-prompts';
 import { ChatSession } from './session';
 import type {
   ChatMessage,
@@ -18,7 +18,12 @@ import type {
 } from '../types';
 
 /** File names to look for as workspace instructions (checked in order). */
-const INSTRUCTION_FILES = ['AGENTS.MD', 'AGENTS.md', 'agents.md', 'CLAUDE.md', 'CLAUDE.MD', 'claude.md'];
+const INSTRUCTION_FILES = [
+  'RIPLEY.md', 'RIPLEY.MD', 'ripley.md',
+  '.ripley/instructions.md',
+  'AGENTS.MD', 'AGENTS.md', 'agents.md',
+  'CLAUDE.md', 'CLAUDE.MD', 'claude.md',
+];
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const AUTO_COMPACT_THRESHOLD_PERCENT = 95;
 
@@ -30,6 +35,8 @@ export class ChatEngine {
   private isRunning = false;
   private workspaceInstructions: string | null = null;
   private instructionsWorkspacePath: string | null = null;
+  private workspacePromptProfile: string | null = null;
+  promptProfile: string | null = null;
 
   constructor(session: ChatSession, settings: AIChatSettings, callbacks: ChatEngineCallbacks) {
     this.session = session;
@@ -103,6 +110,21 @@ export class ChatEngine {
       }
     }
     this.instructionsWorkspacePath = wsPath;
+
+    // Check .ripley/config.json for prompt profile override
+    try {
+      const configContent = await readFileText(`${wsPath}${sep}.ripley${sep}config.json`);
+      const config = JSON.parse(configContent);
+      if (config.prompt) {
+        this.workspacePromptProfile = config.prompt;
+      }
+    } catch {
+      // No ripley config, use default
+    }
+  }
+
+  setPromptProfile(profileId: string): void {
+    this.promptProfile = profileId;
   }
 
   async sendMessage(
@@ -176,11 +198,58 @@ export class ChatEngine {
         let fullContent = '';
         let toolCalls: ToolCall[] = [];
         let finishReason = 'stop';
+        let lastCacheCreation = 0;
+        let lastCacheRead = 0;
 
         await new Promise<void>((resolve, reject) => {
           const streamFn = this.settings.provider === 'anthropic'
             ? streamAnthropicCompletion
-            : streamOpenAICompatibleCompletion;
+            : streamOpenAICompatibleCompletion;  // lmstudio uses OpenAI-compatible
+
+          // State for stripping <think> tags from local models
+          let inThinkTag = false;
+          let textBuffer = '';
+
+          const flushTextBuffer = () => {
+            if (!textBuffer) return;
+            // Check for <think> tags in accumulated text
+            let remaining = textBuffer;
+            textBuffer = '';
+
+            while (remaining.length > 0) {
+              if (inThinkTag) {
+                const closeIdx = remaining.indexOf('</think>');
+                if (closeIdx === -1) {
+                  // Still inside think tag, route all to thinking
+                  this.callbacks.onThinking?.(remaining);
+                  remaining = '';
+                } else {
+                  // Found close tag
+                  const thinkContent = remaining.slice(0, closeIdx);
+                  if (thinkContent) this.callbacks.onThinking?.(thinkContent);
+                  remaining = remaining.slice(closeIdx + '</think>'.length);
+                  inThinkTag = false;
+                }
+              } else {
+                const openIdx = remaining.indexOf('<think>');
+                if (openIdx === -1) {
+                  // No think tag, emit as text
+                  fullContent += remaining;
+                  this.callbacks.onChunk(remaining);
+                  remaining = '';
+                } else {
+                  // Found open tag, emit text before it
+                  const before = remaining.slice(0, openIdx);
+                  if (before) {
+                    fullContent += before;
+                    this.callbacks.onChunk(before);
+                  }
+                  remaining = remaining.slice(openIdx + '<think>'.length);
+                  inThinkTag = true;
+                }
+              }
+            }
+          };
 
           streamFn(
             messages,
@@ -192,8 +261,8 @@ export class ChatEngine {
 
                 switch (chunk.type) {
                   case 'text':
-                    fullContent += chunk.content || '';
-                    this.callbacks.onChunk(chunk.content || '');
+                    textBuffer += chunk.content || '';
+                    flushTextBuffer();
                     break;
                   case 'thinking':
                     this.callbacks.onThinking?.(chunk.content || '');
@@ -210,6 +279,8 @@ export class ChatEngine {
                     if (chunk.finishReason) {
                       finishReason = chunk.finishReason;
                     }
+                    if (chunk.cacheCreationTokens) lastCacheCreation = chunk.cacheCreationTokens;
+                    if (chunk.cacheReadTokens) lastCacheRead = chunk.cacheReadTokens;
                     break;
                   case 'error':
                     reject(new Error(chunk.content || 'Stream error'));
@@ -221,6 +292,10 @@ export class ChatEngine {
             }
           ).catch(reject);
         });
+
+        // Store cache metrics for context usage reporting
+        if (lastCacheCreation) this._lastCacheCreation = lastCacheCreation;
+        if (lastCacheRead) this._lastCacheRead = lastCacheRead;
 
         if (this.abortController.signal.aborted) break;
 
@@ -335,6 +410,9 @@ export class ChatEngine {
     return tokens;
   }
 
+  private _lastCacheCreation = 0;
+  private _lastCacheRead = 0;
+
   private computeContextUsage(messages: ChatMessage[]): ContextUsage {
     const usedTokens = messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
     const maxTokens = this.getContextWindow();
@@ -346,6 +424,8 @@ export class ChatEngine {
       maxTokens,
       remainingTokens,
       usedPercent,
+      cacheCreationTokens: this._lastCacheCreation || undefined,
+      cacheReadTokens: this._lastCacheRead || undefined,
     };
   }
 
@@ -415,7 +495,11 @@ export class ChatEngine {
   private buildMessages(): ChatMessage[] {
     const wsPath = get(workspacePath) || 'No workspace open';
 
-    let systemContent = `${SYSTEM_PROMPT}\n\nCurrent workspace: ${wsPath}`;
+    const profile = getPromptProfile(this.promptProfile || this.workspacePromptProfile || 'default');
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    let systemContent = `${profile.systemPrompt}\n\nCurrent date: ${dateStr}, ${timeStr}\nCurrent workspace: ${wsPath}`;
 
     if (this.workspaceInstructions) {
       systemContent += `\n\n## Workspace Instructions\nThe following instructions were loaded from the workspace root. Follow them when working in this project:\n\n${this.workspaceInstructions}`;

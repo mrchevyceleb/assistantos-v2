@@ -17,7 +17,7 @@ export interface AppSettings {
   fileTreeFontSize: number;
   restoreSession: boolean;
   confirmCloseUnsaved: boolean;
-  aiProvider: "openrouter" | "anthropic" | "openai";
+  aiProvider: "openrouter" | "anthropic" | "openai" | "lmstudio";
   aiAuthMode: "apiKey" | "oauth";
   aiApiKey: string;
   aiOpenRouterApiKey: string;
@@ -28,6 +28,7 @@ export interface AppSettings {
   aiOpenRouterBaseUrl: string;
   aiAnthropicBaseUrl: string;
   aiOpenAIBaseUrl: string;
+  aiLMStudioBaseUrl: string;
   aiTemperature: number;
   aiMaxTokens: number;
   aiEnableToolUse: boolean;
@@ -36,10 +37,12 @@ export interface AppSettings {
   aiMaxToolIterations: number;
   aiFavoriteModels: string[];
   aiChatFontSize: number;
+  aiChatFontFamily: string;
   aiChatDock: "right" | "bottom" | "tab";
   aiReadInstructionsEveryMessage: boolean;
   aiEnableAtMentions: boolean;
   aiSlashCommandDirs: string[];
+  aiBasePrompt: string;
   aiThinkingMode: "all" | "preview" | "none";
   mcpServers: MCPServerConfig[];
 }
@@ -77,11 +80,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiOpenRouterApiKey: '',
   aiAnthropicApiKey: '',
   aiOpenAIApiKey: '',
-  aiModel: 'anthropic/claude-sonnet-4',
+  aiModel: 'anthropic/claude-sonnet-4-6',
   aiBaseUrl: 'https://openrouter.ai/api/v1',
   aiOpenRouterBaseUrl: 'https://openrouter.ai/api/v1',
   aiAnthropicBaseUrl: 'https://api.anthropic.com/v1',
   aiOpenAIBaseUrl: 'https://api.openai.com/v1',
+  aiLMStudioBaseUrl: 'http://localhost:1234/v1',
   aiTemperature: 0.7,
   aiMaxTokens: 16384,
   aiEnableToolUse: true,
@@ -89,14 +93,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiYoloMode: false,
   aiMaxToolIterations: 25,
   aiChatFontSize: 15,
+  aiChatFontFamily: 'system',
   aiChatDock: "bottom",
   aiReadInstructionsEveryMessage: true,
   aiEnableAtMentions: true,
   aiSlashCommandDirs: [],
+  aiBasePrompt: 'default',
   aiThinkingMode: "preview",
   aiFavoriteModels: [
-    'anthropic/claude-sonnet-4',
-    'anthropic/claude-opus-4',
+    'anthropic/claude-sonnet-4-6',
+    'anthropic/claude-opus-4-6',
     'openai/gpt-4.1',
     'google/gemini-2.5-pro-preview',
   ],
@@ -123,6 +129,7 @@ export function updateSetting<K extends keyof AppSettings>(
 export function getActiveAIKey(s: AppSettings): string {
   if (s.aiProvider === "anthropic") return (s.aiAnthropicApiKey || "").trim();
   if (s.aiProvider === "openai") return (s.aiOpenAIApiKey || "").trim();
+  if (s.aiProvider === "lmstudio") return "lm-studio";
   return (s.aiOpenRouterApiKey || s.aiApiKey || "").trim();
 }
 
@@ -132,6 +139,9 @@ export function getActiveAIBaseUrl(s: AppSettings): string {
   }
   if (s.aiProvider === "openai") {
     return (s.aiOpenAIBaseUrl || "https://api.openai.com/v1").trim();
+  }
+  if (s.aiProvider === "lmstudio") {
+    return (s.aiLMStudioBaseUrl || "http://localhost:1234/v1").trim();
   }
   return (s.aiOpenRouterBaseUrl || s.aiBaseUrl || "https://openrouter.ai/api/v1").trim();
 }
