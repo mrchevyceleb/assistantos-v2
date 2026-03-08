@@ -28,11 +28,33 @@
   let { message }: Props = $props();
   let renderedHtml = $state('');
   let showFullThinking = $state(false);
+  let renderTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastRenderedContent = '';
+  let isRendering = false;
 
+  // Render markdown both during streaming (debounced) and after completion
   $effect(() => {
-    if (message.role === 'assistant' && !message.isStreaming && message.content) {
+    if (message.role !== 'assistant' || !message.content) return;
+
+    if (message.isStreaming) {
+      // Debounce rendering during streaming to avoid overwhelming shiki
+      if (renderTimer) clearTimeout(renderTimer);
+      renderTimer = setTimeout(() => {
+        if (!isRendering && message.content !== lastRenderedContent) {
+          isRendering = true;
+          lastRenderedContent = message.content;
+          renderMarkdown(message.content).then(html => {
+            renderedHtml = html;
+            isRendering = false;
+          }).catch(() => { isRendering = false; });
+        }
+      }, 200);
+    } else {
+      // Final render on completion
+      if (renderTimer) clearTimeout(renderTimer);
       renderMarkdown(message.content).then(html => {
         renderedHtml = html;
+        lastRenderedContent = message.content;
       });
     }
   });
@@ -223,16 +245,31 @@
         {#if isUser}
           <div class="whitespace-pre-wrap break-words">{message.content}</div>
         {:else if message.isStreaming}
-          <div class="whitespace-pre-wrap break-words">
-            {message.content}
-            {#if message.toolCalls.length === 0}
-              {#if message.content}
+          {#if renderedHtml}
+            <div class="chat-prose">
+              {@html renderedHtml}
+              {#if message.toolCalls.length === 0}
                 <span class="thinking-trail" aria-hidden="true">
                   <span class="thinking-trail-dot"></span>
                   <span class="thinking-trail-dot"></span>
                   <span class="thinking-trail-dot"></span>
                 </span>
-              {:else}
+              {/if}
+            </div>
+          {:else if message.content}
+            <div class="whitespace-pre-wrap break-words">
+              {message.content}
+              {#if message.toolCalls.length === 0}
+                <span class="thinking-trail" aria-hidden="true">
+                  <span class="thinking-trail-dot"></span>
+                  <span class="thinking-trail-dot"></span>
+                  <span class="thinking-trail-dot"></span>
+                </span>
+              {/if}
+            </div>
+          {:else}
+            <div>
+              {#if message.toolCalls.length === 0}
                 <span class="thinking-chip" role="status" aria-label="Assistant is working">
                   <span class="thinking-orbit" aria-hidden="true">
                     <span class="thinking-core"></span>
@@ -243,8 +280,8 @@
                   </span>
                 </span>
               {/if}
-            {/if}
-          </div>
+            </div>
+          {/if}
         {:else if renderedHtml}
           <div class="chat-prose">{@html renderedHtml}</div>
         {:else}
