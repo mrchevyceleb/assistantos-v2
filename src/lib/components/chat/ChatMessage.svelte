@@ -4,6 +4,11 @@
   import ToolCallBlock from './ToolCallBlock.svelte';
   import { renderMarkdown } from '$lib/utils/markdown';
   import { handleCtrlClick } from '$lib/utils/link-handler';
+  import { openUrl } from '@tauri-apps/plugin-opener';
+  import { openTab, updateTabContent, setTabLoading } from '$lib/stores/tabs';
+  import { readFileText, getFileInfo } from '$lib/utils/tauri';
+  import { get } from 'svelte/store';
+  import { workspacePath } from '$lib/stores/workspace';
 
   const chatFs = $derived($settings.aiChatFontSize);
 
@@ -48,7 +53,61 @@
 
   let messageBodyEl: HTMLDivElement;
 
+  /** Open a file path in the editor (for link clicks) */
+  async function openFileInEditor(rawPath: string): Promise<void> {
+    const ws = get(workspacePath);
+    let resolved = rawPath;
+    if (ws && !/^[A-Za-z]:/.test(rawPath) && !rawPath.startsWith('/')) {
+      resolved = rawPath.replace(/^\.[\\/]/, '');
+      const sep = ws.includes('\\') ? '\\' : '/';
+      resolved = `${ws}${sep}${resolved}`;
+    }
+    try {
+      const info = await getFileInfo(resolved);
+      if (!info || info.is_dir) return;
+      const name = resolved.split(/[\\/]/).pop() || resolved;
+      const ext = name.includes('.') ? name.split('.').pop() || '' : '';
+      const tabId = openTab(resolved, name, ext);
+      const content = await readFileText(resolved);
+      updateTabContent(tabId, content);
+    } catch { /* ignore */ }
+  }
+
   function onMessageClick(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+
+    // Handle copy button clicks on code blocks
+    if (target.classList.contains('code-block-copy')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const code = target.getAttribute('data-code') || '';
+      const decoded = code
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"');
+      navigator.clipboard.writeText(decoded).then(() => {
+        target.textContent = 'Copied!';
+        setTimeout(() => { target.textContent = 'Copy'; }, 1500);
+      });
+      return;
+    }
+
+    // Handle <a> tag clicks: always intercept, open in browser or editor
+    const anchor = target.closest('a') as HTMLAnchorElement | null;
+    if (anchor && messageBodyEl?.contains(anchor)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const href = anchor.getAttribute('href');
+      if (href) {
+        if (href.startsWith('http://') || href.startsWith('https://')) {
+          openUrl(href).catch(err => console.error('Failed to open URL:', err));
+        } else {
+          openFileInEditor(href);
+        }
+      }
+      return;
+    }
+
+    // Ctrl+Click for plain text URLs/file paths
     if (e.ctrlKey || e.metaKey) {
       handleCtrlClick(e, messageBodyEl);
     }
@@ -180,7 +239,10 @@
 </div>
 
 <style>
-  /* Chat-specific prose overrides - tighter than full markdown view */
+  /* ── Chat prose: base text ── */
+  .chat-prose {
+    color: rgba(226, 232, 240, 0.9);
+  }
   .chat-prose :global(p) {
     margin: 0.35rem 0;
   }
@@ -190,7 +252,50 @@
   .chat-prose :global(p:last-child) {
     margin-bottom: 0;
   }
-  .chat-prose :global(pre) {
+
+  /* ── Code blocks (shiki wrapper) ── */
+  .chat-prose :global(.code-block-wrapper) {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 0.5rem 0;
+  }
+  .chat-prose :global(.code-block-header) {
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.75em;
+  }
+  .chat-prose :global(.code-block-lang) {
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+  }
+  .chat-prose :global(.code-block-copy) {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.15s ease;
+  }
+  .chat-prose :global(.code-block-copy:hover) {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: var(--color-accent);
+  }
+  .chat-prose :global(pre.shiki) {
+    background: var(--color-bg-tertiary) !important;
+    border: none;
+    border-radius: 0;
+    padding: 0.75rem 1rem;
+    margin: 0;
+    overflow-x: auto;
+    font-size: 0.85em;
+  }
+  /* Fallback for <pre> not wrapped by shiki */
+  .chat-prose :global(pre:not(.shiki)) {
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
     border-radius: 8px;
@@ -199,6 +304,8 @@
     overflow-x: auto;
     font-size: 0.85em;
   }
+
+  /* ── Inline code ── */
   .chat-prose :global(code) {
     font-family: "Cascadia Code", "Fira Code", monospace;
     background: var(--color-bg-secondary);
@@ -210,71 +317,153 @@
   .chat-prose :global(pre code) {
     background: none;
     padding: 0;
+    color: inherit;
   }
-  .chat-prose :global(a) {
-    color: var(--color-accent);
-    text-decoration: none;
-    cursor: pointer;
-  }
-  .chat-prose :global(a:hover) {
-    text-decoration: underline;
-  }
-  /* Ctrl+Click hint for code blocks containing file paths */
   .chat-prose :global(code:hover) {
     text-decoration: underline;
     text-decoration-style: dotted;
   }
-  .chat-prose :global(ul), .chat-prose :global(ol) {
-    padding-left: 1.25rem;
-    margin: 0.35rem 0;
+
+  /* ── Links ── */
+  .chat-prose :global(a) {
+    color: var(--color-accent);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .chat-prose :global(a:hover) {
+    text-decoration: underline;
+    filter: brightness(1.15);
+  }
+
+  /* ── Lists ── */
+  .chat-prose :global(ul) {
+    list-style-type: disc;
+    padding-left: 1.5rem;
+    margin: 0.4rem 0;
+  }
+  .chat-prose :global(ol) {
+    list-style-type: decimal;
+    padding-left: 1.5rem;
+    margin: 0.4rem 0;
   }
   .chat-prose :global(li) {
-    margin: 0.15rem 0;
-  }
-  .chat-prose :global(blockquote) {
-    border-left: 3px solid rgb(34, 197, 94);
-    padding: 0.25rem 0.75rem;
-    margin: 0.5rem 0;
+    margin: 0.3rem 0;
     color: var(--color-text-secondary);
   }
-  .chat-prose :global(h1), .chat-prose :global(h2), .chat-prose :global(h3), .chat-prose :global(h4) {
-    font-weight: 600;
-    margin: 0.75rem 0 0.35rem;
+  .chat-prose :global(li::marker) {
+    color: var(--color-accent);
+    font-weight: 700;
+  }
+  .chat-prose :global(li > ul), .chat-prose :global(li > ol) {
+    margin: 0.15rem 0;
+  }
+  .chat-prose :global(ul ul) {
+    list-style-type: circle;
+  }
+  .chat-prose :global(ul ul ul) {
+    list-style-type: square;
+  }
+
+  /* ── Headings ── */
+  .chat-prose :global(h1) {
+    font-size: 1.35em;
+    font-weight: 800;
+    margin: 1rem 0 0.4rem;
+    color: #ffffff;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0.3rem;
+    letter-spacing: -0.01em;
+  }
+  .chat-prose :global(h2) {
+    font-size: 1.2em;
+    font-weight: 700;
+    margin: 0.85rem 0 0.35rem;
     color: var(--color-accent);
   }
-  .chat-prose :global(h1) { font-size: 1.2em; }
-  .chat-prose :global(h2) { font-size: 1.1em; }
-  .chat-prose :global(h3) { font-size: 1.02em; color: rgb(34, 197, 94); }
-  .chat-prose :global(h4) { font-size: 0.95em; color: var(--color-text-primary); }
+  .chat-prose :global(h3) {
+    font-size: 1.08em;
+    font-weight: 700;
+    margin: 0.75rem 0 0.3rem;
+    color: rgb(34, 197, 94);
+  }
+  .chat-prose :global(h4) {
+    font-size: 0.98em;
+    font-weight: 600;
+    margin: 0.65rem 0 0.25rem;
+    color: rgba(226, 232, 240, 0.85);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Blockquotes ── */
+  .chat-prose :global(blockquote) {
+    border-left: 3px solid var(--color-accent);
+    background: rgba(88, 180, 208, 0.04);
+    padding: 0.35rem 0.85rem;
+    margin: 0.5rem 0;
+    border-radius: 0 6px 6px 0;
+    color: var(--color-text-secondary);
+  }
+
+  /* ── Tables ── */
   .chat-prose :global(table) {
     width: 100%;
     border-collapse: collapse;
     margin: 0.5rem 0;
     font-size: 0.9em;
+    border-radius: 6px;
+    overflow: hidden;
   }
   .chat-prose :global(th), .chat-prose :global(td) {
     border: 1px solid var(--color-border);
-    padding: 0.35rem 0.5rem;
+    padding: 0.4rem 0.6rem;
   }
   .chat-prose :global(th) {
     background: var(--color-bg-secondary);
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--color-accent);
   }
+  .chat-prose :global(tr:nth-child(even)) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  /* ── Highlighted text ── */
+  .chat-prose :global(mark) {
+    background: rgba(234, 179, 8, 0.2);
+    color: rgb(253, 224, 71);
+    padding: 0.05em 0.25em;
+    border-radius: 3px;
+  }
+
+  /* ── Strikethrough ── */
+  .chat-prose :global(del) {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  /* ── Horizontal rules ── */
   .chat-prose :global(hr) {
     border: none;
     border-top: 1px solid var(--color-border);
-    margin: 0.75rem 0;
+    margin: 0.85rem 0;
+    opacity: 0.6;
   }
+
+  /* ── Inline formatting ── */
   .chat-prose :global(strong) {
-    font-weight: 600;
-    color: rgb(248, 250, 252);
+    font-weight: 700;
+    color: rgba(88, 180, 208, 0.95);
   }
   .chat-prose :global(em) {
-    color: var(--color-text-secondary);
+    color: rgba(88, 180, 208, 0.85);
     font-style: italic;
   }
-  .chat-prose :global(li::marker) {
+  .chat-prose :global(strong em), .chat-prose :global(em strong) {
     color: var(--color-accent);
+    font-weight: 700;
+    font-style: italic;
   }
 
   .thinking-chip {

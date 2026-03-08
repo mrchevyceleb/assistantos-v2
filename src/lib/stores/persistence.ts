@@ -140,6 +140,11 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
       merged.aiOpenRouterBaseUrl = merged.aiBaseUrl;
     }
 
+    // Migration: if aiEnabledModels is missing, copy from aiFavoriteModels
+    if (!merged.aiEnabledModels || merged.aiEnabledModels.length === 0) {
+      merged.aiEnabledModels = [...(merged.aiFavoriteModels || DEFAULT_SETTINGS.aiFavoriteModels)];
+    }
+
     settings.set(merged);
   }
 

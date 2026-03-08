@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settingsVisible, settings } from "$lib/stores/settings";
+  import { settingsVisible, aiSettingsVisible, settings } from "$lib/stores/settings";
   import { chatInstances, chatVisible, addChat } from "$lib/stores/chat-instances";
   import { get } from "svelte/store";
 
@@ -56,6 +56,23 @@
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
+      </svg>
+    </button>
+
+    <!-- AI Settings -->
+    <button
+      class="rail-icon"
+      class:active={$aiSettingsVisible}
+      onclick={() => {
+        settingsVisible.set(false);
+        aiSettingsVisible.update((v) => !v);
+      }}
+      title="AI & Models Settings"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a4 4 0 0 0-4 4v1H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/>
+        <circle cx="12" cy="14" r="2"/>
+        <path d="M12 12v-2"/>
       </svg>
     </button>
   </div>

@@ -6,7 +6,7 @@
   import type {
     UIMessage, UIToolCall, PendingConfirmation,
   } from '$lib/stores/chat';
-  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey } from '$lib/stores/settings';
+  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey, aiSettingsVisible } from '$lib/stores/settings';
   import { ChatEngine } from '$lib/ai/chat/chat-engine';
   import { ChatSession } from '$lib/ai/chat/session';
   import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
@@ -15,42 +15,7 @@
   import { chatInstances, moveChat, removeChat, updateChatModel, type ChatDock } from '$lib/stores/chat-instances';
   import { PROMPT_PROFILES, getPromptProfile } from '$lib/ai/prompts/base-prompts';
   import { getModelProfile, inferModelSettings } from '$lib/ai/model-registry';
-
-  // ── Per-instance state management ─────────────────────────────────
-
-  interface InstanceState {
-    messages: Writable<UIMessage[]>;
-    isLoading: Writable<boolean>;
-    pendingConfirmation: Writable<PendingConfirmation | null>;
-    engine: ChatEngine | null;
-    currentStreamingId: string | null;
-  }
-
-  const instanceStateMap = new Map<string, InstanceState>();
-
-  function getInstanceState(id: string): InstanceState {
-    let state = instanceStateMap.get(id);
-    if (!state) {
-      state = {
-        messages: writable<UIMessage[]>([]),
-        isLoading: writable(false),
-        pendingConfirmation: writable<PendingConfirmation | null>(null),
-        engine: null,
-        currentStreamingId: null,
-      };
-      instanceStateMap.set(id, state);
-    }
-    return state;
-  }
-
-  /** Clean up instance state when a chat is removed */
-  export function destroyInstanceState(id: string) {
-    const state = instanceStateMap.get(id);
-    if (state?.engine) {
-      state.engine.abort();
-    }
-    instanceStateMap.delete(id);
-  }
+  import { getInstanceState, destroyInstanceState } from '$lib/stores/chat-instance-state';
 
   // ── Props ─────────────────────────────────────────────────────────
 
@@ -528,50 +493,33 @@
 
 <div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift" style="font-size: {$settings.aiChatFontSize}px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-weight: 500;">
   <!-- Header -->
-  <div class="flex items-center justify-between shrink-0 border-b border-border/40 bg-bg-secondary/65 metal-sheen" style="padding: 0 16px; height: 52px;">
-    <div class="flex items-center gap-2 min-w-0 overflow-hidden">
-      <div class="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent">
-          <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
-        </svg>
-      </div>
-      <!-- Model quick switcher -->
-      <div class="relative min-w-0">
-        <button
-          bind:this={modelSwitcherBtn}
-          class="flex items-center gap-1.5 font-medium hover:text-accent transition-colors min-w-0
-            {modelSwitcherOpen ? 'text-accent' : 'text-text-secondary'}"
-          style="font-size: {$settings.aiChatFontSize + 1}px;"
-          onclick={() => {
-            if (!modelSwitcherOpen && modelSwitcherBtn) {
-              const rect = modelSwitcherBtn.getBoundingClientRect();
-              modelDropdownPos = { top: rect.bottom + 8, left: rect.left };
-            }
-            modelSwitcherOpen = !modelSwitcherOpen;
-            modelSearchQuery = '';
-            showAllModels = false;
-          }}
-        >
-          <span class="truncate">{modelDisplayName($settings.aiModel)}</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="shrink-0 opacity-50">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </button>
-        {#if getModelProfile($settings.aiModel)}
-          {@const mp = getModelProfile($settings.aiModel)!}
-          <div class="flex items-center" style="gap: 4px; margin-left: 4px;">
-            {#if mp.supportsTools}
-              <span class="text-accent/50" title="Tool use" style="font-size: {$settings.aiChatFontSize - 4}px;">T</span>
-            {/if}
-            {#if mp.supportsVision}
-              <span class="text-accent/50" title="Vision" style="font-size: {$settings.aiChatFontSize - 4}px;">V</span>
-            {/if}
-            {#if mp.supportsThinking}
-              <span class="text-accent/50" title="Thinking" style="font-size: {$settings.aiChatFontSize - 4}px;">R</span>
-            {/if}
-            <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 4}px;">{(mp.contextWindow / 1000).toFixed(0)}k</span>
-          </div>
-        {/if}
+  <div class="shrink-0 border-b border-border/40 bg-bg-secondary/65 metal-sheen" style="padding: 10px 12px 8px 12px;">
+    <!-- Row 1: model + actions -->
+    <div class="flex items-center justify-between" style="gap: 8px;">
+      <div class="flex items-center min-w-0 flex-1" style="gap: 8px;">
+        <!-- Model quick switcher -->
+        <div class="relative min-w-0 flex-1">
+          <button
+            bind:this={modelSwitcherBtn}
+            class="flex items-center font-semibold hover:text-accent transition-colors min-w-0
+              {modelSwitcherOpen ? 'text-accent' : 'text-text-primary'}"
+            style="font-size: {$settings.aiChatFontSize}px; gap: 6px; letter-spacing: -0.01em;"
+            onclick={() => {
+              if (!modelSwitcherOpen && modelSwitcherBtn) {
+                const rect = modelSwitcherBtn.getBoundingClientRect();
+                modelDropdownPos = { top: rect.bottom + 8, left: rect.left };
+              }
+              modelSwitcherOpen = !modelSwitcherOpen;
+              modelSearchQuery = '';
+              showAllModels = false;
+            }}
+            title={$settings.aiModel}
+          >
+            <span class="truncate">{modelDisplayName($settings.aiModel)}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 opacity-40">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
         {#if modelSwitcherOpen}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -591,6 +539,7 @@
             </div>
             <div class="overflow-y-auto flex-1">
               {#if !showAllModels}
+                <!-- Favorites section -->
                 {#if $settings.aiFavoriteModels.length > 0}
                   <div class="text-text-muted uppercase tracking-wider font-medium" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 4px 12px 2px 12px;">Favorites</div>
                   {#each $settings.aiFavoriteModels.filter(f => !modelSearchQuery || f.toLowerCase().includes(modelSearchQuery.toLowerCase())) as fav}
@@ -609,8 +558,30 @@
                       {/if}
                     </button>
                   {/each}
-                {:else}
-                  <div class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 10px 12px;">Star models in Settings to add favorites</div>
+                {/if}
+                <!-- Enabled (non-favorite) models -->
+                {@const nonFavEnabled = ($settings.aiEnabledModels || []).filter(m => !$settings.aiFavoriteModels.includes(m))}
+                {#if nonFavEnabled.length > 0}
+                  <div class="text-text-muted uppercase tracking-wider font-medium" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 4px 12px 2px 12px;">Enabled</div>
+                  {#each nonFavEnabled.filter(m => !modelSearchQuery || m.toLowerCase().includes(modelSearchQuery.toLowerCase())) as model}
+                    {@const modelInfo = $availableModels.find(m => m.id === model)}
+                    {@const regProfile = getModelProfile(model)}
+                    {@const ctxLen = modelInfo?.context_length || regProfile?.contextWindow}
+                    <button
+                      class="w-full text-left font-mono hover:bg-bg-hover transition-colors truncate
+                        {model === $settings.aiModel ? 'text-accent bg-accent/8' : 'text-text-secondary hover:text-text-primary'}"
+                      style="font-size: {$settings.aiChatFontSize}px; padding: 8px 12px;"
+                      onclick={() => { updateSetting("aiModel", model); modelSwitcherOpen = false; }}
+                    >
+                      <span class="truncate">{model}</span>
+                      {#if ctxLen}
+                        <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(ctxLen / 1000).toFixed(0)}k)</span>
+                      {/if}
+                    </button>
+                  {/each}
+                {/if}
+                {#if $settings.aiFavoriteModels.length === 0 && (!$settings.aiEnabledModels || $settings.aiEnabledModels.length === 0)}
+                  <div class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 10px 12px;">Enable models in AI & Models settings</div>
                 {/if}
               {:else}
                 {#each $availableModels.filter(m => !modelSearchQuery || m.id.toLowerCase().includes(modelSearchQuery.toLowerCase())) as model}
@@ -628,9 +599,9 @@
                 {/each}
               {/if}
             </div>
-            <!-- Browse all models button -->
-            {#if !showAllModels}
-              <div class="border-t border-border/30" style="padding: 6px 10px;">
+            <!-- Footer links -->
+            <div class="border-t border-border/30" style="padding: 6px 10px;">
+              {#if !showAllModels}
                 <button
                   class="w-full text-center text-accent hover:bg-accent/10 rounded-md transition-colors"
                   style="font-size: {$settings.aiChatFontSize - 1}px; padding: 6px 0;"
@@ -638,18 +609,81 @@
                 >
                   Browse all models
                 </button>
-              </div>
-            {/if}
+              {/if}
+              <button
+                class="w-full text-center text-text-muted hover:text-accent hover:bg-accent/10 rounded-md transition-colors"
+                style="font-size: {$settings.aiChatFontSize - 1}px; padding: 6px 0;"
+                onclick={() => { modelSwitcherOpen = false; aiSettingsVisible.set(true); }}
+              >
+                Manage Models...
+              </button>
+            </div>
           </div>
         {/if}
       </div>
+      <!-- Model capability badges -->
+      {#if getModelProfile($settings.aiModel)}
+        {@const mp = getModelProfile($settings.aiModel)!}
+        <div class="flex items-center shrink-0" style="gap: 4px;">
+          {#if mp.supportsTools}
+            <span class="rounded-full border border-accent/20 bg-accent/8 text-accent/70 font-medium select-none" title="Tool use" style="font-size: {Math.max(9, $settings.aiChatFontSize - 5)}px; padding: 1px 5px; line-height: 1.4;">T</span>
+          {/if}
+          {#if mp.supportsVision}
+            <span class="rounded-full border border-accent/20 bg-accent/8 text-accent/70 font-medium select-none" title="Vision" style="font-size: {Math.max(9, $settings.aiChatFontSize - 5)}px; padding: 1px 5px; line-height: 1.4;">V</span>
+          {/if}
+          {#if mp.supportsThinking}
+            <span class="rounded-full border border-accent/20 bg-accent/8 text-accent/70 font-medium select-none" title="Thinking" style="font-size: {Math.max(9, $settings.aiChatFontSize - 5)}px; padding: 1px 5px; line-height: 1.4;">R</span>
+          {/if}
+        </div>
+      {/if}
+      </div>
+      <!-- Action buttons -->
+      <div class="flex items-center shrink-0" style="gap: 1px;">
+        <button
+          class="rounded-md text-text-muted/60 hover:text-text-primary hover:bg-white/5 transition-all flex items-center justify-center"
+          style="width: 28px; height: 28px;"
+          onclick={handleNewChat}
+          title="Clear chat"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/>
+          </svg>
+        </button>
+        <button
+          class="rounded-md text-text-muted/60 hover:text-text-primary hover:bg-white/5 transition-all flex items-center justify-center"
+          style="width: 28px; height: 28px;"
+          onclick={cycleDock}
+          title={nextDockLabel()}
+        >
+          {#if currentDock() === 'right'}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+          {:else if currentDock() === 'bottom'}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          {/if}
+        </button>
+        <button
+          class="rounded-md text-text-muted/60 hover:text-error hover:bg-error/10 transition-all flex items-center justify-center"
+          style="width: 28px; height: 28px;"
+          onclick={handleClose}
+          title="Close chat"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <!-- Row 2: prompt profile -->
+    <div class="flex items-center" style="margin-top: 6px; gap: 6px;">
       <!-- Prompt profile selector -->
       <div class="relative">
         <button
           bind:this={promptSelectorBtn}
-          class="flex items-center gap-1 hover:text-accent transition-colors
-            {promptSelectorOpen ? 'text-accent' : 'text-text-muted'}"
-          style="font-size: {$settings.aiChatFontSize - 2}px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px;"
+          class="flex items-center hover:text-accent transition-colors
+            {promptSelectorOpen ? 'text-accent' : 'text-text-muted/70'}"
+          style="font-size: {Math.max(10, $settings.aiChatFontSize - 3)}px; padding: 2px 8px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; gap: 4px; background: rgba(255,255,255,0.03);"
           onclick={() => {
             if (!promptSelectorOpen && promptSelectorBtn) {
               const rect = promptSelectorBtn.getBoundingClientRect();
@@ -660,7 +694,7 @@
           title="Select prompt profile"
         >
           <span class="truncate">{getPromptProfile(selectedPromptId).name}</span>
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="shrink-0 opacity-50">
+          <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="shrink-0 opacity-50">
             <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
@@ -693,54 +727,26 @@
         {/if}
       </div>
     </div>
-    <div class="flex items-center gap-0.5 shrink-0 ml-2">
-      <button
-        class="h-8 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all whitespace-nowrap"
-        style="font-size: {$settings.aiChatFontSize - 2}px; padding: 0 8px;"
-        onclick={cycleDock}
-        title="Move to next dock position"
-      >
-        {nextDockLabel()}
-      </button>
-      <button
-        class="h-8 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover/60 transition-all"
-        style="font-size: {$settings.aiChatFontSize - 2}px; padding: 0 8px;"
-        onclick={handleNewChat}
-        title="Clear chat"
-      >
-        Clear
-      </button>
-      <button
-        class="h-8 rounded-md text-text-muted hover:text-error hover:bg-error/10 transition-all flex items-center justify-center"
-        style="width: 28px;"
-        onclick={handleClose}
-        title="Close chat"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
   </div>
 
   <!-- Context bar -->
-  <div class="border-b border-border/30 bg-bg-secondary/45" style="padding: 8px 12px;">
-    <div class="flex items-center" style="gap: 8px;">
+  <div class="border-b border-border/20" style="padding: 6px 12px; background: rgba(0,0,0,0.15);">
+    <div class="flex items-center" style="gap: 10px;">
       <div class="flex-1 min-w-0">
-        <div class="h-1.5 rounded-full bg-bg-active overflow-hidden">
-          <div class="h-full rounded-full transition-all duration-300" style={`width: ${contextProgressWidth()}; background: ${contextProgressColor()};`}></div>
+        <div class="rounded-full overflow-hidden" style="height: 3px; background: rgba(255,255,255,0.06);">
+          <div class="h-full rounded-full transition-all duration-500 ease-out" style={`width: ${contextProgressWidth()}; background: ${contextProgressColor()}; opacity: 0.8;`}></div>
         </div>
-        <div class="mt-1 flex items-center gap-2 text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;">
-          <span class="shrink-0">{contextPercentText()}</span>
-          <span class="font-mono truncate">{contextTokenText()}</span>
+        <div class="flex items-center text-text-muted/60" style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; margin-top: 3px; gap: 6px;">
+          <span class="shrink-0 font-medium">{contextPercentText()}</span>
+          <span class="font-mono truncate" style="opacity: 0.7;">{contextTokenText()}</span>
           {#if cacheText()}
-            <span class="text-accent/70 font-mono truncate">{cacheText()}</span>
+            <span class="text-accent/50 font-mono truncate">{cacheText()}</span>
           {/if}
         </div>
       </div>
       <button
-        class="rounded-md shrink-0 whitespace-nowrap border border-border/40 bg-bg-secondary/60 text-text-muted hover:text-text-primary hover:bg-bg-hover/60 hover:border-border/60 transition-all"
-        style="font-size: {$settings.aiChatFontSize - 3}px; height: 28px; padding: 0 10px;"
+        class="rounded-md shrink-0 whitespace-nowrap text-text-muted/50 hover:text-text-primary hover:bg-white/5 transition-all"
+        style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px;"
         onclick={handleCompactNow}
         disabled={$instanceIsLoading}
         title="Compact context now"

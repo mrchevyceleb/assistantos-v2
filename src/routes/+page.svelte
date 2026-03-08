@@ -20,8 +20,9 @@
   import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { initZoom } from "$lib/stores/ui";
-  import { settingsVisible, settings, updateSetting } from "$lib/stores/settings";
+  import { settingsVisible, aiSettingsVisible, settings, updateSetting } from "$lib/stores/settings";
   import ChatDockPanel from "$lib/components/chat/ChatDockPanel.svelte";
+  import AISettingsPage from "$lib/components/ai-settings/AISettingsPage.svelte";
   import {
     chatInstances, chatVisible, chatPanelWidth, chatPanelHeight,
     rightChats, bottomChats, addChat,
@@ -349,59 +350,63 @@
     {/if}
 
     <!-- Center + right panels -->
-    <div class="flex-1 flex overflow-hidden">
-      <!-- Center panel: tabs + content + bottom terminal -->
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- Tab bar -->
-        <TabBar />
-
-        <!-- Content area + terminal -->
+    {#if $aiSettingsVisible}
+      <AISettingsPage />
+    {:else}
+      <div class="flex-1 flex overflow-hidden">
+        <!-- Center panel: tabs + content + bottom terminal -->
         <div class="flex-1 flex flex-col overflow-hidden">
-          <!-- Content -->
-          <div class="flex-1 overflow-hidden">
-            <ContentArea />
-          </div>
+          <!-- Tab bar -->
+          <TabBar />
 
-          <!-- Bottom terminal — always mounted to preserve PTY sessions, hidden via CSS -->
-          {#if $bottomTerminals.length > 0}
-            <div class:hidden={!$terminalVisible}>
-              <ResizeHandle direction="vertical" onResize={handleTerminalResize} />
+          <!-- Content area + terminal -->
+          <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Content -->
+            <div class="flex-1 overflow-hidden">
+              <ContentArea />
             </div>
-            <div
-              style:height="{$terminalHeight}px"
-              class="shrink-0 overflow-hidden p-1.5 pt-1"
-              class:hidden={!$terminalVisible}
-            >
-              <div class="h-full metal-frame rounded-xl overflow-hidden">
-                <TerminalPanel dock="bottom" />
+
+            <!-- Bottom terminal — always mounted to preserve PTY sessions, hidden via CSS -->
+            {#if $bottomTerminals.length > 0}
+              <div class:hidden={!$terminalVisible}>
+                <ResizeHandle direction="vertical" onResize={handleTerminalResize} />
               </div>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Right panel terminal — always mounted when terminals exist to preserve PTY -->
-      {#if $rightPanelVisible}
-        <ResizeHandle direction="horizontal" onResize={handleRightPanelResize} />
-        <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
-          <div class="h-full metal-frame rounded-xl overflow-hidden">
-            <TerminalPanel dock="right" />
+              <div
+                style:height="{$terminalHeight}px"
+                class="shrink-0 overflow-hidden p-1.5 pt-1"
+                class:hidden={!$terminalVisible}
+              >
+                <div class="h-full metal-frame rounded-xl overflow-hidden">
+                  <TerminalPanel dock="bottom" />
+                </div>
+              </div>
+            {/if}
           </div>
         </div>
-      {/if}
 
-      <!-- AI Chat Panel (right dock) -->
-      {#if hasRightChats && $chatVisible}
-        <ResizeHandle direction="horizontal" onResize={handleChatRightResize} />
-        <div style:width="{$chatPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
-          <ChatDockPanel dock="right" />
-        </div>
-      {/if}
-    </div>
+        <!-- Right panel terminal — always mounted when terminals exist to preserve PTY -->
+        {#if $rightPanelVisible}
+          <ResizeHandle direction="horizontal" onResize={handleRightPanelResize} />
+          <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
+            <div class="h-full metal-frame rounded-xl overflow-hidden">
+              <TerminalPanel dock="right" />
+            </div>
+          </div>
+        {/if}
+
+        <!-- AI Chat Panel (right dock) -->
+        {#if hasRightChats && $chatVisible}
+          <ResizeHandle direction="horizontal" onResize={handleChatRightResize} />
+          <div style:width="{$chatPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
+            <ChatDockPanel dock="right" />
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <!-- AI Chat Panel (bottom dock) -->
-  {#if hasBottomChats && $chatVisible}
+  {#if !$aiSettingsVisible && hasBottomChats && $chatVisible}
     <ResizeHandle direction="vertical" onResize={handleChatBottomResize} />
     <div style:height="{$chatPanelHeight}px" class="shrink-0 overflow-hidden border-t border-border p-1.5 pt-1">
       <ChatDockPanel dock="bottom" />

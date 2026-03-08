@@ -36,6 +36,7 @@ export interface AppSettings {
   aiYoloMode: boolean;
   aiMaxToolIterations: number;
   aiFavoriteModels: string[];
+  aiEnabledModels: string[];
   aiChatFontSize: number;
   aiChatFontFamily: string;
   aiChatDock: "right" | "bottom" | "tab";
@@ -106,6 +107,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
     'openai/gpt-4.1',
     'google/gemini-2.5-pro-preview',
   ],
+  aiEnabledModels: [
+    'anthropic/claude-sonnet-4-6',
+    'anthropic/claude-opus-4-6',
+    'openai/gpt-4.1',
+    'google/gemini-2.5-pro-preview',
+  ],
   mcpServers: [],
 };
 
@@ -115,6 +122,9 @@ export const settings = writable<AppSettings>({ ...DEFAULT_SETTINGS });
 
 /** Whether the settings modal is visible */
 export const settingsVisible = writable(false);
+
+/** Whether the AI settings page is visible */
+export const aiSettingsVisible = writable(false);
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
