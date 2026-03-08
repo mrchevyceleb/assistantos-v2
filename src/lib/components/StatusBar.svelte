@@ -76,10 +76,11 @@
     <span>UTF-8</span>
     <button
       onclick={() => {
-        if ($chatInstances.length === 0) {
-          addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock);
-        } else {
+        const hasPanel = $chatInstances.some((c) => c.dock === 'right' || c.dock === 'bottom');
+        if (hasPanel) {
           chatVisible.update((v) => !v);
+        } else {
+          addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock === 'tab' ? 'right' : $settings.aiChatDock);
         }
       }}
       class="status-btn flex items-center gap-1.5 hover:text-text-primary transition-colors"

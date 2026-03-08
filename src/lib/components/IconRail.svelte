@@ -43,11 +43,13 @@
       class="rail-icon"
       class:active={$chatVisible && $chatInstances.length > 0}
       onclick={() => {
-        if ($chatInstances.length === 0) {
-          const s = get(settings);
-          addChat(s.aiModel, s.aiProvider, s.aiChatDock);
-        } else {
+        const instances = get(chatInstances);
+        const hasPanel = instances.some((c) => c.dock === 'right' || c.dock === 'bottom');
+        if (hasPanel) {
           chatVisible.update((v) => !v);
+        } else {
+          const s = get(settings);
+          addChat(s.aiModel, s.aiProvider, s.aiChatDock === 'tab' ? 'right' : s.aiChatDock);
         }
       }}
       title="AI Chat (Ctrl+L)"

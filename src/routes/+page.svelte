@@ -266,10 +266,11 @@
     if (e.ctrlKey && e.key === "l") {
       e.preventDefault();
       const instances = get(chatInstances);
-      if (instances.length === 0) {
-        addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock);
-      } else {
+      const hasPanel = instances.some((c) => c.dock === 'right' || c.dock === 'bottom');
+      if (hasPanel) {
         chatVisible.update((v) => !v);
+      } else {
+        addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock === 'tab' ? 'right' : $settings.aiChatDock);
       }
       return;
     }
