@@ -91,7 +91,7 @@ export const DEFAULT_AI_SETTINGS: AIChatSettings = {
   enableToolUse: true,
   confirmWrites: true,
   yoloMode: false,
-  maxToolIterations: 25,
+  maxToolIterations: 75,
   readInstructionsEachMessage: true,
 };
 

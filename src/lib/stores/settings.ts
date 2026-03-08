@@ -92,7 +92,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiEnableToolUse: true,
   aiConfirmWrites: true,
   aiYoloMode: false,
-  aiMaxToolIterations: 25,
+  aiMaxToolIterations: 75,
   aiChatFontSize: 15,
   aiChatFontFamily: 'system',
   aiChatDock: "bottom",
