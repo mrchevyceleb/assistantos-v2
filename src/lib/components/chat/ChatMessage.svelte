@@ -73,6 +73,20 @@
     } catch { /* ignore */ }
   }
 
+  /** Check if text looks like a file path */
+  function looksLikeFilePath(text: string): boolean {
+    const trimmed = text.trim();
+    // Windows absolute: C:\... or C:/...
+    if (/^[A-Za-z]:[\\\/]/.test(trimmed)) return true;
+    // Unix absolute: /home/...
+    if (/^\/[a-zA-Z]/.test(trimmed)) return true;
+    // Relative with extension: src/lib/foo.ts, ./foo.md
+    if (/^\.{0,2}[\\\/]/.test(trimmed) && /\.\w+$/.test(trimmed)) return true;
+    // Path-like with slashes and a file extension
+    if (/[\\\/]/.test(trimmed) && /\.\w{1,10}$/.test(trimmed)) return true;
+    return false;
+  }
+
   function onMessageClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
 
@@ -105,6 +119,18 @@
         }
       }
       return;
+    }
+
+    // Handle clicks on <code> elements containing file paths (no Ctrl needed)
+    const codeEl = target.closest('code') as HTMLElement | null;
+    if (codeEl && messageBodyEl?.contains(codeEl) && !codeEl.closest('pre')) {
+      const text = codeEl.textContent || '';
+      if (looksLikeFilePath(text)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openFileInEditor(text.trim());
+        return;
+      }
     }
 
     // Ctrl+Click for plain text URLs/file paths
@@ -322,6 +348,7 @@
   .chat-prose :global(code:hover) {
     text-decoration: underline;
     text-decoration-style: dotted;
+    cursor: pointer;
   }
 
   /* ── Links ── */
