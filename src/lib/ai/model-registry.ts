@@ -181,13 +181,17 @@ export function inferModelSettings(modelId: string): {
   // Heuristic fallback
   const id = modelId.toLowerCase();
   let contextWindow = 128000;
-  if (id.includes('gemini')) contextWindow = 1000000;
-  else if (id.includes('claude')) contextWindow = 200000;
+  let maxOutputTokens = 16384;
+  if (id.includes('gemini')) { contextWindow = 1000000; maxOutputTokens = 65536; }
+  else if (id.includes('claude')) { contextWindow = 200000; maxOutputTokens = 16384; }
   else if (id.includes('gpt-5')) contextWindow = 400000;
+  else if (id.includes('gpt-4.1')) contextWindow = 128000;
+  else if (id.includes('codex')) contextWindow = 200000;
+  else if (id.includes('o3') || id.includes('o4')) { contextWindow = 200000; maxOutputTokens = 100000; }
 
   return {
     contextWindow,
-    maxOutputTokens: 16384,
+    maxOutputTokens,
     defaultTemperature: 0.7,
     supportsTools: true,
   };

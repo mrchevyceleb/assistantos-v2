@@ -11,7 +11,7 @@
   import { ChatSession } from '$lib/ai/chat/session';
   import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
   import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
-  import { availableModels, fetchModels, inferContextLength } from '$lib/stores/models';
+  import { availableModels, fetchModels } from '$lib/stores/models';
   import { chatInstances, moveChat, removeChat, updateChatModel, type ChatDock } from '$lib/stores/chat-instances';
   import { PROMPT_PROFILES, getPromptProfile } from '$lib/ai/prompts/base-prompts';
   import { getModelProfile, inferModelSettings } from '$lib/ai/model-registry';
@@ -133,27 +133,26 @@
 
   // ── AI Settings ───────────────────────────────────────────────────
 
-  function inferContextWindow(modelId: string): number {
-    return inferContextLength(modelId);
-  }
-
   function resolveContextWindow(): number {
     const s = get(settings);
     const model = get(availableModels).find((m) => m.id === s.aiModel);
     if (model?.context_length) return model.context_length;
-    const profile = getModelProfile(s.aiModel);
-    if (profile) return profile.contextWindow;
-    return inferContextWindow(s.aiModel);
+    return inferModelSettings(s.aiModel).contextWindow;
   }
 
   function visibleContextUsage(): ContextUsage {
     if (contextUsage) return contextUsage;
-    const max = resolveContextWindow();
+    const s = get(settings);
+    const { maxOutputTokens } = inferModelSettings(s.aiModel);
+    const fullWindow = resolveContextWindow();
+    const effectiveBudget = Math.max(1, fullWindow - maxOutputTokens);
     return {
       usedTokens: 0,
-      maxTokens: max,
-      remainingTokens: max,
+      maxTokens: effectiveBudget,
+      remainingTokens: effectiveBudget,
       usedPercent: 0,
+      reservedOutputTokens: maxOutputTokens,
+      isEstimated: true,
     };
   }
 
@@ -422,7 +421,8 @@
 
   function contextTokenText(): string {
     const usage = visibleContextUsage();
-    return `${usage.usedTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} tokens`;
+    const label = usage.isEstimated ? 'tokens (est)' : 'tokens';
+    return `${usage.usedTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} ${label}`;
   }
 
   function contextProgressWidth(): string {

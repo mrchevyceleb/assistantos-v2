@@ -39,6 +39,8 @@ export interface StreamChunk {
   finishReason?: string | null;
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface ToolDefinition {
@@ -77,6 +79,10 @@ export interface ContextUsage {
   usedPercent: number;
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  apiInputTokens?: number;
+  apiOutputTokens?: number;
+  reservedOutputTokens: number;
+  isEstimated: boolean;
 }
 
 export const DEFAULT_AI_SETTINGS: AIChatSettings = {

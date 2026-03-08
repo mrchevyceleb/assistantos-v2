@@ -16,6 +16,8 @@ class AnthropicStreamProcessor {
   private _finishReason: string | null = null;
   private _cacheCreationTokens = 0;
   private _cacheReadTokens = 0;
+  private _inputTokens = 0;
+  private _outputTokens = 0;
 
   get cacheCreationTokens(): number { return this._cacheCreationTokens; }
   get cacheReadTokens(): number { return this._cacheReadTokens; }
@@ -36,6 +38,8 @@ class AnthropicStreamProcessor {
       const u = parsed.message.usage;
       this._cacheCreationTokens = u.cache_creation_input_tokens || 0;
       this._cacheReadTokens = u.cache_read_input_tokens || 0;
+      if (u.input_tokens) this._inputTokens = u.input_tokens;
+      if (u.output_tokens) this._outputTokens = u.output_tokens;
     }
 
     if (eventType === 'message_stop') {
@@ -44,6 +48,8 @@ class AnthropicStreamProcessor {
         finishReason: this._finishReason || 'stop',
         cacheCreationTokens: this._cacheCreationTokens || undefined,
         cacheReadTokens: this._cacheReadTokens || undefined,
+        inputTokens: this._inputTokens || undefined,
+        outputTokens: this._outputTokens || undefined,
       };
     }
 
@@ -55,6 +61,7 @@ class AnthropicStreamProcessor {
       if (parsed.usage) {
         if (parsed.usage.cache_creation_input_tokens) this._cacheCreationTokens = parsed.usage.cache_creation_input_tokens;
         if (parsed.usage.cache_read_input_tokens) this._cacheReadTokens = parsed.usage.cache_read_input_tokens;
+        if (parsed.usage.output_tokens) this._outputTokens = parsed.usage.output_tokens;
       }
       return null;
     }
@@ -123,6 +130,8 @@ class AnthropicStreamProcessor {
     this._finishReason = null;
     this._cacheCreationTokens = 0;
     this._cacheReadTokens = 0;
+    this._inputTokens = 0;
+    this._outputTokens = 0;
   }
 }
 

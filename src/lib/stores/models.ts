@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { aiFetchModels } from '$lib/utils/tauri';
 import { settings, getActiveAIBaseUrl, getActiveAIKey } from './settings';
+import { inferModelSettings } from '$lib/ai/model-registry';
 
 export interface OpenRouterModel {
   id: string;
@@ -64,14 +65,7 @@ export async function fetchLMStudioModels(baseUrl: string): Promise<void> {
 }
 
 export function inferContextLength(modelId: string): number {
-  const id = modelId.toLowerCase();
-  if (id.includes('gemini')) return 1000000;
-  if (id.includes('claude')) return 200000;
-  if (id.includes('gpt-5')) return 400000;
-  if (id.includes('gpt-4.1')) return 128000;
-  if (id.includes('gpt-4')) return 128000;
-  if (id.includes('codex')) return 200000;
-  return 128000;
+  return inferModelSettings(modelId).contextWindow;
 }
 
 export async function fetchModels(): Promise<void> {

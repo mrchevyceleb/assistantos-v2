@@ -3,6 +3,11 @@ import type { StreamChunk, ToolCall } from '../types';
 export class StreamProcessor {
   private accumulatedToolCalls: Map<number, { id: string; type: 'function'; function: { name: string; arguments: string } }> = new Map();
   private _finishReason: string | null = null;
+  private _inputTokens = 0;
+  private _outputTokens = 0;
+
+  get inputTokens(): number { return this._inputTokens; }
+  get outputTokens(): number { return this._outputTokens; }
 
   processLine(data: string): StreamChunk | null {
     // Skip [DONE] signal
@@ -15,6 +20,12 @@ export class StreamProcessor {
       parsed = JSON.parse(data);
     } catch {
       return null; // Skip unparseable lines
+    }
+
+    // Capture usage from OpenAI-compatible streaming (sent in final chunk)
+    if (parsed.usage) {
+      if (parsed.usage.prompt_tokens) this._inputTokens = parsed.usage.prompt_tokens;
+      if (parsed.usage.completion_tokens) this._outputTokens = parsed.usage.completion_tokens;
     }
 
     const choice = parsed.choices?.[0];
@@ -84,5 +95,7 @@ export class StreamProcessor {
   reset() {
     this.accumulatedToolCalls.clear();
     this._finishReason = null;
+    this._inputTokens = 0;
+    this._outputTokens = 0;
   }
 }

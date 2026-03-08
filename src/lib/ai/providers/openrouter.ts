@@ -91,6 +91,11 @@ export async function streamOpenAICompatibleCompletion(
     stream: true,
   };
 
+  // Request usage stats in streaming response (LM Studio may not support this)
+  if (settings.provider !== 'lmstudio') {
+    body.stream_options = { include_usage: true };
+  }
+
   // Only send tools if the model/provider actually supports them
   const { supportsTools: modelSupportsTools } = inferModelSettings(settings.model);
   const providerSupportsTools = settings.provider !== 'lmstudio';
@@ -135,6 +140,16 @@ export async function streamOpenAICompatibleCompletion(
           type: 'tool_call',
           toolCall: remaining[i],
           finishReason: i === 0 ? finishReason : undefined,
+        });
+      }
+
+      // Emit real token counts if available
+      if (processor.inputTokens || processor.outputTokens) {
+        callbacks.onChunk({
+          type: 'done',
+          finishReason: finishReason || 'stop',
+          inputTokens: processor.inputTokens || undefined,
+          outputTokens: processor.outputTokens || undefined,
         });
       }
 

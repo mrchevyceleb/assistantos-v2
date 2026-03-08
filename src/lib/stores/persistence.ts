@@ -140,9 +140,21 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
       merged.aiOpenRouterBaseUrl = merged.aiBaseUrl;
     }
 
-    // Migration: if aiEnabledModels is missing, copy from aiFavoriteModels
-    if (!merged.aiEnabledModels || merged.aiEnabledModels.length === 0) {
-      merged.aiEnabledModels = [...(merged.aiFavoriteModels || DEFAULT_SETTINGS.aiFavoriteModels)];
+    // Migration: normalize bare model IDs to prefixed form.
+    // Older saves stored e.g. 'claude-sonnet-4-6' instead of 'anthropic/claude-sonnet-4-6'.
+    // The UI now always uses prefixed IDs, so bare IDs cause isFavorite/isEnabled mismatches.
+    function normalizeBareModelId(id: string): string {
+      if (id.includes('/')) return id; // Already prefixed — leave alone.
+      if (id.startsWith('claude-')) return `anthropic/${id}`;
+      if (id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4')) return `openai/${id}`;
+      return id; // Unknown bare ID — leave unchanged.
+    }
+    merged.aiFavoriteModels = (merged.aiFavoriteModels || []).map(normalizeBareModelId);
+    merged.aiEnabledModels = (merged.aiEnabledModels || []).map(normalizeBareModelId);
+
+    // Migration: if aiEnabledModels is still empty after normalization, seed from aiFavoriteModels
+    if (merged.aiEnabledModels.length === 0) {
+      merged.aiEnabledModels = [...(merged.aiFavoriteModels.length > 0 ? merged.aiFavoriteModels : DEFAULT_SETTINGS.aiFavoriteModels)];
     }
 
     settings.set(merged);

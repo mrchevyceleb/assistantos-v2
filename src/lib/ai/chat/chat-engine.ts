@@ -3,6 +3,7 @@ import { workspacePath } from '$lib/stores/workspace';
 import { readFileText } from '$lib/utils/tauri';
 import { streamOpenAICompatibleCompletion } from '../providers/openrouter';
 import { streamAnthropicCompletion } from '../providers/anthropic';
+import { inferModelSettings } from '../model-registry';
 import { executeTool } from '../tools/tool-executor';
 import { getAllToolDefinitions, WRITE_TOOLS } from '../tools/tool-definitions';
 import { getPromptProfile } from '../prompts/base-prompts';
@@ -281,6 +282,8 @@ export class ChatEngine {
                     }
                     if (chunk.cacheCreationTokens) lastCacheCreation = chunk.cacheCreationTokens;
                     if (chunk.cacheReadTokens) lastCacheRead = chunk.cacheReadTokens;
+                    if (chunk.inputTokens) this._lastApiInputTokens = chunk.inputTokens;
+                    if (chunk.outputTokens) this._lastApiOutputTokens = chunk.outputTokens;
                     break;
                   case 'error':
                     reject(new Error(chunk.content || 'Stream error'));
@@ -394,6 +397,9 @@ export class ChatEngine {
     if (message.content) {
       tokens += this.estimateTokens(message.content);
     }
+    if (message.images?.length) {
+      tokens += message.images.length * 1600;
+    }
     if (message.tool_calls?.length) {
       for (const call of message.tool_calls) {
         tokens += 12;
@@ -412,20 +418,33 @@ export class ChatEngine {
 
   private _lastCacheCreation = 0;
   private _lastCacheRead = 0;
+  private _lastApiInputTokens = 0;
+  private _lastApiOutputTokens = 0;
 
   private computeContextUsage(messages: ChatMessage[]): ContextUsage {
-    const usedTokens = messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
-    const maxTokens = this.getContextWindow();
-    const remainingTokens = Math.max(0, maxTokens - usedTokens);
-    const usedPercent = Math.min(100, (usedTokens / maxTokens) * 100);
+    const { maxOutputTokens } = inferModelSettings(this.settings.model);
+    const fullContextWindow = this.getContextWindow();
+    const reservedOutputTokens = maxOutputTokens;
+    const effectiveBudget = Math.max(1, fullContextWindow - reservedOutputTokens);
+
+    const hasApiData = this._lastApiInputTokens > 0;
+    const usedTokens = hasApiData
+      ? this._lastApiInputTokens
+      : messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
+    const remainingTokens = Math.max(0, effectiveBudget - usedTokens);
+    const usedPercent = Math.min(100, (usedTokens / effectiveBudget) * 100);
 
     return {
       usedTokens,
-      maxTokens,
+      maxTokens: effectiveBudget,
       remainingTokens,
       usedPercent,
       cacheCreationTokens: this._lastCacheCreation || undefined,
       cacheReadTokens: this._lastCacheRead || undefined,
+      apiInputTokens: this._lastApiInputTokens || undefined,
+      apiOutputTokens: this._lastApiOutputTokens || undefined,
+      reservedOutputTokens,
+      isEstimated: !hasApiData,
     };
   }
 
