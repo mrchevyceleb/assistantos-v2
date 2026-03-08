@@ -1610,6 +1610,14 @@ async fn run_command_sync(
     cmd.current_dir(&cwd);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+
+    // Hide the console window on Windows so it doesn't flash on screen
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     // Ensure the child process is killed if the future is dropped (e.g. on timeout)
     cmd.kill_on_drop(true);
 
