@@ -57,6 +57,10 @@
         lastRenderedContent = message.content;
       });
     }
+
+    return () => {
+      if (renderTimer) clearTimeout(renderTimer);
+    };
   });
 
   const isUser = $derived(message.role === 'user');
