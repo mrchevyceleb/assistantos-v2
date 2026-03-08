@@ -143,6 +143,33 @@ export function getActiveAIKey(s: AppSettings): string {
   return (s.aiOpenRouterApiKey || s.aiApiKey || "").trim();
 }
 
+/** Human-readable provider name from provider ID */
+export function getProviderDisplayName(provider: string): string {
+  switch (provider) {
+    case 'anthropic': return 'Anthropic';
+    case 'openrouter': return 'OpenRouter';
+    case 'openai': return 'OpenAI';
+    case 'lmstudio': return 'LM Studio';
+    default: return provider;
+  }
+}
+
+/**
+ * Infer which provider a model ID belongs to based on its format.
+ * Models with known prefixes (anthropic/, openai/, google/, etc.) are OpenRouter-routed.
+ * Bare IDs like "claude-opus-4-6" are direct provider models.
+ */
+export function inferProviderForModel(modelId: string): string {
+  // Models with a slash prefix are routed through OpenRouter
+  if (modelId.includes('/')) return 'OpenRouter';
+  // Bare Claude models -> Anthropic direct
+  if (modelId.startsWith('claude-')) return 'Anthropic';
+  // Bare GPT/o-series models -> OpenAI direct
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o3') || modelId.startsWith('o4')) return 'OpenAI';
+  // Default to current provider
+  return 'Unknown';
+}
+
 export function getActiveAIBaseUrl(s: AppSettings): string {
   if (s.aiProvider === "anthropic") {
     return (s.aiAnthropicBaseUrl || "https://api.anthropic.com/v1").trim();

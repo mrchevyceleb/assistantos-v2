@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settings, updateSetting, getActiveAIKey, getActiveAIBaseUrl } from '$lib/stores/settings';
+  import { settings, updateSetting, getActiveAIKey, getActiveAIBaseUrl, inferProviderForModel } from '$lib/stores/settings';
   import type { AppSettings } from '$lib/stores/settings';
   import {
     availableModels, modelsLoading, modelsError, fetchModels,
@@ -161,6 +161,7 @@
               {#if ctxLen}
                 <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(ctxLen)}</span>
               {/if}
+              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">({inferProviderForModel(modelId)})</span>
             </div>
             {#if isDefault(modelId)}
               <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -222,6 +223,7 @@
             {#if model.context_length}
               <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(model.context_length)}</span>
             {/if}
+            <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">(Anthropic)</span>
           </div>
           {#if isDefault(fullId)}
             <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -333,6 +335,7 @@
               {#if model.context_length}
                 <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(model.context_length)}</span>
               {/if}
+              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">(OpenRouter)</span>
             </div>
             {#if isDefault(model.id)}
               <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -397,6 +400,7 @@
             {#if model.context_length}
               <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(model.context_length)}</span>
             {/if}
+            <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">(OpenAI)</span>
           </div>
           {#if isDefault(fullId)}
             <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -462,6 +466,7 @@
             >&#9733;</span>
             <div class="flex-1 min-w-0 truncate">
               <span class="text-text-primary text-[13px] font-mono">{model.id}</span>
+              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">(LM Studio)</span>
             </div>
             {#if isDefault(model.id)}
               <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>

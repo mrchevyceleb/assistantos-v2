@@ -6,7 +6,7 @@
   import type {
     UIMessage, UIToolCall, PendingConfirmation,
   } from '$lib/stores/chat';
-  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey, aiSettingsVisible } from '$lib/stores/settings';
+  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey, aiSettingsVisible, getProviderDisplayName, inferProviderForModel } from '$lib/stores/settings';
   import { ChatEngine } from '$lib/ai/chat/chat-engine';
   import { ChatSession } from '$lib/ai/chat/session';
   import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
@@ -516,6 +516,7 @@
             title={$settings.aiModel}
           >
             <span class="truncate">{modelDisplayName($settings.aiModel)}</span>
+            <span class="text-text-muted shrink-0" style="font-size: {Math.max(10, $settings.aiChatFontSize - 3)}px; font-weight: 400; opacity: 0.5;">({getProviderDisplayName($settings.aiProvider)})</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 opacity-40">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
@@ -556,6 +557,7 @@
                       {#if ctxLen}
                         <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(ctxLen / 1000).toFixed(0)}k)</span>
                       {/if}
+                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(fav)}</span>
                     </button>
                   {/each}
                 {/if}
@@ -577,6 +579,7 @@
                       {#if ctxLen}
                         <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(ctxLen / 1000).toFixed(0)}k)</span>
                       {/if}
+                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model)}</span>
                     </button>
                   {/each}
                 {/if}
@@ -595,6 +598,7 @@
                     {#if model.context_length}
                       <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(model.context_length / 1000).toFixed(0)}k)</span>
                     {/if}
+                    <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model.id)}</span>
                   </button>
                 {/each}
               {/if}
