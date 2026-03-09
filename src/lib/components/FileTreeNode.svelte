@@ -70,6 +70,13 @@
     onDragStart?.(node, e);
   }
 
+  function handleDragStart(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('application/x-filetree-path', node.path);
+    e.dataTransfer.setData('text/plain', node.path);
+  }
+
   function filteredChildren(items: FileNode[]): FileNode[] {
     if (!filterText) return items;
     const lower = filterText.toLowerCase();
@@ -103,9 +110,11 @@
   style:padding-left={paddingLeft}
   style:border-left={depth > 0 ? "1px solid rgba(148,163,184,0.16)" : "none"}
   class:drop-target={isDropTarget}
+  draggable="true"
   onclick={toggle}
   oncontextmenu={handleContextMenu}
   onpointerdown={handlePointerDown}
+  ondragstart={handleDragStart}
   data-tree-node-path={node.path}
   data-tree-node-dir={node.is_dir ? "true" : "false"}
   role="treeitem"

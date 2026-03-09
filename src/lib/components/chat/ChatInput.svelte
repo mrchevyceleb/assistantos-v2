@@ -450,6 +450,63 @@
     attachedImages = attachedImages.filter((_, i) => i !== index);
   }
 
+  let dragOver = $state(false);
+
+  function handleDragOver(e: DragEvent) {
+    if (e.dataTransfer?.types.includes('application/x-filetree-path')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      dragOver = true;
+    }
+  }
+
+  function handleDragLeave() {
+    dragOver = false;
+  }
+
+  function handleDrop(e: DragEvent) {
+    dragOver = false;
+    if (!e.dataTransfer) return;
+    const absPath = e.dataTransfer.getData('application/x-filetree-path');
+    if (!absPath) return;
+    e.preventDefault();
+
+    // Compute relative path from workspace root
+    const root = $workspacePath;
+    let relPath = absPath;
+    if (root) {
+      const normalized = absPath.replace(/\\/g, '/');
+      const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
+      if (normalized.startsWith(normalizedRoot)) {
+        relPath = normalized.slice(normalizedRoot.length).replace(/^\//, '');
+      }
+    }
+
+    // Insert as @mention at cursor position
+    const mention = `@${relPath} `;
+    if (textarea) {
+      const cursor = textarea.selectionStart;
+      inputText = inputText.slice(0, cursor) + mention + inputText.slice(cursor);
+      if (!selectedMentions.includes(relPath)) {
+        selectedMentions = [...selectedMentions, relPath];
+      }
+      requestAnimationFrame(() => {
+        const newCursor = cursor + mention.length;
+        textarea?.focus();
+        if (textarea) {
+          textarea.selectionStart = newCursor;
+          textarea.selectionEnd = newCursor;
+        }
+        autoResize();
+      });
+    } else {
+      inputText += mention;
+      if (!selectedMentions.includes(relPath)) {
+        selectedMentions = [...selectedMentions, relPath];
+      }
+    }
+  }
+
   $effect(() => {
     inputText;
     autoResize();
@@ -505,9 +562,13 @@
           onkeydown={handleKeydown}
           oninput={handleInput}
           onpaste={handlePaste}
-          placeholder="Ask about your workspace... Use @ to tag files"
+          ondragover={handleDragOver}
+          ondragleave={handleDragLeave}
+          ondrop={handleDrop}
+          placeholder="Ask about your workspace... Use @ to tag files, or drag files here"
           rows="2"
           class="w-full bg-transparent text-text-primary resize-none outline-none leading-[1.6] placeholder:text-text-muted/50"
+          class:drop-highlight={dragOver}
           style="padding: 14px 18px 10px 18px; font-size: calc(18px * var(--ui-zoom)); min-height: 3.2em;"
           disabled={isLoading}
         ></textarea>
@@ -619,6 +680,12 @@
 </div>
 
 <style>
+  .drop-highlight {
+    background: rgba(88, 180, 208, 0.08);
+    box-shadow: inset 0 0 0 2px rgba(88, 180, 208, 0.4);
+    border-radius: 8px;
+  }
+
   .working-indicator {
     display: inline-flex;
     align-items: center;
