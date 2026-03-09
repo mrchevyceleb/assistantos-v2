@@ -142,7 +142,8 @@
 
   // Keyboard shortcut: Ctrl+E to toggle edit
   function handleKeydown(e: KeyboardEvent) {
-    if (e.ctrlKey && e.key === "e") {
+    const isMod = navigator.userAgent.includes("Mac") ? e.metaKey : e.ctrlKey;
+    if (isMod && e.key === "e") {
       e.preventDefault();
       handleToggleEdit();
     }

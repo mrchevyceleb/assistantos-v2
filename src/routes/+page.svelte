@@ -182,17 +182,24 @@
   let hasRightChats = $derived($rightChats.length > 0);
   let hasBottomChats = $derived($bottomChats.length > 0);
 
+  const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
+
+  /** Cross-platform modifier: Cmd on macOS, Ctrl on Windows/Linux */
+  function mod(e: KeyboardEvent): boolean {
+    return isMac ? e.metaKey : mod(e);
+  }
+
   // Global keyboard shortcuts
   function handleKeydown(e: KeyboardEvent) {
-    // Ctrl+,: Toggle settings modal
-    if (e.ctrlKey && e.key === ",") {
+    // Mod+,: Toggle settings modal
+    if (mod(e) && e.key === ",") {
       e.preventDefault();
       settingsVisible.update((v) => !v);
       return;
     }
 
     // Ctrl+Shift+F: Global search
-    if (e.ctrlKey && e.shiftKey && e.key === "F") {
+    if (mod(e) && e.shiftKey && e.key === "F") {
       e.preventDefault();
       sidebarVisible.set(true);
       sidebarView = "search";
@@ -200,14 +207,14 @@
     }
 
     // Ctrl+P: Command palette
-    if (e.ctrlKey && e.key === "p") {
+    if (mod(e) && e.key === "p") {
       e.preventDefault();
       paletteVisible = !paletteVisible;
       return;
     }
 
     // Ctrl+Shift+T: Reopen closed tab
-    if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+    if (mod(e) && e.shiftKey && (e.key === "T" || e.key === "t")) {
       e.preventDefault();
       const tabId = reopenLastClosedTab();
       if (tabId) {
@@ -222,7 +229,7 @@
     }
 
     // Ctrl+= / Ctrl++: Increase terminal + chat font size
-    if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
+    if (mod(e) && (e.key === "=" || e.key === "+")) {
       e.preventDefault();
       updateSetting("terminalFontSize", Math.min(32, $settings.terminalFontSize + 1));
       updateSetting("aiChatFontSize", Math.min(32, $settings.aiChatFontSize + 1));
@@ -230,7 +237,7 @@
     }
 
     // Ctrl+-: Decrease terminal + chat font size
-    if (e.ctrlKey && e.key === "-") {
+    if (mod(e) && e.key === "-") {
       e.preventDefault();
       updateSetting("terminalFontSize", Math.max(8, $settings.terminalFontSize - 1));
       updateSetting("aiChatFontSize", Math.max(8, $settings.aiChatFontSize - 1));
@@ -238,7 +245,7 @@
     }
 
     // Ctrl+0: Reset terminal + chat font size
-    if (e.ctrlKey && e.key === "0") {
+    if (mod(e) && e.key === "0") {
       e.preventDefault();
       updateSetting("terminalFontSize", 14);
       updateSetting("aiChatFontSize", 15);
@@ -246,7 +253,7 @@
     }
 
     // Ctrl+O: Open folder
-    if (e.ctrlKey && e.key === "o") {
+    if (mod(e) && e.key === "o") {
       e.preventDefault();
       import("@tauri-apps/plugin-dialog").then(({ open }) => {
         open({ directory: true, multiple: false, title: "Open Folder" }).then((selected) => {
@@ -264,7 +271,7 @@
     }
 
     // Ctrl+L: Toggle AI Chat panel (create one if none exist)
-    if (e.ctrlKey && e.key === "l") {
+    if (mod(e) && e.key === "l") {
       e.preventDefault();
       const instances = get(chatInstances);
       const hasPanel = instances.some((c) => c.dock === 'right' || c.dock === 'bottom');
@@ -277,13 +284,13 @@
     }
 
     // Ctrl+B: Toggle sidebar
-    if (e.ctrlKey && e.key === "b") {
+    if (mod(e) && e.key === "b") {
       e.preventDefault();
       sidebarVisible.update((v) => !v);
     }
 
     // Ctrl+`: Toggle terminal (spawn one if none exist)
-    if (e.ctrlKey && e.key === "`") {
+    if (mod(e) && e.key === "`") {
       e.preventDefault();
       if (get(bottomTerminals).length === 0) {
         addTerminal($workspacePath || "", $settings.defaultTerminalDock);
@@ -293,7 +300,7 @@
     }
 
     // Ctrl+Shift+`: New terminal
-    if (e.ctrlKey && e.shiftKey && e.key === "`") {
+    if (mod(e) && e.shiftKey && e.key === "`") {
       e.preventDefault();
       addTerminal($workspacePath || "", $settings.defaultTerminalDock);
     }
