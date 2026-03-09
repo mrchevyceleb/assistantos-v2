@@ -59,10 +59,17 @@ export class ChatEngine {
   }
 
   updateSettings(settings: AIChatSettings): void {
-    const oldProvider = this.settings.provider;
+    const oldModel = this.settings.model;
     const oldContextWindow = this.getContextWindow();
     this.settings = settings;
     const newContextWindow = this.getContextWindow();
+
+    // When model changes, reset stale API token data so context usage
+    // recalculates from estimates against the new model's budget.
+    if (settings.model !== oldModel) {
+      this._lastApiInputTokens = 0;
+      this._lastApiMessageCount = 0;
+    }
 
     // If context window shrunk, auto-compact to fit
     if (newContextWindow < oldContextWindow && this.session.getMessages().length > 0) {
