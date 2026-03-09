@@ -282,7 +282,11 @@ export class ChatEngine {
                     }
                     if (chunk.cacheCreationTokens) lastCacheCreation = chunk.cacheCreationTokens;
                     if (chunk.cacheReadTokens) lastCacheRead = chunk.cacheReadTokens;
-                    if (chunk.inputTokens) this._lastApiInputTokens = chunk.inputTokens;
+                    if (chunk.inputTokens) {
+                      this._lastApiInputTokens = chunk.inputTokens;
+                      // +1 for the system message prepended by buildMessages()
+                      this._lastApiMessageCount = this.session.getMessages().length + 1;
+                    }
                     if (chunk.outputTokens) this._lastApiOutputTokens = chunk.outputTokens;
                     break;
                   case 'error':
@@ -420,6 +424,8 @@ export class ChatEngine {
   private _lastCacheRead = 0;
   private _lastApiInputTokens = 0;
   private _lastApiOutputTokens = 0;
+  /** Number of messages (including system) when _lastApiInputTokens was recorded. */
+  private _lastApiMessageCount = 0;
 
   private computeContextUsage(messages: ChatMessage[]): ContextUsage {
     const { maxOutputTokens } = inferModelSettings(this.settings.model);
@@ -427,10 +433,33 @@ export class ChatEngine {
     const reservedOutputTokens = maxOutputTokens;
     const effectiveBudget = Math.max(1, fullContextWindow - reservedOutputTokens);
 
-    const hasApiData = this._lastApiInputTokens > 0;
-    const usedTokens = hasApiData
-      ? this._lastApiInputTokens
-      : messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
+    const estimate = messages.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
+
+    let usedTokens: number;
+    let isEstimated: boolean;
+
+    if (this._lastApiInputTokens > 0) {
+      // API tokens include tool definitions. Derive per-message overhead from
+      // the difference between API-reported and our estimate at that point.
+      // Then project forward for any messages added since the last API call.
+      const msgCountSinceApi = messages.length - this._lastApiMessageCount;
+      if (msgCountSinceApi <= 0) {
+        // No new messages since last API call, use API data directly
+        usedTokens = this._lastApiInputTokens;
+      } else {
+        // Estimate tokens for messages added after the API snapshot
+        const newMsgs = messages.slice(-msgCountSinceApi);
+        const newMsgTokens = newMsgs.reduce((sum, m) => sum + this.estimateMessageTokens(m), 0);
+        usedTokens = this._lastApiInputTokens + newMsgTokens;
+      }
+      isEstimated = msgCountSinceApi > 0;
+    } else {
+      // No API data yet. Add a fixed overhead estimate for tool definitions.
+      const toolOverhead = this.estimateToolDefinitionTokens();
+      usedTokens = estimate + toolOverhead;
+      isEstimated = true;
+    }
+
     const remainingTokens = Math.max(0, effectiveBudget - usedTokens);
     const usedPercent = Math.min(100, (usedTokens / effectiveBudget) * 100);
 
@@ -444,8 +473,16 @@ export class ChatEngine {
       apiInputTokens: this._lastApiInputTokens || undefined,
       apiOutputTokens: this._lastApiOutputTokens || undefined,
       reservedOutputTokens,
-      isEstimated: !hasApiData,
+      isEstimated,
     };
+  }
+
+  /** Rough estimate of tokens consumed by tool definition schemas. */
+  private estimateToolDefinitionTokens(): number {
+    if (!this.settings.enableToolUse) return 0;
+    const tools = getAllToolDefinitions();
+    // Tool schemas serialize to ~150-300 tokens each on average
+    return tools.length * 200;
   }
 
   private emitContextUsage(): void {
@@ -506,6 +543,9 @@ export class ChatEngine {
     ];
 
     this.session.replaceMessages(compacted);
+    // Reset stale API token data so next check uses fresh estimates
+    this._lastApiInputTokens = 0;
+    this._lastApiMessageCount = 0;
     await this.session.save();
     this.callbacks.onCompaction?.(head.length);
     return true;

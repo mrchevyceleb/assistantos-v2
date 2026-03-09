@@ -540,29 +540,8 @@
             </div>
             <div class="overflow-y-auto flex-1">
               {#if !showAllModels}
-                <!-- Favorites section -->
-                {#if $settings.aiFavoriteModels.length > 0}
-                  <div class="text-text-muted uppercase tracking-wider font-medium" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 4px 12px 2px 12px;">Favorites</div>
-                  {#each $settings.aiFavoriteModels.filter(f => !modelSearchQuery || f.toLowerCase().includes(modelSearchQuery.toLowerCase())) as fav}
-                    {@const modelInfo = $availableModels.find(m => m.id === fav)}
-                    {@const regProfile = getModelProfile(fav)}
-                    {@const ctxLen = modelInfo?.context_length || regProfile?.contextWindow}
-                    <button
-                      class="w-full text-left font-mono hover:bg-bg-hover transition-colors truncate
-                        {fav === $settings.aiModel ? 'text-accent bg-accent/8' : 'text-text-secondary hover:text-text-primary'}"
-                      style="font-size: {$settings.aiChatFontSize}px; padding: 8px 12px;"
-                      onclick={() => { updateSetting("aiModel", fav); modelSwitcherOpen = false; }}
-                    >
-                      <span class="truncate">{fav}</span>
-                      {#if ctxLen}
-                        <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(ctxLen / 1000).toFixed(0)}k)</span>
-                      {/if}
-                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(fav)}</span>
-                    </button>
-                  {/each}
-                {/if}
-                <!-- Enabled (non-favorite) models -->
-                {@const nonFavEnabled = ($settings.aiEnabledModels || []).filter(m => !$settings.aiFavoriteModels.includes(m))}
+                <!-- Enabled models -->
+                {@const nonFavEnabled = ($settings.aiEnabledModels || [])}
                 {#if nonFavEnabled.length > 0}
                   <div class="text-text-muted uppercase tracking-wider font-medium" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 4px 12px 2px 12px;">Enabled</div>
                   {#each nonFavEnabled.filter(m => !modelSearchQuery || m.toLowerCase().includes(modelSearchQuery.toLowerCase())) as model}
@@ -579,11 +558,11 @@
                       {#if ctxLen}
                         <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(ctxLen / 1000).toFixed(0)}k)</span>
                       {/if}
-                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model)}</span>
+                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model, $settings.aiProvider)}</span>
                     </button>
                   {/each}
                 {/if}
-                {#if $settings.aiFavoriteModels.length === 0 && (!$settings.aiEnabledModels || $settings.aiEnabledModels.length === 0)}
+                {#if !$settings.aiEnabledModels || $settings.aiEnabledModels.length === 0}
                   <div class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 2}px; padding: 10px 12px;">Enable models in AI & Models settings</div>
                 {/if}
               {:else}
@@ -598,7 +577,7 @@
                     {#if model.context_length}
                       <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(model.context_length / 1000).toFixed(0)}k)</span>
                     {/if}
-                    <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model.id)}</span>
+                    <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model.id, $settings.aiProvider)}</span>
                   </button>
                 {/each}
               {/if}
@@ -823,3 +802,5 @@
     disabled={!getActiveAIKey($settings)}
   />
 </div>
+
+

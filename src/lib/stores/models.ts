@@ -43,14 +43,15 @@ export const OPENAI_MODELS: OpenRouterModel[] = [
 
 export const lmStudioStatus = writable<'connected' | 'disconnected' | 'checking'>('disconnected');
 export const lmStudioModels = writable<OpenRouterModel[]>([]);
+export const lmStudioError = writable<string | null>(null);
 
 export async function fetchLMStudioModels(baseUrl: string): Promise<void> {
   lmStudioStatus.set('checking');
+  lmStudioError.set(null);
   try {
-    const url = baseUrl.replace(/\/+$/, '') + '/models';
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const parsed = await resp.json();
+    // Use Tauri-side HTTP fetch path to avoid webview/CORS limitations.
+    const raw = await aiFetchModels(baseUrl, 'lm-studio');
+    const parsed = JSON.parse(raw);
     const models: OpenRouterModel[] = (parsed.data || []).map((m: any) => ({
       id: m.id,
       name: m.id,
@@ -58,9 +59,10 @@ export async function fetchLMStudioModels(baseUrl: string): Promise<void> {
     }));
     lmStudioModels.set(models);
     lmStudioStatus.set('connected');
-  } catch {
+  } catch (e) {
     lmStudioModels.set([]);
     lmStudioStatus.set('disconnected');
+    lmStudioError.set(e instanceof Error ? e.message : String(e));
   }
 }
 

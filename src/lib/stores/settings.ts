@@ -31,6 +31,10 @@ export interface AppSettings {
   aiLMStudioBaseUrl: string;
   aiTemperature: number;
   aiMaxTokens: number;
+  aiMaxContextTokens: number;
+  aiReasoningEnabled: boolean;
+  aiReasoningMaxBudgetTokens: number;
+  aiReasoningExclude: boolean;
   aiEnableToolUse: boolean;
   aiConfirmWrites: boolean;
   aiYoloMode: boolean;
@@ -89,6 +93,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiLMStudioBaseUrl: 'http://localhost:1234/v1',
   aiTemperature: 0.7,
   aiMaxTokens: 16384,
+  aiMaxContextTokens: 128000,
+  aiReasoningEnabled: false,
+  aiReasoningMaxBudgetTokens: 20000,
+  aiReasoningExclude: false,
   aiEnableToolUse: true,
   aiConfirmWrites: true,
   aiYoloMode: false,
@@ -156,17 +164,22 @@ export function getProviderDisplayName(provider: string): string {
 
 /**
  * Infer which provider a model ID belongs to based on its format.
- * Models with known prefixes (anthropic/, openai/, google/, etc.) are OpenRouter-routed.
- * Bare IDs like "claude-opus-4-6" are direct provider models.
+ * Models with known prefixes (anthropic/, openai/, google/, etc.) are OpenRouter-routed
+ * unless the active provider is LM Studio.
  */
-export function inferProviderForModel(modelId: string): string {
+export function inferProviderForModel(
+  modelId: string,
+  activeProvider?: AppSettings['aiProvider'],
+): string {
+  if (activeProvider === 'lmstudio') return 'LM Studio';
   // Models with a slash prefix are routed through OpenRouter
   if (modelId.includes('/')) return 'OpenRouter';
   // Bare Claude models -> Anthropic direct
   if (modelId.startsWith('claude-')) return 'Anthropic';
   // Bare GPT/o-series models -> OpenAI direct
   if (modelId.startsWith('gpt-') || modelId.startsWith('o3') || modelId.startsWith('o4')) return 'OpenAI';
-  // Default to current provider
+  // Fallback to currently selected provider when known
+  if (activeProvider) return getProviderDisplayName(activeProvider);
   return 'Unknown';
 }
 

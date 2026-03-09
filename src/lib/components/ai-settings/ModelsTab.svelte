@@ -4,7 +4,7 @@
   import {
     availableModels, modelsLoading, modelsError, fetchModels,
     ANTHROPIC_MODELS, OPENAI_MODELS,
-    lmStudioStatus, lmStudioModels, fetchLMStudioModels,
+    lmStudioStatus, lmStudioModels, lmStudioError, fetchLMStudioModels,
     inferContextLength,
   } from '$lib/stores/models';
   import type { OpenRouterModel } from '$lib/stores/models';
@@ -161,7 +161,7 @@
               {#if ctxLen}
                 <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(ctxLen)}</span>
               {/if}
-              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">({inferProviderForModel(modelId)})</span>
+              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">({inferProviderForModel(modelId, $settings.aiProvider)})</span>
             </div>
             {#if isDefault(modelId)}
               <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -262,58 +262,55 @@
             onclick={() => toggleShowKey('openrouter')}
           >{showApiKey['openrouter'] ? 'Hide' : 'Show'}</button>
           <button
-            class="text-accent hover:bg-accent/10 rounded text-[11px] shrink-0 border border-accent/30"
+            class="text-accent hover:bg-accent/10 rounded text-[11px] shrink-0 border border-accent/30 disabled:opacity-50"
             style="padding: 4px 8px;"
-            onclick={handleOAuthStart}
-            disabled={oauthBusy}
-          >OAuth</button>
+            onclick={() => fetchModels()}
+            disabled={$modelsLoading || !$settings.aiOpenRouterApiKey.trim()}
+          >{$modelsLoading ? 'Loading...' : 'Refresh Models'}</button>
         </div>
       </div>
-      {#if oauthStatus}
-        <div class="text-text-muted text-[11px]" style="margin-top: 8px;">{oauthStatus}</div>
-        {#if oauthStatus.includes('Browser opened')}
-          <div class="flex items-center" style="gap: 8px; margin-top: 6px;">
-            <input
-              type="text"
-              class="flex-1 bg-bg-primary border border-border/40 rounded-md text-[12px] text-text-primary font-mono outline-none focus:border-accent/40"
-              style="padding: 6px 10px;"
-              placeholder="Paste OAuth code"
-              bind:value={oauthCode}
-            />
-            <button
-              class="text-accent border border-accent/30 rounded text-[11px] hover:bg-accent/10 disabled:opacity-50"
-              style="padding: 4px 8px;"
-              onclick={handleOAuthExchange}
-              disabled={oauthBusy || !oauthCode.trim()}
-            >Exchange</button>
-          </div>
-        {/if}
-      {/if}
-    </div>
-    <div style="padding: 8px 16px;">
-      <div class="flex items-center" style="gap: 8px;">
+      <div class="flex items-center" style="gap: 8px; margin-top: 10px;">
+        <button
+          class="text-[11px] border border-border/40 rounded px-2 py-1 hover:border-accent/40 disabled:opacity-50"
+          onclick={handleOAuthStart}
+          disabled={oauthBusy}
+        >{oauthBusy ? 'Working…' : 'OpenRouter OAuth: Start'}</button>
         <input
           type="text"
-          class="flex-1 bg-bg-primary border border-border/40 rounded-md text-text-primary text-[12px] outline-none focus:border-accent/40"
-          style="padding: 6px 10px;"
-          placeholder="Search models..."
-          bind:value={openRouterSearch}
+          class="flex-1 bg-bg-primary border border-border/40 rounded-md text-text-primary text-[11px] font-mono outline-none focus:border-accent/40"
+          style="padding: 4px 8px;"
+          placeholder="Paste OAuth callback code here"
+          value={oauthCode}
+          oninput={(e) => (oauthCode = e.currentTarget.value)}
         />
         <button
-          class="text-text-muted hover:text-text-primary text-[11px] border border-border/30 rounded hover:border-accent/30 transition-colors disabled:opacity-50"
-          style="padding: 6px 10px;"
-          onclick={() => { updateSetting('aiProvider', 'openrouter'); fetchModels(); }}
-          disabled={$modelsLoading || !$settings.aiOpenRouterApiKey}
-        >
-          {$modelsLoading ? 'Loading...' : openRouterModels.length > 0 ? `Refresh (${openRouterModels.length})` : 'Load Models'}
-        </button>
+          class="text-[11px] border border-border/40 rounded px-2 py-1 hover:border-accent/40 disabled:opacity-50"
+          onclick={handleOAuthExchange}
+          disabled={oauthBusy || !oauthCode.trim()}
+        >Exchange</button>
       </div>
+      {#if oauthStatus}
+        <div class="text-[11px] text-text-muted" style="margin-top: 6px;">{oauthStatus}</div>
+      {/if}
       {#if $modelsError}
-        <div class="text-red-400 text-[12px]" style="margin-top: 6px;">{$modelsError}</div>
+        <div class="text-red-400 text-[11px]" style="margin-top: 6px;">{$modelsError}</div>
       {/if}
     </div>
-    {#if filteredOpenRouterModels.length > 0}
-      <div class="divide-y divide-border/15 max-h-[300px] overflow-y-auto">
+
+    <div class="px-5 py-3 border-b border-border/10">
+      <input
+        type="text"
+        class="w-full bg-bg-primary border border-border/40 rounded-md text-text-primary text-[12px] outline-none focus:border-accent/40"
+        style="padding: 7px 10px;"
+        placeholder="Search OpenRouter models (name or id)"
+        bind:value={openRouterSearch}
+      />
+    </div>
+
+    <div class="divide-y divide-border/15" style="max-height: 360px; overflow: auto;">
+      {#if filteredOpenRouterModels.length === 0}
+        <div class="text-text-muted text-[12px] text-center" style="padding: 16px;">No models found. Click "Refresh Models" above.</div>
+      {:else}
         {#each filteredOpenRouterModels as model (model.id)}
           <div class="model-row">
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -348,11 +345,8 @@
             {/if}
           </div>
         {/each}
-      </div>
-      {#if !openRouterSearch && openRouterModels.length > 50}
-        <div class="text-text-muted text-[11px] text-center" style="padding: 8px;">Showing 50 of {openRouterModels.length}. Use search to find more.</div>
       {/if}
-    {/if}
+    </div>
   </div>
 
   <!-- OpenAI -->
@@ -445,6 +439,9 @@
           {/if}
         </div>
       </div>
+      {#if $lmStudioError}
+        <div class="text-red-400 text-[11px]" style="margin-top: 8px;">{$lmStudioError}</div>
+      {/if}
     </div>
     {#if $lmStudioModels.length > 0}
       <div class="divide-y divide-border/15">
@@ -504,3 +501,4 @@
     background: rgba(var(--bg-hover-rgb, 255, 255, 255), 0.03);
   }
 </style>
+
