@@ -29,7 +29,13 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
   let args: Record<string, unknown>;
 
   try {
-    args = JSON.parse(argsJson);
+    // Some models (e.g. Sonnet) may prepend an empty object "{}" before the real JSON args.
+    // Strip it so the actual arguments parse correctly.
+    let sanitized = argsJson.trim();
+    if (sanitized.startsWith('{}') && sanitized.length > 2) {
+      sanitized = sanitized.slice(2).trim();
+    }
+    args = JSON.parse(sanitized);
   } catch {
     return {
       toolCallId: toolCall.id,

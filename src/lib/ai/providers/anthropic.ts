@@ -141,7 +141,11 @@ function normalizeAnthropicModel(model: string): string {
 
 function safeJsonParse(value: string): unknown {
   try {
-    return JSON.parse(value);
+    let sanitized = value.trim();
+    if (sanitized.startsWith('{}') && sanitized.length > 2) {
+      sanitized = sanitized.slice(2).trim();
+    }
+    return JSON.parse(sanitized);
   } catch {
     return {};
   }
