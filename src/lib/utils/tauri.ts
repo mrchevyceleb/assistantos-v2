@@ -190,6 +190,82 @@ export async function aiFetchModels(
   return invoke("ai_fetch_models", { baseUrl, apiKey });
 }
 
+export async function aiLMStudioLoadModel(
+  baseUrl: string,
+  model: string,
+): Promise<string> {
+  return invoke("ai_lmstudio_load_model", { baseUrl, model });
+}
+
+export async function aiLMStudioUnloadModel(
+  baseUrl: string,
+  instanceId: string,
+): Promise<void> {
+  return invoke("ai_lmstudio_unload_model", { baseUrl, instanceId });
+}
+
+export async function aiExchangeOpenRouterOAuthCode(
+  code: string,
+  codeVerifier: string,
+): Promise<string> {
+  return invoke("ai_exchange_openrouter_oauth_code", { code, codeVerifier });
+}
+
+export async function aiOpenAIDeviceStart(
+  issuer: string,
+  clientId: string,
+): Promise<string> {
+  return invoke("ai_openai_device_start", { issuer, clientId });
+}
+
+export async function aiOpenAIDevicePoll(
+  issuer: string,
+  deviceAuthId: string,
+  userCode: string,
+): Promise<string> {
+  return invoke("ai_openai_device_poll", { issuer, deviceAuthId, userCode });
+}
+
+export async function aiOpenAIExchangeAuthorizationCode(
+  issuer: string,
+  clientId: string,
+  authorizationCode: string,
+  codeVerifier: string,
+  redirectUri: string,
+): Promise<string> {
+  return invoke("ai_openai_exchange_authorization_code", {
+    issuer,
+    clientId,
+    authorizationCode,
+    codeVerifier,
+    redirectUri,
+  });
+}
+
+export async function aiOpenAIRefreshOAuthToken(
+  issuer: string,
+  clientId: string,
+  refreshToken: string,
+): Promise<string> {
+  return invoke("ai_openai_refresh_oauth_token", { issuer, clientId, refreshToken });
+}
+
+export async function aiChatStreamOpenAICodex(
+  requestId: string,
+  baseUrl: string,
+  accessToken: string,
+  bodyJson: string,
+  clientVersion: string,
+): Promise<void> {
+  return invoke("ai_chat_stream_openai_codex", {
+    requestId,
+    baseUrl,
+    accessToken,
+    bodyJson,
+    clientVersion,
+  });
+}
+
 export async function runCommandSync(
   command: string,
   cwd: string,

@@ -56,25 +56,27 @@ export class StreamProcessor {
       for (const tc of delta.tool_calls) {
         const idx = tc.index ?? 0;
         const existing = this.accumulatedToolCalls.get(idx);
+        const callId = tc.id || existing?.id || `tool_${Date.now()}_${idx}`;
 
-        if (tc.id) {
+        if (!existing) {
           // New tool call starting
           this.accumulatedToolCalls.set(idx, {
-            id: tc.id,
+            id: callId,
             type: 'function',
             function: {
               name: tc.function?.name || '',
               arguments: tc.function?.arguments || '',
             },
           });
-        } else if (existing) {
-          // Continuation of existing tool call
-          if (tc.function?.name) {
-            existing.function.name += tc.function.name;
-          }
-          if (tc.function?.arguments) {
-            existing.function.arguments += tc.function.arguments;
-          }
+          continue;
+        }
+
+        // Continuation of existing tool call
+        if (tc.function?.name) {
+          existing.function.name += tc.function.name;
+        }
+        if (tc.function?.arguments) {
+          existing.function.arguments += tc.function.arguments;
         }
       }
     }

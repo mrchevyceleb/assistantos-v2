@@ -9,6 +9,8 @@
   import { getFileColor } from "$lib/utils/file-types";
   import { readFileText } from "$lib/utils/tauri";
   import { ask } from "@tauri-apps/plugin-dialog";
+  import { removeChat } from "$lib/stores/chat-instances";
+  import { destroyInstanceState } from "$lib/stores/chat-instance-state";
 
   // Context menu state
   let contextMenu = $state<{
@@ -185,6 +187,16 @@
         kind: "warning",
       });
       if (!confirmed) return;
+    }
+
+    // Keep chat instance store in sync when closing chat tabs via the tab bar.
+    if (tab.path.startsWith("__chat__:")) {
+      const chatId = tab.path.slice("__chat__:".length);
+      if (chatId) {
+        destroyInstanceState(chatId);
+        removeChat(chatId);
+      }
+      return;
     }
 
     if (tab.viewerType === "terminal") {

@@ -3,6 +3,7 @@ import { aiChatStream } from '$lib/utils/tauri';
 import { StreamProcessor } from '../chat/stream-processor';
 import type { ChatMessage, StreamChunk, ToolDefinition, AIChatSettings } from '../types';
 import { inferModelSettings } from '../model-registry';
+import { ensureLMStudioModelLoaded } from '$lib/stores/models';
 
 interface StreamCallbacks {
   onChunk: (chunk: StreamChunk) => void;
@@ -58,6 +59,21 @@ export async function streamOpenAICompatibleCompletion(
   const requestId = `req-${Date.now()}-${++requestCounter}`;
   const processor = new StreamProcessor();
 
+  if (settings.provider === 'lmstudio') {
+    await ensureLMStudioModelLoaded(settings.baseUrl, settings.model);
+  }
+
+  const normalizedModel = (() => {
+    if (settings.provider === 'openai' && settings.model.startsWith('openai/')) {
+      return settings.model.slice('openai/'.length);
+    }
+    if (settings.provider === 'lmstudio') {
+      if (settings.model.startsWith('openai/')) return settings.model.slice('openai/'.length);
+      if (settings.model.startsWith('anthropic/')) return settings.model.slice('anthropic/'.length);
+    }
+    return settings.model;
+  })();
+
   // Build request body - convert messages with images to multimodal format
   const apiMessages = messages.map(m => {
     if (m.images?.length && m.role === 'user') {
@@ -84,7 +100,7 @@ export async function streamOpenAICompatibleCompletion(
   const safeMaxTokens = Math.min(settings.maxTokens, registryMax, Math.floor(contextLimit * 0.75));
 
   const body: Record<string, unknown> = {
-    model: settings.model,
+    model: normalizedModel,
     messages: apiMessages,
     temperature: settings.temperature,
     max_tokens: safeMaxTokens,
@@ -98,8 +114,7 @@ export async function streamOpenAICompatibleCompletion(
 
   // Only send tools if the model/provider actually supports them
   const { supportsTools: modelSupportsTools } = inferModelSettings(settings.model);
-  const providerSupportsTools = settings.provider !== 'lmstudio';
-  if (tools && tools.length > 0 && settings.enableToolUse && modelSupportsTools && providerSupportsTools) {
+  if (tools && tools.length > 0 && settings.enableToolUse && modelSupportsTools) {
     body.tools = tools;
   }
 

@@ -65,6 +65,7 @@ export interface AIChatSettings {
   temperature: number;
   maxTokens: number;
   contextWindow?: number;
+  openAICodexClientVersion?: string;
   enableToolUse: boolean;
   confirmWrites: boolean;
   yoloMode?: boolean;
@@ -98,7 +99,7 @@ export const DEFAULT_AI_SETTINGS: AIChatSettings = {
   confirmWrites: true,
   yoloMode: false,
   maxToolIterations: 75,
-  readInstructionsEachMessage: true,
+  readInstructionsEachMessage: false,
 };
 
 // UI-specific message type for the chat store

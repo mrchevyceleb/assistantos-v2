@@ -130,7 +130,8 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
 
   // Restore settings (merge saved over defaults)
   if (state.settings) {
-    const merged = { ...DEFAULT_SETTINGS, ...state.settings };
+    const legacySettings = state.settings as Partial<AppSettings> & { aiFavoriteModels?: string[] };
+    const merged = { ...DEFAULT_SETTINGS, ...legacySettings };
 
     // Backward compatibility: migrate legacy single AI key/base URL fields.
     if (!merged.aiOpenRouterApiKey && merged.aiApiKey) {
@@ -142,19 +143,24 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
 
     // Migration: normalize bare model IDs to prefixed form.
     // Older saves stored e.g. 'claude-sonnet-4-6' instead of 'anthropic/claude-sonnet-4-6'.
-    // The UI now always uses prefixed IDs, so bare IDs cause isFavorite/isEnabled mismatches.
     function normalizeBareModelId(id: string): string {
       if (id.includes('/')) return id; // Already prefixed — leave alone.
       if (id.startsWith('claude-')) return `anthropic/${id}`;
-      if (id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4')) return `openai/${id}`;
+      if (id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('codex-')) return `openai/${id}`;
       return id; // Unknown bare ID — leave unchanged.
     }
-    merged.aiFavoriteModels = (merged.aiFavoriteModels || []).map(normalizeBareModelId);
     merged.aiEnabledModels = (merged.aiEnabledModels || []).map(normalizeBareModelId);
 
-    // Migration: if aiEnabledModels is still empty after normalization, seed from aiFavoriteModels
+    // Migration: seed enabled models from legacy favorites once.
+    const legacyFavorites = Array.isArray(legacySettings.aiFavoriteModels)
+      ? legacySettings.aiFavoriteModels.map(normalizeBareModelId)
+      : [];
+
+    // Migration: if aiEnabledModels is empty, seed from legacy favorites, then defaults.
     if (merged.aiEnabledModels.length === 0) {
-      merged.aiEnabledModels = [...(merged.aiFavoriteModels.length > 0 ? merged.aiFavoriteModels : DEFAULT_SETTINGS.aiFavoriteModels)];
+      merged.aiEnabledModels = [
+        ...(legacyFavorites.length > 0 ? legacyFavorites : DEFAULT_SETTINGS.aiEnabledModels),
+      ];
     }
 
     settings.set(merged);

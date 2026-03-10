@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { workspacePath } from '$lib/stores/workspace';
 import { readFileText } from '$lib/utils/tauri';
 import { streamOpenAICompatibleCompletion } from '../providers/openrouter';
+import { streamOpenAICodexCompletion } from '../providers/openai-codex';
 import { streamAnthropicCompletion } from '../providers/anthropic';
 import { inferModelSettings } from '../model-registry';
 import { executeTool } from '../tools/tool-executor';
@@ -26,7 +27,7 @@ const INSTRUCTION_FILES = [
   'CLAUDE.md', 'CLAUDE.MD', 'claude.md',
 ];
 const DEFAULT_CONTEXT_WINDOW = 128000;
-const AUTO_COMPACT_THRESHOLD_PERCENT = 95;
+const AUTO_COMPACT_THRESHOLD_PERCENT = 88;
 
 export class ChatEngine {
   private session: ChatSession;
@@ -212,7 +213,9 @@ export class ChatEngine {
         await new Promise<void>((resolve, reject) => {
           const streamFn = this.settings.provider === 'anthropic'
             ? streamAnthropicCompletion
-            : streamOpenAICompatibleCompletion;  // lmstudio uses OpenAI-compatible
+            : (this.settings.provider === 'openai' && this.settings.authMode === 'oauth'
+              ? streamOpenAICodexCompletion
+              : streamOpenAICompatibleCompletion); // lmstudio uses OpenAI-compatible
 
           // State for stripping <think> tags from local models
           let inThinkTag = false;
@@ -315,6 +318,26 @@ export class ChatEngine {
 
         // Handle response
         if (finishReason === 'tool_calls' && toolCalls.length > 0) {
+          toolCalls = toolCalls
+            .filter((tc) => tc?.type === 'function' && !!tc.function?.name)
+            .map((tc) => ({
+              ...tc,
+              function: {
+                name: tc.function.name,
+                arguments: (tc.function.arguments || '{}').trim() || '{}',
+              },
+            }));
+
+          if (toolCalls.length === 0) {
+            this.session.addMessage({
+              role: 'assistant',
+              content: fullContent || 'I could not produce a valid tool call. Please try again.',
+            });
+            this.callbacks.onDone(fullContent);
+            this.emitContextUsage();
+            break;
+          }
+
           // Add assistant message with tool calls
           this.session.addMessage({
             role: 'assistant',
@@ -564,12 +587,13 @@ export class ChatEngine {
     const profile = getPromptProfile(this.promptProfile || this.workspacePromptProfile || 'default');
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    let systemContent = `${profile.systemPrompt}\n\nCurrent date: ${dateStr}, ${timeStr}\nCurrent workspace: ${wsPath}`;
+    let systemContent = `${profile.systemPrompt}\n\nCurrent date: ${dateStr}\nCurrent workspace: ${wsPath}`;
 
     if (this.workspaceInstructions) {
       systemContent += `\n\n## Workspace Instructions\nThe following instructions were loaded from the workspace root. Follow them when working in this project:\n\n${this.workspaceInstructions}`;
     }
+
+    systemContent += `\n\n## Grounding Rules\n- For repository-specific claims, inspect workspace files first when possible.\n- If evidence is missing, say what is unknown and what to check next.\n- Do not invent files, commands, outputs, APIs, or model capabilities.\n- Keep tool outputs authoritative over assumptions.`;
 
     const systemMessage: ChatMessage = {
       role: 'system',

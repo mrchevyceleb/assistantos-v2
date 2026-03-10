@@ -23,11 +23,16 @@ export interface AppSettings {
   aiOpenRouterApiKey: string;
   aiAnthropicApiKey: string;
   aiOpenAIApiKey: string;
+  aiOpenAIOAuthAccessToken: string;
+  aiOpenAIOAuthRefreshToken: string;
+  aiOpenAIOAuthExpiresAt: string;
   aiModel: string;
   aiBaseUrl: string;
   aiOpenRouterBaseUrl: string;
   aiAnthropicBaseUrl: string;
   aiOpenAIBaseUrl: string;
+  aiOpenAICodexBaseUrl: string;
+  aiOpenAICodexClientVersion: string;
   aiLMStudioBaseUrl: string;
   aiTemperature: number;
   aiMaxTokens: number;
@@ -39,7 +44,6 @@ export interface AppSettings {
   aiConfirmWrites: boolean;
   aiYoloMode: boolean;
   aiMaxToolIterations: number;
-  aiFavoriteModels: string[];
   aiEnabledModels: string[];
   aiChatFontSize: number;
   aiChatFontFamily: string;
@@ -85,11 +89,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiOpenRouterApiKey: '',
   aiAnthropicApiKey: '',
   aiOpenAIApiKey: '',
+  aiOpenAIOAuthAccessToken: '',
+  aiOpenAIOAuthRefreshToken: '',
+  aiOpenAIOAuthExpiresAt: '',
   aiModel: 'anthropic/claude-sonnet-4-6',
   aiBaseUrl: 'https://openrouter.ai/api/v1',
   aiOpenRouterBaseUrl: 'https://openrouter.ai/api/v1',
   aiAnthropicBaseUrl: 'https://api.anthropic.com/v1',
   aiOpenAIBaseUrl: 'https://api.openai.com/v1',
+  aiOpenAICodexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+  aiOpenAICodexClientVersion: '4.0.0',
   aiLMStudioBaseUrl: 'http://localhost:1234/v1',
   aiTemperature: 0.7,
   aiMaxTokens: 16384,
@@ -104,21 +113,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiChatFontSize: 15,
   aiChatFontFamily: 'system',
   aiChatDock: "bottom",
-  aiReadInstructionsEveryMessage: true,
+  aiReadInstructionsEveryMessage: false,
   aiEnableAtMentions: true,
   aiSlashCommandDirs: [],
   aiBasePrompt: 'default',
   aiThinkingMode: "preview",
-  aiFavoriteModels: [
-    'anthropic/claude-sonnet-4-6',
-    'anthropic/claude-opus-4-6',
-    'openai/gpt-4.1',
-    'google/gemini-2.5-pro-preview',
-  ],
   aiEnabledModels: [
     'anthropic/claude-sonnet-4-6',
     'anthropic/claude-opus-4-6',
-    'openai/gpt-4.1',
+    'openai/gpt-5.4',
+    'openai/gpt-5.3-codex-medium',
+    'openai/gpt-5.3-codex',
+    'openai/gpt-5.3-codex-spark',
     'google/gemini-2.5-pro-preview',
   ],
   mcpServers: [],
@@ -146,7 +152,11 @@ export function updateSetting<K extends keyof AppSettings>(
 
 export function getActiveAIKey(s: AppSettings): string {
   if (s.aiProvider === "anthropic") return (s.aiAnthropicApiKey || "").trim();
-  if (s.aiProvider === "openai") return (s.aiOpenAIApiKey || "").trim();
+  if (s.aiProvider === "openai") {
+    const oauthToken = (s.aiOpenAIOAuthAccessToken || "").trim();
+    if (oauthToken) return oauthToken;
+    return (s.aiOpenAIApiKey || "").trim();
+  }
   if (s.aiProvider === "lmstudio") return "lm-studio";
   return (s.aiOpenRouterApiKey || s.aiApiKey || "").trim();
 }
@@ -171,16 +181,36 @@ export function inferProviderForModel(
   modelId: string,
   activeProvider?: AppSettings['aiProvider'],
 ): string {
+  const id = (modelId || '').toLowerCase();
   if (activeProvider === 'lmstudio') return 'LM Studio';
-  // Models with a slash prefix are routed through OpenRouter
-  if (modelId.includes('/')) return 'OpenRouter';
-  // Bare Claude models -> Anthropic direct
-  if (modelId.startsWith('claude-')) return 'Anthropic';
-  // Bare GPT/o-series models -> OpenAI direct
-  if (modelId.startsWith('gpt-') || modelId.startsWith('o3') || modelId.startsWith('o4')) return 'OpenAI';
-  // Fallback to currently selected provider when known
+
+  if (id.startsWith('anthropic/')) return activeProvider === 'openrouter' ? 'Anthropic via OpenRouter' : 'Anthropic';
+  if (id.startsWith('openai/')) return activeProvider === 'openrouter' ? 'OpenAI via OpenRouter' : 'OpenAI';
+  if (id.startsWith('google/')) return 'Google via OpenRouter';
+  if (id.startsWith('mistralai/')) return 'Mistral via OpenRouter';
+  if (id.startsWith('deepseek/')) return 'DeepSeek via OpenRouter';
+
+  if (id.startsWith('claude-')) return 'Anthropic';
+  if (id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('codex-')) return 'OpenAI';
+
   if (activeProvider) return getProviderDisplayName(activeProvider);
   return 'Unknown';
+}
+
+/** Infer routing provider from model ID. */
+export function inferRoutingProviderForModel(
+  modelId: string,
+  fallback: AppSettings['aiProvider'] = 'openrouter',
+): AppSettings['aiProvider'] {
+  const id = (modelId || '').toLowerCase();
+  if (!id) return fallback;
+
+  if (id.startsWith('google/') || id.startsWith('mistralai/') || id.startsWith('deepseek/') || id.startsWith('moonshotai/') || id.startsWith('z-ai/') || id.startsWith('minimax/')) {
+    return 'openrouter';
+  }
+  if (id.startsWith('anthropic/') || id.startsWith('claude-')) return 'anthropic';
+  if (id.startsWith('openai/') || id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('codex-')) return 'openai';
+  return fallback;
 }
 
 export function getActiveAIBaseUrl(s: AppSettings): string {
@@ -188,6 +218,10 @@ export function getActiveAIBaseUrl(s: AppSettings): string {
     return (s.aiAnthropicBaseUrl || "https://api.anthropic.com/v1").trim();
   }
   if (s.aiProvider === "openai") {
+    const oauthToken = (s.aiOpenAIOAuthAccessToken || "").trim();
+    if (oauthToken) {
+      return (s.aiOpenAICodexBaseUrl || 'https://chatgpt.com/backend-api/codex').trim();
+    }
     return (s.aiOpenAIBaseUrl || "https://api.openai.com/v1").trim();
   }
   if (s.aiProvider === "lmstudio") {

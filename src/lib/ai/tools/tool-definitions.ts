@@ -205,12 +205,70 @@ export const LOCAL_TOOL_DEFINITIONS: ToolDefinition[] = [
 
 let dynamicToolDefinitions: ToolDefinition[] = [];
 
+const SCHEMA_KEYS_TO_KEEP = new Set([
+  'type',
+  'properties',
+  'required',
+  'items',
+  'enum',
+  'oneOf',
+  'anyOf',
+  'allOf',
+  'additionalProperties',
+  'nullable',
+  '$ref',
+]);
+
+function compactSchema(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(compactSchema);
+  }
+
+  if (value && typeof value === 'object') {
+    const input = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+
+    for (const [key, raw] of Object.entries(input)) {
+      if (!SCHEMA_KEYS_TO_KEEP.has(key)) continue;
+
+      if (key === 'properties' && raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const propsIn = raw as Record<string, unknown>;
+        const propsOut: Record<string, unknown> = {};
+        for (const [propName, propSchema] of Object.entries(propsIn)) {
+          propsOut[propName] = compactSchema(propSchema);
+        }
+        out.properties = propsOut;
+        continue;
+      }
+
+      out[key] = compactSchema(raw);
+    }
+
+    return out;
+  }
+
+  return value;
+}
+
+function compactToolDefinition(tool: ToolDefinition): ToolDefinition {
+  if (tool.type !== 'function' || !tool.function) return tool;
+
+  return {
+    type: 'function',
+    function: {
+      name: tool.function.name,
+      description: tool.function.description,
+      parameters: compactSchema(tool.function.parameters) as ToolDefinition['function']['parameters'],
+    },
+  };
+}
+
 export function setDynamicToolDefinitions(definitions: ToolDefinition[]) {
   dynamicToolDefinitions = definitions;
 }
 
 export function getAllToolDefinitions(): ToolDefinition[] {
-  return [...LOCAL_TOOL_DEFINITIONS, ...dynamicToolDefinitions];
+  return [...LOCAL_TOOL_DEFINITIONS, ...dynamicToolDefinitions].map(compactToolDefinition);
 }
 
 // Backward compatibility for existing imports.

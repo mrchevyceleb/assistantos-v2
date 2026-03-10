@@ -1,41 +1,58 @@
 <script lang="ts">
-  import { settings, updateSetting, getActiveAIKey, getActiveAIBaseUrl, inferProviderForModel } from '$lib/stores/settings';
-  import type { AppSettings } from '$lib/stores/settings';
+  import { settings, updateSetting } from '$lib/stores/settings';
   import {
-    availableModels, modelsLoading, modelsError, fetchModels,
-    ANTHROPIC_MODELS, OPENAI_MODELS,
-    lmStudioStatus, lmStudioModels, lmStudioError, fetchLMStudioModels,
+    availableModels,
+    modelsLoading,
+    modelsError,
+    fetchModels,
+    ANTHROPIC_MODELS,
+    OPENAI_MODELS,
+    lmStudioStatus,
+    lmStudioModels,
+    lmStudioError,
+    fetchLMStudioModels,
     inferContextLength,
+    getModelDisplayName,
   } from '$lib/stores/models';
-  import type { OpenRouterModel } from '$lib/stores/models';
-  import { startOpenRouterOAuth, exchangeOpenRouterOAuthCode } from '$lib/utils/oauth';
+  import {
+    startOpenRouterOAuth,
+    exchangeOpenRouterOAuthCode,
+    startOpenAIDeviceOAuth,
+    completeOpenAIDeviceOAuth,
+    cancelOpenAIDeviceOAuth,
+    getPendingOpenAIDeviceOAuth,
+    type OpenAIDeviceAuthState,
+  } from '$lib/utils/oauth';
 
   let openRouterSearch = $state('');
   let showApiKey = $state<Record<string, boolean>>({});
-  let oauthCode = $state('');
-  let oauthBusy = $state(false);
-  let oauthStatus = $state('');
 
-  // OpenRouter models (fetched)
+  let openRouterOAuthCode = $state('');
+  let openRouterOAuthBusy = $state(false);
+  let openRouterOAuthStatus = $state('');
+
+  let openAIDeviceBusy = $state(false);
+  let openAIDeviceStatus = $state('');
+  let openAIDeviceState = $state<OpenAIDeviceAuthState | null>(null);
+
   let openRouterModels = $derived(
-    $availableModels.filter(m => !ANTHROPIC_MODELS.some(a => a.id === m.id) && !OPENAI_MODELS.some(o => o.id === m.id))
+    $availableModels.filter(
+      (m) => !ANTHROPIC_MODELS.some((a) => a.id === m.id) && !OPENAI_MODELS.some((o) => o.id === m.id),
+    ),
   );
 
   let filteredOpenRouterModels = $derived(
     openRouterSearch
-      ? openRouterModels.filter(m =>
-          m.id.toLowerCase().includes(openRouterSearch.toLowerCase()) ||
-          m.name.toLowerCase().includes(openRouterSearch.toLowerCase())
+      ? openRouterModels.filter(
+          (m) =>
+            m.id.toLowerCase().includes(openRouterSearch.toLowerCase()) ||
+            (m.name || '').toLowerCase().includes(openRouterSearch.toLowerCase()),
         )
-      : openRouterModels.slice(0, 50)
+      : openRouterModels.slice(0, 120),
   );
 
   function isEnabled(modelId: string): boolean {
     return $settings.aiEnabledModels.includes(modelId);
-  }
-
-  function isFavorite(modelId: string): boolean {
-    return $settings.aiFavoriteModels.includes(modelId);
   }
 
   function isDefault(modelId: string): boolean {
@@ -47,39 +64,23 @@
     const idx = enabled.indexOf(modelId);
     if (idx >= 0) {
       enabled.splice(idx, 1);
-      // Also remove from favorites if disabling
-      const favs = $settings.aiFavoriteModels.filter(f => f !== modelId);
-      updateSetting('aiFavoriteModels', favs);
     } else {
       enabled.push(modelId);
     }
+
     updateSetting('aiEnabledModels', enabled);
-  }
 
-  function toggleFavorite(modelId: string) {
-    const favs = [...$settings.aiFavoriteModels];
-    const idx = favs.indexOf(modelId);
-    if (idx >= 0) {
-      favs.splice(idx, 1);
-    } else {
-      favs.push(modelId);
-      // Also enable if not already
-      if (!isEnabled(modelId)) {
-        updateSetting('aiEnabledModels', [...$settings.aiEnabledModels, modelId]);
-      }
+    if (modelId === $settings.aiModel && !enabled.includes(modelId) && enabled.length > 0) {
+      updateSetting('aiModel', enabled[0]);
     }
-    updateSetting('aiFavoriteModels', favs);
   }
 
-  function setDefault(modelId: string) {
-    updateSetting('aiModel', modelId);
-    // Also enable and favorite if not already
+  function setDefault(modelId: string, provider: 'anthropic' | 'openrouter' | 'openai' | 'lmstudio') {
     if (!isEnabled(modelId)) {
       updateSetting('aiEnabledModels', [...$settings.aiEnabledModels, modelId]);
     }
-    if (!isFavorite(modelId)) {
-      updateSetting('aiFavoriteModels', [...$settings.aiFavoriteModels, modelId]);
-    }
+    updateSetting('aiModel', modelId);
+    updateSetting('aiProvider', provider);
   }
 
   function formatContext(len: number | undefined): string {
@@ -91,94 +92,94 @@
     showApiKey = { ...showApiKey, [provider]: !showApiKey[provider] };
   }
 
-  async function handleOAuthStart() {
-    if (oauthBusy) return;
-    oauthBusy = true;
-    oauthStatus = '';
+  async function copyToClipboard(value: string) {
+    const text = (value || '').trim();
+    if (!text) return;
     try {
-      oauthStatus = await startOpenRouterOAuth();
-    } catch (e) {
-      oauthStatus = `OAuth start failed: ${e instanceof Error ? e.message : String(e)}`;
-    } finally {
-      oauthBusy = false;
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      document.body.removeChild(area);
     }
   }
 
-  async function handleOAuthExchange() {
-    if (oauthBusy || !oauthCode.trim()) return;
-    oauthBusy = true;
-    oauthStatus = 'Exchanging code...';
+  async function handleOpenRouterOAuthStart() {
+    if (openRouterOAuthBusy) return;
+    openRouterOAuthBusy = true;
+    openRouterOAuthStatus = '';
     try {
-      oauthStatus = await exchangeOpenRouterOAuthCode(oauthCode);
-      oauthCode = '';
+      openRouterOAuthStatus = await startOpenRouterOAuth();
     } catch (e) {
-      oauthStatus = `OAuth exchange failed: ${e instanceof Error ? e.message : String(e)}`;
+      openRouterOAuthStatus = `OAuth start failed: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
-      oauthBusy = false;
+      openRouterOAuthBusy = false;
     }
+  }
+
+  async function handleOpenRouterOAuthExchange() {
+    if (openRouterOAuthBusy || !openRouterOAuthCode.trim()) return;
+    openRouterOAuthBusy = true;
+    openRouterOAuthStatus = 'Exchanging code...';
+    try {
+      openRouterOAuthStatus = await exchangeOpenRouterOAuthCode(openRouterOAuthCode);
+      openRouterOAuthCode = '';
+    } catch (e) {
+      openRouterOAuthStatus = `OAuth exchange failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      openRouterOAuthBusy = false;
+    }
+  }
+
+  async function handleOpenAIOAuthStart() {
+    if (openAIDeviceBusy) return;
+    openAIDeviceBusy = true;
+    openAIDeviceStatus = '';
+    try {
+      openAIDeviceState = await startOpenAIDeviceOAuth();
+      openAIDeviceStatus = 'Browser opened. Complete authorization, then click Complete OAuth.';
+    } catch (e) {
+      openAIDeviceStatus = `OAuth start failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      openAIDeviceBusy = false;
+    }
+  }
+
+  async function handleOpenAIOAuthComplete() {
+    if (openAIDeviceBusy) return;
+    openAIDeviceBusy = true;
+    openAIDeviceStatus = 'Waiting for authorization...';
+    try {
+      openAIDeviceStatus = await completeOpenAIDeviceOAuth();
+      openAIDeviceState = null;
+    } catch (e) {
+      openAIDeviceStatus = `OAuth completion failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      openAIDeviceBusy = false;
+    }
+  }
+
+  function handleOpenAIOAuthCancel() {
+    cancelOpenAIDeviceOAuth();
+    openAIDeviceState = null;
+    openAIDeviceStatus = 'OpenAI OAuth flow canceled.';
   }
 
   async function handleLMStudioConnect() {
     await fetchLMStudioModels($settings.aiLMStudioBaseUrl);
   }
+
+  $effect(() => {
+    if (!openAIDeviceState) {
+      openAIDeviceState = getPendingOpenAIDeviceOAuth();
+    }
+  });
 </script>
 
 <div style="display: flex; flex-direction: column; gap: 24px;">
-
-  <!-- Favorites (quick access) -->
-  {#if $settings.aiFavoriteModels.length > 0}
-    <div class="rounded-xl bg-bg-secondary/40 border border-accent/20 overflow-hidden">
-      <div style="padding: 12px 20px; border-bottom: 1px solid rgba(var(--border-rgb, 255, 255, 255), 0.1); background: rgba(var(--bg-secondary-rgb, 0, 0, 0), 0.2);">
-        <div class="flex items-center" style="gap: 8px;">
-          <span class="text-yellow-400 text-[14px]">&#9733;</span>
-          <div class="text-text-primary text-[14px] font-semibold">Favorites</div>
-          <span class="text-text-muted text-[11px]">({$settings.aiFavoriteModels.length})</span>
-        </div>
-      </div>
-      <div class="divide-y divide-border/15">
-        {#each $settings.aiFavoriteModels as modelId (modelId)}
-          {@const modelInfo = $availableModels.find(m => m.id === modelId)}
-          {@const ctxLen = modelInfo?.context_length || inferContextLength(modelId)}
-          <div class="model-row">
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(modelId) ? 'bg-accent' : 'bg-bg-active'}"
-              onclick={() => toggleEnabled(modelId)}
-              title={isEnabled(modelId) ? 'Disable model' : 'Enable model'}
-            >
-              <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(modelId) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
-            </div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span
-              class="shrink-0 cursor-pointer text-[16px] text-yellow-400 hover:text-yellow-400/50"
-              onclick={() => toggleFavorite(modelId)}
-              title="Remove from favorites"
-            >&#9733;</span>
-            <div class="flex-1 min-w-0 truncate">
-              <span class="text-text-primary text-[13px] font-mono">{modelId}</span>
-              {#if ctxLen}
-                <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(ctxLen)}</span>
-              {/if}
-              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">({inferProviderForModel(modelId, $settings.aiProvider)})</span>
-            </div>
-            {#if isDefault(modelId)}
-              <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
-            {:else}
-              <button
-                class="text-text-muted hover:text-accent text-[11px] border border-border/30 rounded hover:border-accent/30 transition-colors"
-                style="padding: 2px 8px;"
-                onclick={() => setDefault(modelId)}
-              >Set Default</button>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Anthropic -->
   <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
     <div class="provider-header">
       <div class="flex items-center" style="gap: 12px;">
@@ -204,20 +205,12 @@
       {#each ANTHROPIC_MODELS as model (model.id)}
         {@const fullId = `anthropic/${model.id}`}
         <div class="model-row">
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(fullId) ? 'bg-accent' : 'bg-bg-active'}"
             onclick={() => toggleEnabled(fullId)}
           >
             <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(fullId) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
           </div>
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span
-            class="shrink-0 cursor-pointer text-[16px] {isFavorite(fullId) ? 'text-yellow-400' : 'text-text-muted/30 hover:text-yellow-400/50'}"
-            onclick={() => toggleFavorite(fullId)}
-          >&#9733;</span>
           <div class="flex-1 min-w-0">
             <span class="text-text-primary text-[13px] font-medium">{model.name}</span>
             {#if model.context_length}
@@ -231,7 +224,7 @@
             <button
               class="text-text-muted hover:text-accent text-[11px] border border-border/30 rounded hover:border-accent/30 transition-colors"
               style="padding: 2px 8px;"
-              onclick={() => setDefault(fullId)}
+              onclick={() => setDefault(fullId, 'anthropic')}
             >Set Default</button>
           {/if}
         </div>
@@ -239,7 +232,6 @@
     </div>
   </div>
 
-  <!-- OpenRouter -->
   <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
     <div class="provider-header">
       <div class="flex items-center" style="gap: 12px;">
@@ -269,70 +261,66 @@
           >{$modelsLoading ? 'Loading...' : 'Refresh Models'}</button>
         </div>
       </div>
+
       <div class="flex items-center" style="gap: 8px; margin-top: 10px;">
         <button
-          class="text-[11px] border border-border/40 rounded px-2 py-1 hover:border-accent/40 disabled:opacity-50"
-          onclick={handleOAuthStart}
-          disabled={oauthBusy}
-        >{oauthBusy ? 'Working…' : 'OpenRouter OAuth: Start'}</button>
+          class="text-[11px] border border-border/40 rounded hover:border-accent/40 disabled:opacity-50"
+          style="padding: 4px 8px;"
+          onclick={handleOpenRouterOAuthStart}
+          disabled={openRouterOAuthBusy}
+        >{openRouterOAuthBusy ? 'Working...' : 'OpenRouter OAuth: Start'}</button>
         <input
           type="text"
           class="flex-1 bg-bg-primary border border-border/40 rounded-md text-text-primary text-[11px] font-mono outline-none focus:border-accent/40"
           style="padding: 4px 8px;"
-          placeholder="Paste OAuth callback code here"
-          value={oauthCode}
-          oninput={(e) => (oauthCode = e.currentTarget.value)}
+          placeholder="Paste OAuth callback code"
+          value={openRouterOAuthCode}
+          oninput={(e) => (openRouterOAuthCode = e.currentTarget.value)}
         />
         <button
-          class="text-[11px] border border-border/40 rounded px-2 py-1 hover:border-accent/40 disabled:opacity-50"
-          onclick={handleOAuthExchange}
-          disabled={oauthBusy || !oauthCode.trim()}
+          class="text-[11px] border border-border/40 rounded hover:border-accent/40 disabled:opacity-50"
+          style="padding: 4px 8px;"
+          onclick={handleOpenRouterOAuthExchange}
+          disabled={openRouterOAuthBusy || !openRouterOAuthCode.trim()}
         >Exchange</button>
       </div>
-      {#if oauthStatus}
-        <div class="text-[11px] text-text-muted" style="margin-top: 6px;">{oauthStatus}</div>
+
+      {#if openRouterOAuthStatus}
+        <div class="text-[11px] text-text-muted" style="margin-top: 6px;">{openRouterOAuthStatus}</div>
       {/if}
       {#if $modelsError}
         <div class="text-red-400 text-[11px]" style="margin-top: 6px;">{$modelsError}</div>
       {/if}
     </div>
 
-    <div class="px-5 py-3 border-b border-border/10">
+    <div style="padding: 12px 20px; border-bottom: 1px solid rgba(var(--border-rgb, 255, 255, 255), 0.1);">
       <input
         type="text"
         class="w-full bg-bg-primary border border-border/40 rounded-md text-text-primary text-[12px] outline-none focus:border-accent/40"
         style="padding: 7px 10px;"
-        placeholder="Search OpenRouter models (name or id)"
+        placeholder="Search OpenRouter models"
         bind:value={openRouterSearch}
       />
     </div>
 
     <div class="divide-y divide-border/15" style="max-height: 360px; overflow: auto;">
       {#if filteredOpenRouterModels.length === 0}
-        <div class="text-text-muted text-[12px] text-center" style="padding: 16px;">No models found. Click "Refresh Models" above.</div>
+        <div class="text-text-muted text-[12px] text-center" style="padding: 16px;">No models found. Click Refresh Models.</div>
       {:else}
         {#each filteredOpenRouterModels as model (model.id)}
           <div class="model-row">
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(model.id) ? 'bg-accent' : 'bg-bg-active'}"
               onclick={() => toggleEnabled(model.id)}
             >
               <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(model.id) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
             </div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span
-              class="shrink-0 cursor-pointer text-[16px] {isFavorite(model.id) ? 'text-yellow-400' : 'text-text-muted/30 hover:text-yellow-400/50'}"
-              onclick={() => toggleFavorite(model.id)}
-            >&#9733;</span>
             <div class="flex-1 min-w-0 truncate">
-              <span class="text-text-primary text-[13px] font-mono">{model.id}</span>
+              <span class="text-text-primary text-[13px] font-medium">{getModelDisplayName(model)}</span>
+              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.8;">{model.id}</span>
               {#if model.context_length}
                 <span class="text-text-muted text-[11px]" style="margin-left: 8px;">{formatContext(model.context_length)}</span>
               {/if}
-              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">(OpenRouter)</span>
             </div>
             {#if isDefault(model.id)}
               <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -340,7 +328,7 @@
               <button
                 class="text-text-muted hover:text-accent text-[11px] border border-border/30 rounded hover:border-accent/30 transition-colors"
                 style="padding: 2px 8px;"
-                onclick={() => setDefault(model.id)}
+                onclick={() => setDefault(model.id, 'openrouter')}
               >Set Default</button>
             {/if}
           </div>
@@ -349,7 +337,6 @@
     </div>
   </div>
 
-  <!-- OpenAI -->
   <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
     <div class="provider-header">
       <div class="flex items-center" style="gap: 12px;">
@@ -361,7 +348,12 @@
             style="padding: 6px 10px;"
             placeholder="sk-..."
             value={$settings.aiOpenAIApiKey}
-            oninput={(e) => updateSetting('aiOpenAIApiKey', e.currentTarget.value)}
+            oninput={(e) => {
+              updateSetting('aiOpenAIApiKey', e.currentTarget.value);
+              if (!($settings.aiOpenAIOAuthAccessToken || '').trim()) {
+                updateSetting('aiAuthMode', 'apiKey');
+              }
+            }}
           />
           <button
             class="text-text-muted hover:text-text-primary text-[11px] shrink-0"
@@ -370,25 +362,68 @@
           >{showApiKey['openai'] ? 'Hide' : 'Show'}</button>
         </div>
       </div>
+
+      <div class="flex items-center" style="gap: 8px; margin-top: 10px;">
+        <button
+          class="text-[11px] border border-border/40 rounded hover:border-accent/40 disabled:opacity-50"
+          style="padding: 4px 8px;"
+          onclick={handleOpenAIOAuthStart}
+          disabled={openAIDeviceBusy}
+        >{openAIDeviceBusy ? 'Working...' : 'Step 1: Start Device Login'}</button>
+        <button
+          class="text-[11px] border border-accent/50 rounded bg-accent/15 text-accent hover:bg-accent/20 disabled:opacity-50"
+          style="padding: 4px 10px; font-weight: 700;"
+          onclick={handleOpenAIOAuthComplete}
+          disabled={openAIDeviceBusy || !openAIDeviceState}
+        >Step 2: Complete OAuth</button>
+        <button
+          class="text-[11px] border border-border/40 rounded hover:border-error/40 disabled:opacity-50"
+          style="padding: 4px 8px;"
+          onclick={handleOpenAIOAuthCancel}
+          disabled={openAIDeviceBusy || !openAIDeviceState}
+        >Cancel</button>
+      </div>
+
+      {#if openAIDeviceState}
+        <div class="text-[11px] text-text-muted" style="margin-top: 8px; line-height: 1.6;">
+          <div class="flex items-center" style="gap: 8px;">
+            <span>Code: <span class="font-mono text-text-primary">{openAIDeviceState.userCode}</span></span>
+            <button
+              class="text-[10px] border border-border/40 rounded hover:border-accent/40"
+              style="padding: 2px 6px;"
+              onclick={() => copyToClipboard(openAIDeviceState?.userCode || '')}
+            >Copy code</button>
+          </div>
+          <div>
+            Verify at
+            <a href={openAIDeviceState.verificationUrl} class="text-accent underline" target="_blank" rel="noreferrer">{openAIDeviceState.verificationUrl}</a>
+          </div>
+          <div class="text-accent" style="font-weight: 700;">After approving in browser, click Step 2: Complete OAuth.</div>
+        </div>
+      {/if}
+
+      {#if openAIDeviceStatus}
+        <div class="text-[11px] text-text-muted" style="margin-top: 6px;">{openAIDeviceStatus}</div>
+      {/if}
+      {#if $settings.aiOpenAIOAuthAccessToken}
+        <div class="text-[11px] text-green-400" style="margin-top: 6px;">
+          OAuth connected{#if $settings.aiOpenAIOAuthExpiresAt} (expires {$settings.aiOpenAIOAuthExpiresAt}){/if}
+        </div>
+        <div class="text-[11px] text-text-muted" style="margin-top: 4px;">
+          OAuth token is active and takes precedence over API key.
+        </div>
+      {/if}
     </div>
     <div class="divide-y divide-border/15">
       {#each OPENAI_MODELS as model (model.id)}
         {@const fullId = `openai/${model.id}`}
         <div class="model-row">
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(fullId) ? 'bg-accent' : 'bg-bg-active'}"
             onclick={() => toggleEnabled(fullId)}
           >
             <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(fullId) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
           </div>
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span
-            class="shrink-0 cursor-pointer text-[16px] {isFavorite(fullId) ? 'text-yellow-400' : 'text-text-muted/30 hover:text-yellow-400/50'}"
-            onclick={() => toggleFavorite(fullId)}
-          >&#9733;</span>
           <div class="flex-1 min-w-0">
             <span class="text-text-primary text-[13px] font-medium">{model.name}</span>
             {#if model.context_length}
@@ -402,7 +437,7 @@
             <button
               class="text-text-muted hover:text-accent text-[11px] border border-border/30 rounded hover:border-accent/30 transition-colors"
               style="padding: 2px 8px;"
-              onclick={() => setDefault(fullId)}
+              onclick={() => setDefault(fullId, 'openai')}
             >Set Default</button>
           {/if}
         </div>
@@ -410,7 +445,6 @@
     </div>
   </div>
 
-  <!-- LM Studio -->
   <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
     <div class="provider-header">
       <div class="flex items-center" style="gap: 12px;">
@@ -447,22 +481,15 @@
       <div class="divide-y divide-border/15">
         {#each $lmStudioModels as model (model.id)}
           <div class="model-row">
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(model.id) ? 'bg-accent' : 'bg-bg-active'}"
               onclick={() => toggleEnabled(model.id)}
             >
               <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(model.id) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
             </div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span
-              class="shrink-0 cursor-pointer text-[16px] {isFavorite(model.id) ? 'text-yellow-400' : 'text-text-muted/30 hover:text-yellow-400/50'}"
-              onclick={() => toggleFavorite(model.id)}
-            >&#9733;</span>
             <div class="flex-1 min-w-0 truncate">
-              <span class="text-text-primary text-[13px] font-mono">{model.id}</span>
+              <span class="text-text-primary text-[13px] font-medium">{getModelDisplayName(model)}</span>
+              <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.8;">{model.id}</span>
               <span class="text-text-muted text-[10px]" style="margin-left: 6px; opacity: 0.5;">(LM Studio)</span>
             </div>
             {#if isDefault(model.id)}
@@ -471,7 +498,7 @@
               <button
                 class="text-text-muted hover:text-accent text-[11px] border border-border/30 rounded hover:border-accent/30 transition-colors"
                 style="padding: 2px 8px;"
-                onclick={() => setDefault(model.id)}
+                onclick={() => setDefault(model.id, 'lmstudio')}
               >Set Default</button>
             {/if}
           </div>
@@ -501,4 +528,3 @@
     background: rgba(var(--bg-hover-rgb, 255, 255, 255), 0.03);
   }
 </style>
-

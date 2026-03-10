@@ -19,8 +19,8 @@
   import { fileTree, workspaceName, isLoadingTree } from "$lib/stores/workspace";
   import { tabs, updateTabContent, reopenLastClosedTab, setTabLoading } from "$lib/stores/tabs";
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
-  import { initZoom } from "$lib/stores/ui";
-  import { settingsVisible, aiSettingsVisible, settings, updateSetting } from "$lib/stores/settings";
+  import { initZoom, zoomIn, zoomOut, resetZoom } from "$lib/stores/ui";
+  import { settingsVisible, aiSettingsVisible, settings } from "$lib/stores/settings";
   import ChatDockPanel from "$lib/components/chat/ChatDockPanel.svelte";
   import AISettingsPage from "$lib/components/ai-settings/AISettingsPage.svelte";
   import {
@@ -186,7 +186,22 @@
 
   /** Cross-platform modifier: Cmd on macOS, Ctrl on Windows/Linux */
   function mod(e: KeyboardEvent): boolean {
-    return isMac ? e.metaKey : mod(e);
+    return isMac ? e.metaKey : e.ctrlKey;
+  }
+
+  function isZoomInShortcut(e: KeyboardEvent): boolean {
+    if (!mod(e) || e.altKey) return false;
+    return e.code === "Equal" || e.code === "NumpadAdd" || e.key === "+" || e.key === "=" || e.key === "Add";
+  }
+
+  function isZoomOutShortcut(e: KeyboardEvent): boolean {
+    if (!mod(e) || e.altKey) return false;
+    return e.code === "Minus" || e.code === "NumpadSubtract" || e.key === "-" || e.key === "Subtract";
+  }
+
+  function isZoomResetShortcut(e: KeyboardEvent): boolean {
+    if (!mod(e) || e.altKey) return false;
+    return e.code === "Digit0" || e.code === "Numpad0" || e.key === "0";
   }
 
   // Global keyboard shortcuts
@@ -228,27 +243,24 @@
       return;
     }
 
-    // Ctrl+= / Ctrl++: Increase terminal + chat font size
-    if (mod(e) && (e.key === "=" || e.key === "+")) {
+    // Mod+= / Mod++ (including numpad): zoom in
+    if (isZoomInShortcut(e)) {
       e.preventDefault();
-      updateSetting("terminalFontSize", Math.min(32, $settings.terminalFontSize + 1));
-      updateSetting("aiChatFontSize", Math.min(32, $settings.aiChatFontSize + 1));
+      zoomIn();
       return;
     }
 
-    // Ctrl+-: Decrease terminal + chat font size
-    if (mod(e) && e.key === "-") {
+    // Mod+- (including numpad): zoom out
+    if (isZoomOutShortcut(e)) {
       e.preventDefault();
-      updateSetting("terminalFontSize", Math.max(8, $settings.terminalFontSize - 1));
-      updateSetting("aiChatFontSize", Math.max(8, $settings.aiChatFontSize - 1));
+      zoomOut();
       return;
     }
 
-    // Ctrl+0: Reset terminal + chat font size
-    if (mod(e) && e.key === "0") {
+    // Mod+0 (including numpad): reset zoom
+    if (isZoomResetShortcut(e)) {
       e.preventDefault();
-      updateSetting("terminalFontSize", 14);
-      updateSetting("aiChatFontSize", 15);
+      resetZoom();
       return;
     }
 

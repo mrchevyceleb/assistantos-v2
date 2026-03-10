@@ -6,16 +6,17 @@
   import type {
     UIMessage, UIToolCall, PendingConfirmation,
   } from '$lib/stores/chat';
-  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey, aiSettingsVisible, getProviderDisplayName, inferProviderForModel } from '$lib/stores/settings';
+  import { settings, updateSetting, getActiveAIBaseUrl, getActiveAIKey, aiSettingsVisible, inferProviderForModel, inferRoutingProviderForModel } from '$lib/stores/settings';
   import { ChatEngine } from '$lib/ai/chat/chat-engine';
   import { ChatSession } from '$lib/ai/chat/session';
   import type { AIChatSettings, ToolCall, ToolResult, ContextUsage } from '$lib/ai/types';
   import { refreshMcpToolDefinitions } from '$lib/ai/tools/mcp-registry';
-  import { availableModels, fetchModels } from '$lib/stores/models';
+  import { availableModels, fetchModels, getModelDisplayName, ensureLMStudioModelLoaded } from '$lib/stores/models';
   import { chatInstances, moveChat, removeChat, updateChatModel, type ChatDock } from '$lib/stores/chat-instances';
   import { PROMPT_PROFILES, getPromptProfile } from '$lib/ai/prompts/base-prompts';
   import { getModelProfile, inferModelSettings } from '$lib/ai/model-registry';
   import { getInstanceState, destroyInstanceState } from '$lib/stores/chat-instance-state';
+  import { refreshOpenAIOAuthIfNeeded } from '$lib/utils/oauth';
 
   // ── Props ─────────────────────────────────────────────────────────
 
@@ -158,15 +159,17 @@
 
   function getAISettings(): AIChatSettings {
     const s = get(settings);
+    const hasOpenAIOAuthToken = s.aiProvider === 'openai' && !!(s.aiOpenAIOAuthAccessToken || '').trim();
     return {
       provider: s.aiProvider,
-      authMode: s.aiAuthMode,
+      authMode: hasOpenAIOAuthToken ? 'oauth' : s.aiAuthMode,
       apiKey: getActiveAIKey(s),
       model: s.aiModel,
       baseUrl: getActiveAIBaseUrl(s).replace(/\/+$/, ''),
       temperature: s.aiTemperature,
       maxTokens: s.aiMaxTokens,
       contextWindow: resolveContextWindow(),
+      openAICodexClientVersion: s.aiOpenAICodexClientVersion,
       enableToolUse: s.aiEnableToolUse,
       confirmWrites: s.aiConfirmWrites,
       yoloMode: s.aiYoloMode,
@@ -301,7 +304,25 @@
     if (!message.trim() && !(payload?.images?.length)) return;
     if (get(istate.isLoading)) return;
 
+    if ($settings.aiProvider === 'openai' && !!($settings.aiOpenAIOAuthAccessToken || '').trim()) {
+      try {
+        await refreshOpenAIOAuthIfNeeded();
+      } catch {
+        // Let regular auth checks and request errors surface in chat UI.
+      }
+    }
+
     const aiSettings = getAISettings();
+
+    if (aiSettings.provider === 'lmstudio') {
+      try {
+        await ensureLMStudioModelLoaded(aiSettings.baseUrl, aiSettings.model);
+      } catch (e) {
+        addUIMessage('system', `LM Studio model load failed: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
+    }
+
     if (!aiSettings.apiKey) return;
 
     if (!istate.engine) {
@@ -378,6 +399,7 @@
     $settings.aiProvider;
     $settings.aiOpenRouterApiKey;
     $settings.aiOpenAIApiKey;
+    $settings.aiOpenAIOAuthAccessToken;
     $settings.aiAnthropicApiKey;
     $availableModels;
     if (!getActiveAIKey($settings) || attemptedModelFetch || $availableModels.length > 0) {
@@ -411,7 +433,16 @@
   });
 
   function modelDisplayName(model: string): string {
-    return model.split('/').pop() || model;
+    const info = $availableModels.find((m) => m.id === model);
+    if (info) return getModelDisplayName(info);
+    return getModelDisplayName(model);
+  }
+
+  function selectModel(modelId: string): void {
+    updateSetting('aiModel', modelId);
+    const routedProvider = inferRoutingProviderForModel(modelId, $settings.aiProvider);
+    updateSetting('aiProvider', routedProvider);
+    modelSwitcherOpen = false;
   }
 
   function contextPercentText(): string {
@@ -516,7 +547,7 @@
             title={$settings.aiModel}
           >
             <span class="truncate">{modelDisplayName($settings.aiModel)}</span>
-            <span class="text-text-muted shrink-0" style="font-size: {Math.max(10, $settings.aiChatFontSize - 3)}px; font-weight: 400; opacity: 0.5;">({getProviderDisplayName($settings.aiProvider)})</span>
+            <span class="text-text-muted shrink-0" style="font-size: {Math.max(10, $settings.aiChatFontSize - 3)}px; font-weight: 400; opacity: 0.5;">({inferProviderForModel($settings.aiModel, $settings.aiProvider)})</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 opacity-40">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
@@ -552,12 +583,13 @@
                       class="w-full text-left font-mono hover:bg-bg-hover transition-colors truncate
                         {model === $settings.aiModel ? 'text-accent bg-accent/8' : 'text-text-secondary hover:text-text-primary'}"
                       style="font-size: {$settings.aiChatFontSize}px; padding: 8px 12px;"
-                      onclick={() => { updateSetting("aiModel", model); modelSwitcherOpen = false; }}
+                      onclick={() => selectModel(model)}
                     >
-                      <span class="truncate">{model}</span>
+                      <span class="truncate">{modelDisplayName(model)}</span>
                       {#if ctxLen}
                         <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(ctxLen / 1000).toFixed(0)}k)</span>
                       {/if}
+                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.75;"> {model}</span>
                       <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model, $settings.aiProvider)}</span>
                     </button>
                   {/each}
@@ -571,13 +603,14 @@
                     class="w-full text-left font-mono hover:bg-bg-hover transition-colors truncate
                       {model.id === $settings.aiModel ? 'text-accent bg-accent/8' : 'text-text-secondary hover:text-text-primary'}"
                     style="font-size: {$settings.aiChatFontSize}px; padding: 8px 12px;"
-                    onclick={() => { updateSetting("aiModel", model.id); modelSwitcherOpen = false; }}
-                  >
-                    <span class="truncate">{model.id}</span>
-                    {#if model.context_length}
-                      <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(model.context_length / 1000).toFixed(0)}k)</span>
-                    {/if}
-                    <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model.id, $settings.aiProvider)}</span>
+                     onclick={() => selectModel(model.id)}
+                   >
+                     <span class="truncate">{getModelDisplayName(model)}</span>
+                     {#if model.context_length}
+                       <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px;"> ({(model.context_length / 1000).toFixed(0)}k)</span>
+                     {/if}
+                     <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.75;"> {model.id}</span>
+                     <span class="text-text-muted" style="font-size: {$settings.aiChatFontSize - 3}px; opacity: 0.5;"> {inferProviderForModel(model.id, $settings.aiProvider)}</span>
                   </button>
                 {/each}
               {/if}
