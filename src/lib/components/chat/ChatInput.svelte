@@ -34,9 +34,7 @@
 
   let { onSend, onStop, onSteer, isLoading, disabled }: Props = $props();
   let inputText = $state("");
-  let steerText = $state("");
   let textarea = $state<HTMLTextAreaElement | null>(null);
-  let showSteerBox = $state(false);
 
   let attachedImages = $state<ImageAttachment[]>([]);
 
@@ -372,8 +370,16 @@
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!isLoading && inputText.trim() && !disabled) {
-        send();
+      if (inputText.trim() && !disabled) {
+        if (isLoading) {
+          // Send as steering message (interrupts current AI run)
+          const text = inputText.trim();
+          inputText = "";
+          if (textarea) textarea.style.height = "auto";
+          onSteer(text);
+        } else {
+          send();
+        }
       }
     }
     if (e.key === "Escape" && isLoading) {
@@ -396,14 +402,6 @@
     mentionAnchor = -1;
     if (textarea) textarea.style.height = "auto";
     onSend(text || "(image attached)", { mentions, images, ...slashPayload });
-  }
-
-  function submitSteer() {
-    const text = steerText.trim();
-    if (!text) return;
-    steerText = "";
-    showSteerBox = false;
-    onSteer(text);
   }
 
   function autoResize() {
@@ -565,12 +563,11 @@
           ondragover={handleDragOver}
           ondragleave={handleDragLeave}
           ondrop={handleDrop}
-          placeholder="Ask about your workspace... Use @ to tag files, or drag files here"
+          placeholder={isLoading ? "Type to steer the AI... (Enter to send)" : "Ask about your workspace... Use @ to tag files, or drag files here"}
           rows="2"
           class="w-full bg-transparent text-text-primary resize-none outline-none leading-[1.6] placeholder:text-text-muted/50"
           class:drop-highlight={dragOver}
           style="padding: 14px 18px 10px 18px; font-size: calc(18px * var(--ui-zoom)); min-height: 3.2em;"
-          disabled={isLoading}
         ></textarea>
 
         {#if mentionSuggestions.length > 0}
@@ -606,33 +603,12 @@
         {/if}
       </div>
 
-      {#if showSteerBox && isLoading}
-        <div class="px-3 pb-2">
-          <div class="flex items-center gap-2">
-            <input
-              type="text"
-              bind:value={steerText}
-              class="flex-1 bg-bg-primary border border-border/40 rounded-md px-3 py-1.5 text-text-primary outline-none focus:border-accent/40"
-              style="font-size: calc(14.5px * var(--ui-zoom));"
-              placeholder="Steer the response. Example: focus only on src/lib"
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  submitSteer();
-                }
-              }}
-            />
-            <button class="px-2.5 py-1.5 rounded-md bg-accent/20 border border-accent/30 text-accent" style="font-size: calc(13.5px * var(--ui-zoom));" onclick={submitSteer}>Apply</button>
-          </div>
-        </div>
-      {/if}
-
       <div class="flex items-center justify-between px-3 pb-2.5">
         <div class="text-text-muted/50 select-none" style="font-size: calc(13px * var(--ui-zoom));">
           {#if isLoading}
             <span class="working-indicator" role="status" aria-label="Assistant is working">
               <span class="working-bars" aria-hidden="true"><span></span><span></span><span></span></span>
-              <span>Working on it...</span>
+              <span>Working... type to steer</span>
             </span>
           {:else if $settings.aiEnableAtMentions}
             Enter to send, @ for files, / for commands
@@ -643,14 +619,23 @@
 
         <div class="flex items-center gap-2">
           {#if isLoading}
-            <button
-              onclick={() => (showSteerBox = !showSteerBox)}
-              class="h-10 rounded-lg px-3 border border-accent/25 text-accent/90 hover:bg-accent/10 transition-all"
-              style="font-size: calc(13px * var(--ui-zoom));"
-              title="Steer response"
-            >
-              Steer
-            </button>
+            {#if inputText.trim()}
+              <button
+                onclick={() => {
+                  const text = inputText.trim();
+                  inputText = "";
+                  if (textarea) textarea.style.height = "auto";
+                  onSteer(text);
+                }}
+                class="w-10 h-10 rounded-lg bg-accent/20 text-accent hover:bg-accent/30 border border-accent/25 flex items-center justify-center transition-all"
+                title="Send to steer (Enter)"
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                  <polyline points="12 5 19 12 12 19"/>
+                </svg>
+              </button>
+            {/if}
             <button
               onclick={onStop}
               class="w-10 h-10 rounded-lg bg-error/15 border border-error/25 text-error/80 flex items-center justify-center hover:bg-error/25 hover:text-error transition-all"

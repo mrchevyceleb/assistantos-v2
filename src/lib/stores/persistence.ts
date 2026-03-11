@@ -163,6 +163,11 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
       ];
     }
 
+    // Migration: bump maxToolIterations if stuck at old low default (25).
+    if (merged.aiMaxToolIterations < 75) {
+      merged.aiMaxToolIterations = 75;
+    }
+
     settings.set(merged);
   }
 

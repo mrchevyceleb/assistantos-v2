@@ -343,8 +343,19 @@
 
   async function handleSteer(steer: string) {
     if (!steer.trim()) return;
-    handleStop();
-    await handleSend(`Steer: ${steer}`, { steer });
+    // Abort current run (this also cleans up orphaned tool calls in the session)
+    istate.engine?.abort();
+    if (istate.currentStreamingId) {
+      finalizeMessage(istate.currentStreamingId);
+      istate.currentStreamingId = null;
+    }
+    istate.isLoading.set(false);
+
+    // Small delay to let abort propagate
+    await new Promise(r => setTimeout(r, 50));
+
+    // Send as a regular message (the AI will see the full conversation + this new message)
+    await handleSend(steer);
   }
 
   function handleStop() {

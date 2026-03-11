@@ -57,6 +57,45 @@ export class ChatEngine {
   abort(): void {
     this.abortController?.abort();
     this.isRunning = false;
+    this.cleanupOrphanedToolCalls();
+  }
+
+  /**
+   * After aborting, the session may have an assistant message with tool_calls
+   * but no corresponding tool_result messages. This violates the Anthropic API
+   * contract. Add synthetic "cancelled" tool_results for any orphaned tool_calls.
+   */
+  private cleanupOrphanedToolCalls(): void {
+    const messages = this.session.getMessages();
+    if (messages.length === 0) return;
+
+    // Walk backwards to find the last assistant message with tool_calls
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === 'assistant' && msg.tool_calls?.length) {
+        // Check if every tool_call has a corresponding tool_result after it
+        const toolCallIds = new Set(msg.tool_calls.map(tc => tc.id));
+        for (let j = i + 1; j < messages.length; j++) {
+          if (messages[j].role === 'tool' && messages[j].tool_call_id) {
+            toolCallIds.delete(messages[j].tool_call_id!);
+          }
+        }
+
+        // Add synthetic results for any orphaned tool calls
+        for (const orphanId of toolCallIds) {
+          const tc = msg.tool_calls.find(t => t.id === orphanId);
+          this.session.addMessage({
+            role: 'tool',
+            content: 'Operation cancelled by user.',
+            tool_call_id: orphanId,
+            name: tc?.function?.name || 'unknown',
+          });
+        }
+        break; // Only need to fix the last set
+      }
+      // No assistant+tool_calls between here and the tail, nothing to fix
+      if (msg.role === 'user') break;
+    }
   }
 
   updateSettings(settings: AIChatSettings): void {
@@ -149,7 +188,8 @@ export class ChatEngine {
   ): Promise<void> {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.abortController = new AbortController();
+    const myController = new AbortController();
+    this.abortController = myController;
 
     try {
       const wsPath = get(workspacePath);
@@ -176,10 +216,6 @@ export class ChatEngine {
         const mentionLines = options.mentions.map((m) => `- ${m}`).join('\n');
         enrichedUserContent = `Tagged paths:\n${mentionLines}\n\nUser request:\n${enrichedUserContent}`;
       }
-      if (options?.steer) {
-        enrichedUserContent = `${enrichedUserContent}\n\nSteering:\n${options.steer}`;
-      }
-
       const userMessage: ChatMessage = { role: 'user', content: enrichedUserContent };
       if (options?.images?.length) {
         userMessage.images = options.images.map(img => ({
@@ -412,8 +448,11 @@ export class ChatEngine {
         );
       }
     } finally {
-      this.isRunning = false;
-      this.abortController = null;
+      // Only clean up if this is still the active run (not replaced by a new one after abort+steer)
+      if (this.abortController === myController) {
+        this.isRunning = false;
+        this.abortController = null;
+      }
     }
   }
 
