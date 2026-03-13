@@ -18,6 +18,7 @@ You can read, write, search, and manage files in the user's workspace. You can a
 ## Workspace Context
 The user's current workspace path will be provided. All relative paths resolve against this root.`;
 
-export const MAX_READ_FILE_CHARS = 40_000;
+export const MAX_READ_FILE_CHARS = 20_000;
+export const MAX_TOOL_RESULT_CHARS = 12_000;
 export const MAX_SEARCH_RESULTS = 50;
 export const MAX_LIST_FILES = 200;

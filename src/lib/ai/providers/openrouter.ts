@@ -50,6 +50,63 @@ function extractThinkingFromOpenAIChunk(rawData: string): string | null {
   return null;
 }
 
+/**
+ * Strip orphaned tool messages and incomplete tool_call pairs.
+ * Ensures every role:'tool' message follows an assistant message with matching tool_calls.
+ */
+function sanitizeToolPairs(messages: ChatMessage[]): ChatMessage[] {
+  // Find all complete tool_call/result pairs
+  const completeIds = new Set<string>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== 'assistant' || !msg.tool_calls?.length) continue;
+
+    const expected = new Set(msg.tool_calls.map((tc) => tc.id));
+
+    // Look at subsequent tool messages
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'tool') {
+      if (messages[j].tool_call_id && expected.has(messages[j].tool_call_id!)) {
+        completeIds.add(messages[j].tool_call_id!);
+      }
+      j++;
+    }
+  }
+
+  // Build clean array: strip orphaned tool messages and incomplete tool_calls
+  const result: ChatMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    if (msg.role === 'tool') {
+      // Only keep tool results that have a complete pair
+      if (msg.tool_call_id && completeIds.has(msg.tool_call_id)) {
+        result.push(msg);
+      }
+      continue;
+    }
+
+    if (msg.role === 'assistant' && msg.tool_calls?.length) {
+      const keptCalls = msg.tool_calls.filter((tc) => completeIds.has(tc.id));
+      if (keptCalls.length === 0 && msg.content) {
+        // Keep text content, strip tool_calls
+        result.push({ ...msg, tool_calls: undefined });
+      } else if (keptCalls.length > 0) {
+        result.push({ ...msg, tool_calls: keptCalls });
+      } else if (msg.content) {
+        result.push({ ...msg, tool_calls: undefined });
+      }
+      // If no content and no kept calls, skip entirely
+      continue;
+    }
+
+    result.push(msg);
+  }
+
+  return result;
+}
+
 export async function streamOpenAICompatibleCompletion(
   messages: ChatMessage[],
   settings: AIChatSettings,
@@ -74,8 +131,13 @@ export async function streamOpenAICompatibleCompletion(
     return settings.model;
   })();
 
+  // Defensive sanitization: strip orphaned tool messages that don't match
+  // a preceding assistant message with tool_calls. This prevents OpenAI
+  // "messages with role 'tool' must be a response to a preceding message with 'tool_calls'" errors.
+  const sanitized = sanitizeToolPairs(messages);
+
   // Build request body - convert messages with images to multimodal format
-  const apiMessages = messages.map(m => {
+  const apiMessages = sanitized.map(m => {
     if (m.images?.length && m.role === 'user') {
       const content: Array<Record<string, unknown>> = [];
       for (const img of m.images) {
@@ -103,7 +165,9 @@ export async function streamOpenAICompatibleCompletion(
     model: normalizedModel,
     messages: apiMessages,
     temperature: settings.temperature,
-    max_tokens: safeMaxTokens,
+    ...(settings.provider === 'openai'
+      ? { max_completion_tokens: safeMaxTokens }
+      : { max_tokens: safeMaxTokens }),
     stream: true,
   };
 

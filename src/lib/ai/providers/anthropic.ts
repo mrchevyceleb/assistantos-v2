@@ -151,6 +151,93 @@ function safeJsonParse(value: string): unknown {
   }
 }
 
+/**
+ * Sanitize Anthropic messages by STRIPPING orphaned tool pairs entirely.
+ * - Remove tool_result blocks that don't match a tool_use in the immediately preceding assistant message
+ * - Remove tool_use blocks from assistant messages that have no corresponding tool_result after them
+ * - Merge consecutive same-role messages
+ * - Never inject synthetic results (keeps context clean for the AI)
+ */
+function sanitizeAnthropicMessages(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  // Pass 1: Identify complete tool_use/tool_result pairs
+  // For each assistant message, check which tool_uses have results in the immediately following user message
+  const completeToolUseIds = new Set<string>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== 'assistant' || !Array.isArray(msg.content)) continue;
+
+    const toolUseIds = (msg.content as Array<Record<string, unknown>>)
+      .filter((b) => b.type === 'tool_use' && b.id)
+      .map((b) => b.id as string);
+    if (toolUseIds.length === 0) continue;
+
+    const toolUseIdSet = new Set(toolUseIds);
+
+    // Look ahead for tool_result blocks in subsequent user messages
+    // (before merging, there may be multiple consecutive user messages with tool_results)
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'user') {
+      if (Array.isArray(messages[j].content)) {
+        for (const b of messages[j].content as Array<Record<string, unknown>>) {
+          if (b.type === 'tool_result' && b.tool_use_id && toolUseIdSet.has(b.tool_use_id as string)) {
+            completeToolUseIds.add(b.tool_use_id as string);
+          }
+        }
+      }
+      j++;
+    }
+  }
+
+  // Pass 2: Build cleaned messages, stripping incomplete tool pairs
+  const cleaned: Array<Record<string, unknown>> = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      const content = msg.content as Array<Record<string, unknown>>;
+      const filtered = content.filter((b) => {
+        if (b.type === 'tool_use' && b.id) {
+          return completeToolUseIds.has(b.id as string);
+        }
+        return true; // keep text, thinking blocks
+      });
+      if (filtered.length === 0) continue; // skip empty assistant messages
+      cleaned.push({ ...msg, content: filtered });
+      continue;
+    }
+
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      const content = msg.content as Array<Record<string, unknown>>;
+      const filtered = content.filter((b) => {
+        if (b.type === 'tool_result' && b.tool_use_id) {
+          return completeToolUseIds.has(b.tool_use_id as string);
+        }
+        return true; // keep text, image blocks
+      });
+      if (filtered.length === 0) continue; // skip empty user messages
+      cleaned.push({ ...msg, content: filtered });
+      continue;
+    }
+
+    cleaned.push({ ...msg });
+  }
+
+  // Pass 3: Merge consecutive same-role messages
+  const merged: Array<Record<string, unknown>> = [];
+  for (const msg of cleaned) {
+    const prev = merged[merged.length - 1];
+    if (prev?.role === msg.role && Array.isArray(prev.content) && Array.isArray(msg.content)) {
+      (prev.content as Array<Record<string, unknown>>).push(
+        ...(msg.content as Array<Record<string, unknown>>),
+      );
+    } else {
+      merged.push(msg);
+    }
+  }
+
+  return merged;
+}
+
 function toAnthropicPayload(
   messages: ChatMessage[],
   settings: AIChatSettings,
@@ -226,6 +313,14 @@ function toAnthropicPayload(
     });
   }
 
+  // Comprehensive Anthropic message sanitization:
+  // 1. Each tool_result must reference a tool_use in the IMMEDIATELY PRECEDING assistant message
+  // 2. Each tool_use must have a corresponding tool_result in the IMMEDIATELY FOLLOWING user message
+  // 3. Consecutive same-role messages must be merged
+  // 4. Messages must strictly alternate: user, assistant, user, assistant...
+
+  const sanitized = sanitizeAnthropicMessages(anthropicMessages);
+
   // Cap max_tokens: use model registry's maxOutputTokens if known, else 75% of context.
   const contextLimit = settings.contextWindow || 128000;
   const { maxOutputTokens: registryMax } = inferModelSettings(settings.model);
@@ -236,7 +331,7 @@ function toAnthropicPayload(
     stream: true,
     max_tokens: safeMaxTokens,
     temperature: settings.temperature,
-    messages: anthropicMessages,
+    messages: sanitized,
   };
 
   const system = systemParts.join('\n\n').trim();

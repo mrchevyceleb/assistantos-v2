@@ -201,6 +201,44 @@ class OpenAICodexStreamProcessor {
   }
 }
 
+/** Strip orphaned tool_call/result pairs from messages before Responses API conversion. */
+function sanitizeCodexMessages(messages: ChatMessage[]): ChatMessage[] {
+  const completeIds = new Set<string>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== 'assistant' || !msg.tool_calls?.length) continue;
+
+    const expected = new Set(msg.tool_calls.map((tc) => tc.id));
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'tool') {
+      if (messages[j].tool_call_id && expected.has(messages[j].tool_call_id!)) {
+        completeIds.add(messages[j].tool_call_id!);
+      }
+      j++;
+    }
+  }
+
+  const result: ChatMessage[] = [];
+  for (const msg of messages) {
+    if (msg.role === 'tool') {
+      if (msg.tool_call_id && completeIds.has(msg.tool_call_id)) result.push(msg);
+      continue;
+    }
+    if (msg.role === 'assistant' && msg.tool_calls?.length) {
+      const kept = msg.tool_calls.filter((tc) => completeIds.has(tc.id));
+      if (kept.length > 0) {
+        result.push({ ...msg, tool_calls: kept });
+      } else if (msg.content) {
+        result.push({ ...msg, tool_calls: undefined });
+      }
+      continue;
+    }
+    result.push(msg);
+  }
+  return result;
+}
+
 export async function streamOpenAICodexCompletion(
   messages: ChatMessage[],
   settings: AIChatSettings,
@@ -210,7 +248,7 @@ export async function streamOpenAICodexCompletion(
   const requestId = `codex-${Date.now()}-${++requestCounter}`;
   const processor = new OpenAICodexStreamProcessor();
 
-  const translated = toResponsesInput(messages);
+  const translated = toResponsesInput(sanitizeCodexMessages(messages));
   const contextLimit = settings.contextWindow || 128000;
   const { maxOutputTokens: registryMax } = inferModelSettings(settings.model);
   const safeMaxOutputTokens = Math.min(settings.maxTokens, registryMax, Math.floor(contextLimit * 0.75));

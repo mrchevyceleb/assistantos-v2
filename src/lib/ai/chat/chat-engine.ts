@@ -27,7 +27,7 @@ const INSTRUCTION_FILES = [
   'CLAUDE.md', 'CLAUDE.MD', 'claude.md',
 ];
 const DEFAULT_CONTEXT_WINDOW = 128000;
-const AUTO_COMPACT_THRESHOLD_PERCENT = 88;
+const AUTO_COMPACT_THRESHOLD_PERCENT = 75;
 
 export class ChatEngine {
   private session: ChatSession;
@@ -232,7 +232,7 @@ export class ChatEngine {
       const maxIterations = this.settings.maxToolIterations;
 
       while (iterations < maxIterations) {
-        if (this.abortController.signal.aborted) break;
+        if (myController.signal.aborted) break;
         iterations++;
 
         // Build messages array
@@ -304,7 +304,7 @@ export class ChatEngine {
             tools,
             {
               onChunk: (chunk: StreamChunk) => {
-                if (this.abortController?.signal.aborted) return;
+                if (myController.signal.aborted) return;
 
                 switch (chunk.type) {
                   case 'text':
@@ -350,7 +350,7 @@ export class ChatEngine {
         if (lastCacheCreation) this._lastCacheCreation = lastCacheCreation;
         if (lastCacheRead) this._lastCacheRead = lastCacheRead;
 
-        if (this.abortController.signal.aborted) break;
+        if (myController.signal.aborted) break;
 
         // Handle response
         if (finishReason === 'tool_calls' && toolCalls.length > 0) {
@@ -386,7 +386,7 @@ export class ChatEngine {
           // Execute each tool call
           const results: ToolResult[] = [];
           for (const tc of toolCalls) {
-            if (this.abortController.signal.aborted) break;
+            if (myController.signal.aborted) break;
 
             // Check if confirmation needed
             if (!this.settings.yoloMode && this.settings.confirmWrites && (WRITE_TOOLS.has(tc.function.name) || tc.function.name.startsWith('mcp__'))) {
@@ -405,6 +405,13 @@ export class ChatEngine {
             const result = await executeTool(tc);
             results.push(result);
           }
+
+          // If aborted during tool execution, bail out.
+          // cleanupOrphanedToolCalls() already added synthetic "cancelled" results
+          // for any tool_calls without results in the session, so adding real results
+          // here would create duplicates and orphaned tool messages after the steer's
+          // user message (causing OpenAI 400 errors).
+          if (myController.signal.aborted) break;
 
           // Add tool result messages
           for (const result of results) {
@@ -442,7 +449,10 @@ export class ChatEngine {
       // Save session
       await this.session.save();
     } catch (error) {
-      if (!this.abortController?.signal.aborted) {
+      // Use myController (not this.abortController) to check abort status.
+      // After a steer, this.abortController points to the NEW run's controller,
+      // so checking it would wrongly report the old run's stream teardown error.
+      if (!myController.signal.aborted) {
         this.callbacks.onError(
           error instanceof Error ? error.message : String(error)
         );
@@ -595,8 +605,14 @@ export class ChatEngine {
     }
 
     const safePreserve = Math.max(0, Math.min(preserveLatestCount, messages.length - 1));
-    const head = messages.slice(0, messages.length - safePreserve);
-    const tail = safePreserve > 0 ? messages.slice(-safePreserve) : [];
+    let splitIndex = messages.length - safePreserve;
+    // Walk the split point backward so we never orphan tool_result messages
+    // from their corresponding assistant+tool_use message.
+    while (splitIndex > 0 && splitIndex < messages.length && messages[splitIndex].role === 'tool') {
+      splitIndex--;
+    }
+    const head = messages.slice(0, splitIndex);
+    const tail = messages.slice(splitIndex);
 
     if (head.length === 0) {
       return false;
@@ -639,6 +655,81 @@ export class ChatEngine {
       content: systemContent,
     };
 
-    return [systemMessage, ...this.session.getMessages()];
+    return [systemMessage, ...this.sanitizeMessages(this.session.getMessages())];
+  }
+
+  /**
+   * Sanitize message history to enforce strict tool_call/tool_result pairing.
+   * Strategy: STRIP orphaned pairs entirely rather than injecting synthetic results.
+   * This keeps the context clean and prevents the AI from seeing "interrupted" noise.
+   */
+  private sanitizeMessages(messages: ChatMessage[]): ChatMessage[] {
+    // Pass 1: Find which tool_call IDs have COMPLETE results.
+    // Walk through messages and match each assistant's tool_calls to subsequent tool results.
+    const completeToolCallIds = new Set<string>();
+    const incompleteAssistantIndices = new Set<number>();
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.role !== 'assistant' || !msg.tool_calls?.length) continue;
+
+      const expectedIds = new Set(msg.tool_calls.map((tc) => tc.id));
+      const foundIds = new Set<string>();
+
+      // Look at subsequent tool messages
+      let j = i + 1;
+      while (j < messages.length && messages[j].role === 'tool') {
+        if (messages[j].tool_call_id && expectedIds.has(messages[j].tool_call_id!)) {
+          foundIds.add(messages[j].tool_call_id!);
+        }
+        j++;
+      }
+
+      if (foundIds.size === expectedIds.size) {
+        // All tool_calls have results - this is a complete pair
+        for (const id of foundIds) completeToolCallIds.add(id);
+      } else if (foundIds.size === 0) {
+        // No results at all - strip entire assistant message with tool_calls
+        incompleteAssistantIndices.add(i);
+      } else {
+        // Partial results - keep only the tool_calls that have results
+        // Mutate a copy to avoid corrupting the session
+        incompleteAssistantIndices.add(i); // mark for special handling
+        for (const id of foundIds) completeToolCallIds.add(id);
+      }
+    }
+
+    // Pass 2: Build cleaned message array
+    const result: ChatMessage[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+
+      // Skip tool results that don't have a matching complete tool_call
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        if (!completeToolCallIds.has(msg.tool_call_id)) continue;
+        result.push(msg);
+        continue;
+      }
+
+      // Handle assistant messages with tool_calls
+      if (msg.role === 'assistant' && msg.tool_calls?.length && incompleteAssistantIndices.has(i)) {
+        const keptCalls = msg.tool_calls.filter((tc) => completeToolCallIds.has(tc.id));
+        if (keptCalls.length === 0) {
+          // No complete tool calls - keep assistant message but strip tool_calls
+          if (msg.content) {
+            result.push({ ...msg, tool_calls: undefined });
+          }
+          // If no content either, skip entirely
+          continue;
+        }
+        // Keep only the complete tool_calls
+        result.push({ ...msg, tool_calls: keptCalls });
+        continue;
+      }
+
+      result.push(msg);
+    }
+
+    return result;
   }
 }

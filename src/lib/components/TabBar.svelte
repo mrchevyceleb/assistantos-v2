@@ -2,6 +2,7 @@
   import { get } from "svelte/store";
   import { tabs, activeTabId, closeTab, moveTab, reopenLastClosedTab, closedTabs, updateTabContent, setTabLoading } from "$lib/stores/tabs";
   import { addTerminal } from "$lib/stores/terminal";
+  import { addChat } from "$lib/stores/chat-instances";
   import { workspacePath } from "$lib/stores/workspace";
   import { settings } from "$lib/stores/settings";
   import ContextMenu from "./ContextMenu.svelte";
@@ -278,6 +279,7 @@
       { label: "Close All", action: () => closeAllTabs(), danger: true },
       { label: "", separator: true, action: () => {} },
       { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
+      { label: "New Chat", action: () => addChat(get(settings).aiModel, get(settings).aiProvider, 'tab') },
     ];
   }
 
@@ -290,6 +292,7 @@
         disabled: $closedTabs.length === 0,
       },
       { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
+      { label: "New Chat", action: () => addChat(get(settings).aiModel, get(settings).aiProvider, 'tab') },
       ...(get(tabs).length > 0 ? [
         { label: "", separator: true, action: () => {} },
         { label: "Close All Tabs", action: () => closeAllTabs(), danger: true },

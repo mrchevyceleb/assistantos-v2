@@ -5,7 +5,7 @@ import {
   searchFiles, getFileInfo, readDirectoryTree, listAllFiles, runCommandSync, mcpCallTool,
 } from '$lib/utils/tauri';
 import type { ToolCall, ToolResult } from '../types';
-import { MAX_READ_FILE_CHARS, MAX_SEARCH_RESULTS, MAX_LIST_FILES } from '../constants';
+import { MAX_READ_FILE_CHARS, MAX_SEARCH_RESULTS, MAX_LIST_FILES, MAX_TOOL_RESULT_CHARS } from '../constants';
 import { getMcpToolMetadata } from './mcp-registry';
 
 function resolvePath(relativePath: string): string {
@@ -182,6 +182,10 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
           content: `Unknown tool: ${name}`,
           isError: true,
         };
+    }
+
+    if (result.length > MAX_TOOL_RESULT_CHARS) {
+      result = result.slice(0, MAX_TOOL_RESULT_CHARS) + '\n... (truncated)';
     }
 
     return {
