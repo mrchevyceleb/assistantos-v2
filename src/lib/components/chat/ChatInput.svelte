@@ -513,13 +513,13 @@
 
 <div style="padding: 16px 16px 14px 16px;">
   {#if disabled}
-    <div class="text-text-muted text-center py-4 bg-bg-secondary/40 rounded-xl border border-border/20" style="font-size: calc(15px * var(--ui-zoom));">
+    <div class="text-text-muted text-center bg-bg-secondary/40 rounded-xl border border-border/20" style="font-size: calc(15px * var(--ui-zoom)); padding: 16px 0;">
       Set your API key in Settings to get started
     </div>
   {:else}
     <div class="bg-bg-secondary/60 border border-border/30 rounded-xl focus-within:border-accent/30 focus-within:shadow-[0_0_12px_rgba(88,180,208,0.06)] transition-all duration-200">
       {#if attachedImages.length > 0}
-        <div class="px-3 pt-2.5 flex flex-wrap gap-2">
+        <div class="flex flex-wrap" style="padding: 10px 12px 0 12px; gap: 8px;">
           {#each attachedImages as img, i}
             <div class="relative group">
               <img
@@ -528,8 +528,8 @@
                 class="h-16 max-w-[120px] object-cover rounded-md border border-border/40"
               />
               <button
-                class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-error/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                style="font-size: 11px;"
+                class="absolute rounded-full bg-error/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                style="top: -6px; right: -6px; width: 20px; height: 20px; font-size: 11px;"
                 onclick={() => removeImage(i)}
                 title="Remove image"
               >×</button>
@@ -539,11 +539,11 @@
       {/if}
 
       {#if selectedMentions.length > 0}
-        <div class="px-3 pt-2 flex flex-wrap gap-1.5">
+        <div class="flex flex-wrap" style="padding: 8px 12px 0 12px; gap: 6px;">
           {#each selectedMentions as mention}
             <button
-              class="px-2 py-1 rounded-md bg-accent/15 border border-accent/25 text-accent/90"
-              style="font-size: calc(13px * var(--ui-zoom));"
+              class="rounded-md bg-accent/15 border border-accent/25 text-accent/90"
+              style="padding: 4px 8px; font-size: calc(13px * var(--ui-zoom));"
               onclick={() => removeMention(mention)}
               title="Remove mention"
             >
@@ -571,25 +571,25 @@
         ></textarea>
 
         {#if mentionSuggestions.length > 0}
-          <div class="absolute z-50 left-3 right-3 bottom-[100%] mb-2 rounded-lg border border-border bg-bg-primary/95 max-h-52 overflow-y-auto shadow-2xl">
+          <div class="absolute z-50 rounded-lg border border-border bg-bg-primary/95 max-h-52 overflow-y-auto shadow-2xl" style="left: 12px; right: 12px; bottom: 100%; margin-bottom: 8px;">
             {#each mentionSuggestions as suggestion, i (suggestion.path)}
               <button
-                class="w-full text-left px-3 py-2 font-mono transition-colors {i === mentionSelectedIndex ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-bg-hover'}"
-                style="font-size: calc(14px * var(--ui-zoom));"
+                class="w-full text-left font-mono transition-colors {i === mentionSelectedIndex ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-bg-hover'}"
+                style="font-size: calc(14px * var(--ui-zoom)); padding: 8px 12px;"
                 onclick={() => attachMention(suggestion)}
               >
-                <span class="opacity-70 mr-1.5">{suggestion.kind === 'folder' ? 'dir' : 'file'}</span>{suggestion.path}
+                <span style="opacity: 0.7; margin-right: 6px;">{suggestion.kind === 'folder' ? 'dir' : 'file'}</span>{suggestion.path}
               </button>
             {/each}
           </div>
         {/if}
 
         {#if slashSuggestions.length > 0}
-          <div class="absolute z-50 left-3 right-3 bottom-[100%] mb-2 rounded-lg border border-border bg-bg-primary/95 max-h-52 overflow-y-auto shadow-2xl">
+          <div class="absolute z-50 rounded-lg border border-border bg-bg-primary/95 max-h-52 overflow-y-auto shadow-2xl" style="left: 12px; right: 12px; bottom: 100%; margin-bottom: 8px;">
             {#each slashSuggestions as suggestion, i (suggestion.name)}
               <button
-                class="w-full text-left px-3 py-2 transition-colors {i === slashSelectedIndex ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-bg-hover'}"
-                style="font-size: calc(13px * var(--ui-zoom));"
+                class="w-full text-left transition-colors {i === slashSelectedIndex ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-bg-hover'}"
+                style="padding: 8px 12px; font-size: calc(13px * var(--ui-zoom));"
                 onclick={() => applySlashCommand(suggestion)}
                 title={suggestion.sourcePath}
               >
@@ -603,7 +603,7 @@
         {/if}
       </div>
 
-      <div class="flex items-center justify-between px-3 pb-2.5">
+      <div class="flex items-center justify-between" style="padding: 0 12px 10px 12px;">
         <div class="text-text-muted/50 select-none" style="font-size: calc(13px * var(--ui-zoom));">
           {#if isLoading}
             <span class="working-indicator" role="status" aria-label="Assistant is working">
@@ -617,7 +617,7 @@
           {/if}
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center" style="gap: 8px;">
           {#if isLoading}
             {#if inputText.trim()}
               <button

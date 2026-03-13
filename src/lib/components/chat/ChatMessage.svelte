@@ -167,9 +167,9 @@
 </script>
 
 <div class="group transition-colors {isUser ? 'bg-bg-hover/20' : ''} hover:bg-bg-hover/15" style="padding: 20px 32px 20px 24px;">
-  <div class="flex gap-3.5 max-w-full">
+  <div class="flex max-w-full" style="gap: 14px;">
     <!-- Avatar -->
-    <div class="shrink-0 mt-0.5">
+    <div class="shrink-0" style="margin-top: 2px;">
       {#if isUser}
         <div class="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-accent/70">
@@ -204,8 +204,8 @@
         onclick={onMessageClick}
       >
         {#if !isUser && thinkingText && $settings.aiThinkingMode !== 'none'}
-          <div class="mb-3 rounded-lg border border-accent/20 bg-accent/6 px-4 py-3">
-            <div class="mb-1.5 text-text-muted uppercase tracking-wider" style="font-size: {chatFs - 4}px;">Thinking</div>
+          <div class="rounded-lg border border-accent/20 bg-accent/6" style="margin-bottom: 12px; padding: 12px 16px;">
+            <div class="text-text-muted uppercase tracking-wider" style="font-size: {chatFs - 4}px; margin-bottom: 6px;">Thinking</div>
             {#if $settings.aiThinkingMode === 'all'}
               <div class="whitespace-pre-wrap break-words text-text-secondary" style="font-size: {chatFs - 2}px;">{thinkingText}</div>
             {:else}
@@ -214,8 +214,8 @@
               </div>
               {#if thinkingHidden}
                 <button
-                  class="mt-1.5 text-accent/85 hover:text-accent transition-colors"
-                  style="font-size: {chatFs - 3}px;"
+                  class="text-accent/85 hover:text-accent transition-colors"
+                  style="margin-top: 6px; font-size: {chatFs - 3}px;"
                   onclick={() => (showFullThinking = !showFullThinking)}
                 >
                   {showFullThinking ? 'Hide full thinking' : 'Show full thinking'}
@@ -226,17 +226,17 @@
         {/if}
 
         {#if message.mentions && message.mentions.length > 0}
-          <div class="mb-2 flex flex-wrap gap-1.5">
+          <div class="flex flex-wrap" style="margin-bottom: 8px; gap: 6px;">
             {#each message.mentions as mention}
-              <span class="px-2 py-0.5 rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono" style="font-size: {chatFs - 2}px;">@{mention}</span>
+              <span class="rounded bg-accent/15 border border-accent/25 text-accent/85 font-mono" style="font-size: {chatFs - 2}px; padding: 2px 8px;">@{mention}</span>
             {/each}
           </div>
         {/if}
         {#if message.steer}
-          <div class="mb-2 text-warning/90" style="font-size: {chatFs - 2}px;">Steer: {message.steer}</div>
+          <div class="text-warning/90" style="font-size: {chatFs - 2}px; margin-bottom: 8px;">Steer: {message.steer}</div>
         {/if}
         {#if message.images && message.images.length > 0}
-          <div class="mb-2 flex flex-wrap gap-2">
+          <div class="flex flex-wrap" style="margin-bottom: 8px; gap: 8px;">
             {#each message.images as img}
               <img
                 src="data:{img.mediaType};base64,{img.base64}"
@@ -295,7 +295,7 @@
 
       <!-- Tool calls -->
       {#if message.toolCalls.length > 0}
-        <div class="mt-2 space-y-1.5">
+        <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
           {#each message.toolCalls as toolCall (toolCall.id)}
             <ToolCallBlock {toolCall} />
           {/each}

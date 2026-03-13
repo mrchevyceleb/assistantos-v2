@@ -240,8 +240,8 @@
       <div class="flex items-center justify-center h-full">
         <button
           onclick={handleNewChat}
-          class="flex items-center gap-2 text-text-muted hover:text-accent transition-colors border border-dashed border-border/30 hover:border-accent/30 rounded-lg"
-          style="font-size: {$settings.aiChatFontSize}px; padding: 12px 24px;"
+          class="flex items-center text-text-muted hover:text-accent transition-colors border border-dashed border-border/30 hover:border-accent/30 rounded-lg"
+          style="font-size: {$settings.aiChatFontSize}px; padding: 12px 24px; gap: 8px;"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-60">
             <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>

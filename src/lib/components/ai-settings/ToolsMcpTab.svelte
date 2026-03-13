@@ -116,10 +116,11 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiEnableToolUse ? 'bg-accent' : 'bg-bg-active'}"
+        class="rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiEnableToolUse ? 'bg-accent' : 'bg-bg-active'}"
+        style="width: 46px; height: 26px;"
         onclick={() => updateSetting('aiEnableToolUse', !$settings.aiEnableToolUse)}
       >
-        <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiEnableToolUse ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+        <div class="absolute rounded-full bg-white shadow transition-transform {$settings.aiEnableToolUse ? 'translate-x-[22px]' : 'translate-x-[2px]'}" style="top: 2px; width: 22px; height: 22px;"></div>
       </div>
     </div>
 
@@ -132,10 +133,11 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiYoloMode ? 'bg-accent' : 'bg-bg-active'}"
+        class="rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiYoloMode ? 'bg-accent' : 'bg-bg-active'}"
+        style="width: 46px; height: 26px;"
         onclick={() => updateSetting('aiYoloMode', !$settings.aiYoloMode)}
       >
-        <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiYoloMode ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+        <div class="absolute rounded-full bg-white shadow transition-transform {$settings.aiYoloMode ? 'translate-x-[22px]' : 'translate-x-[2px]'}" style="top: 2px; width: 22px; height: 22px;"></div>
       </div>
     </div>
 
@@ -148,10 +150,11 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiConfirmWrites ? 'bg-accent' : 'bg-bg-active'} {$settings.aiYoloMode ? 'opacity-40 pointer-events-none' : ''}"
+        class="rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiConfirmWrites ? 'bg-accent' : 'bg-bg-active'} {$settings.aiYoloMode ? 'opacity-40 pointer-events-none' : ''}"
+        style="width: 46px; height: 26px;"
         onclick={() => updateSetting('aiConfirmWrites', !$settings.aiConfirmWrites)}
       >
-        <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiConfirmWrites ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+        <div class="absolute rounded-full bg-white shadow transition-transform {$settings.aiConfirmWrites ? 'translate-x-[22px]' : 'translate-x-[2px]'}" style="top: 2px; width: 22px; height: 22px;"></div>
       </div>
     </div>
 
@@ -165,8 +168,8 @@
         type="number"
         min="1"
         max="50"
-        class="bg-bg-primary border border-border/40 rounded-lg text-text-primary text-[13.5px] outline-none focus:border-accent/40 w-[100px] text-center font-mono transition-colors"
-        style="padding: 8px 16px;"
+        class="bg-bg-primary border border-border/40 rounded-lg text-text-primary text-[13.5px] outline-none focus:border-accent/40 text-center font-mono transition-colors"
+        style="padding: 8px 16px; width: 100px;"
         value={$settings.aiMaxToolIterations}
         oninput={(e) => updateSetting('aiMaxToolIterations', Number(e.currentTarget.value))}
       />

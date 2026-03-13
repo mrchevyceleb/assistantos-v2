@@ -28,11 +28,12 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="flex-1 flex flex-col h-full overflow-hidden glass-panel-solid">
+<div class="flex-1 flex flex-col overflow-hidden glass-panel-solid" style="height: 100%;">
   <!-- Header -->
   <div class="flex items-center shrink-0 border-b border-border/40 bg-bg-secondary/65 metal-sheen" style="padding: 0 24px; height: 56px; gap: 16px;">
     <button
-      class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+      class="flex items-center justify-center rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+      style="width: 32px; height: 32px;"
       onclick={close}
       aria-label="Back"
     >

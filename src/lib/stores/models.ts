@@ -67,6 +67,9 @@ function prettifyModelId(modelId: string): string {
   if (short === 'gpt-4.1-mini') return 'GPT-4.1 Mini';
   if (short === 'o4-mini') return 'o4 Mini';
   if (short === 'o3') return 'o3';
+  if (short === 'claude-opus-4-6') return 'Claude Opus 4.6';
+  if (short === 'claude-sonnet-4-6') return 'Claude Sonnet 4.6';
+  if (short === 'claude-3-5-haiku-latest') return 'Claude 3.5 Haiku';
 
   const normalized = short
     .replace(/[-_]+/g, ' ')

@@ -206,10 +206,12 @@
         {@const fullId = `anthropic/${model.id}`}
         <div class="model-row">
           <div
-            class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(fullId) ? 'bg-accent' : 'bg-bg-active'}"
+            class="rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(fullId) ? 'bg-accent' : 'bg-bg-active'}"
+            style="width: 38px; height: 22px; {isEnabled(fullId) ? '' : 'border: 1px solid rgba(255,255,255,0.15);'}"
             onclick={() => toggleEnabled(fullId)}
           >
-            <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(fullId) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
+            <div class="absolute rounded-full shadow transition-transform"
+              style="top: 2px; width: 18px; height: 18px; background: {isEnabled(fullId) ? '#fff' : 'rgba(255,255,255,0.6)'}; transform: translateX({isEnabled(fullId) ? '18px' : '2px'});"></div>
           </div>
           <div class="flex-1 min-w-0">
             <span class="text-text-primary text-[13px] font-medium">{model.name}</span>
@@ -305,15 +307,23 @@
 
     <div class="divide-y divide-border/15" style="max-height: 360px; overflow: auto;">
       {#if filteredOpenRouterModels.length === 0}
-        <div class="text-text-muted text-[12px] text-center" style="padding: 16px;">No models found. Click Refresh Models.</div>
+        <div class="text-text-muted text-[12px] text-center" style="padding: 16px;">
+          {#if !$settings.aiOpenRouterApiKey.trim()}
+            Enter an API key above to load models.
+          {:else}
+            No models found. Click Refresh Models.
+          {/if}
+        </div>
       {:else}
         {#each filteredOpenRouterModels as model (model.id)}
           <div class="model-row">
             <div
-              class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(model.id) ? 'bg-accent' : 'bg-bg-active'}"
+              class="rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(model.id) ? 'bg-accent' : 'bg-bg-active'}"
+            style="width: 38px; height: 22px; {isEnabled(model.id) ? '' : 'border: 1px solid rgba(255,255,255,0.15);'}"
               onclick={() => toggleEnabled(model.id)}
             >
-              <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(model.id) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
+              <div class="absolute rounded-full shadow transition-transform"
+              style="top: 2px; width: 18px; height: 18px; background: {isEnabled(model.id) ? '#fff' : 'rgba(255,255,255,0.6)'}; transform: translateX({isEnabled(model.id) ? '18px' : '2px'});"></div>
             </div>
             <div class="flex-1 min-w-0 truncate">
               <span class="text-text-primary text-[13px] font-medium">{getModelDisplayName(model)}</span>
@@ -371,7 +381,7 @@
           disabled={openAIDeviceBusy}
         >{openAIDeviceBusy ? 'Working...' : 'Step 1: Start Device Login'}</button>
         <button
-          class="text-[11px] border border-accent/50 rounded bg-accent/15 text-accent hover:bg-accent/20 disabled:opacity-50"
+          class="text-[11px] rounded disabled:opacity-40 disabled:border-border/30 disabled:bg-transparent disabled:text-text-muted disabled:cursor-not-allowed border border-accent/50 bg-accent/15 text-accent hover:bg-accent/20"
           style="padding: 4px 10px; font-weight: 700;"
           onclick={handleOpenAIOAuthComplete}
           disabled={openAIDeviceBusy || !openAIDeviceState}
@@ -419,10 +429,12 @@
         {@const fullId = `openai/${model.id}`}
         <div class="model-row">
           <div
-            class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(fullId) ? 'bg-accent' : 'bg-bg-active'}"
+            class="rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(fullId) ? 'bg-accent' : 'bg-bg-active'}"
+            style="width: 38px; height: 22px; {isEnabled(fullId) ? '' : 'border: 1px solid rgba(255,255,255,0.15);'}"
             onclick={() => toggleEnabled(fullId)}
           >
-            <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(fullId) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
+            <div class="absolute rounded-full shadow transition-transform"
+              style="top: 2px; width: 18px; height: 18px; background: {isEnabled(fullId) ? '#fff' : 'rgba(255,255,255,0.6)'}; transform: translateX({isEnabled(fullId) ? '18px' : '2px'});"></div>
           </div>
           <div class="flex-1 min-w-0">
             <span class="text-text-primary text-[13px] font-medium">{model.name}</span>
@@ -482,10 +494,12 @@
         {#each $lmStudioModels as model (model.id)}
           <div class="model-row">
             <div
-              class="w-[38px] h-[22px] rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(model.id) ? 'bg-accent' : 'bg-bg-active'}"
+              class="rounded-full relative cursor-pointer transition-colors shrink-0 {isEnabled(model.id) ? 'bg-accent' : 'bg-bg-active'}"
+            style="width: 38px; height: 22px; {isEnabled(model.id) ? '' : 'border: 1px solid rgba(255,255,255,0.15);'}"
               onclick={() => toggleEnabled(model.id)}
             >
-              <div class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform {isEnabled(model.id) ? 'translate-x-[18px]' : 'translate-x-[2px]'}"></div>
+              <div class="absolute rounded-full shadow transition-transform"
+              style="top: 2px; width: 18px; height: 18px; background: {isEnabled(model.id) ? '#fff' : 'rgba(255,255,255,0.6)'}; transform: translateX({isEnabled(model.id) ? '18px' : '2px'});"></div>
             </div>
             <div class="flex-1 min-w-0 truncate">
               <span class="text-text-primary text-[13px] font-medium">{getModelDisplayName(model)}</span>

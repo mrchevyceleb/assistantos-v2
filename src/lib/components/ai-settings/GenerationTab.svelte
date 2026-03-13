@@ -20,9 +20,10 @@
           step="0.1"
           value={$settings.aiTemperature}
           oninput={(e) => updateSetting('aiTemperature', Number(e.currentTarget.value))}
-          class="w-28 accent-[var(--color-accent)]"
+          class="accent-[var(--color-accent)]"
+          style="width: 112px;"
         />
-        <span class="text-[13px] text-text-primary bg-bg-primary rounded-md border border-border/30 min-w-[2.5rem] text-center font-mono" style="padding: 4px 10px;">{$settings.aiTemperature}</span>
+        <span class="text-[13px] text-text-primary bg-bg-primary rounded-md border border-border/30 text-center font-mono" style="padding: 4px 10px; min-width: 2.5rem;">{$settings.aiTemperature}</span>
       </div>
     </div>
 
@@ -65,9 +66,10 @@
           step="1"
           value={$settings.aiChatFontSize}
           oninput={(e) => updateSetting('aiChatFontSize', Number(e.currentTarget.value))}
-          class="w-24 accent-[var(--color-accent)]"
+          class="accent-[var(--color-accent)]"
+          style="width: 96px;"
         />
-        <span class="text-[13px] text-text-primary bg-bg-primary rounded-md border border-border/30 min-w-[3rem] text-center font-mono" style="padding: 4px 10px;">{$settings.aiChatFontSize}px</span>
+        <span class="text-[13px] text-text-primary bg-bg-primary rounded-md border border-border/30 text-center font-mono" style="padding: 4px 10px; min-width: 3rem;">{$settings.aiChatFontSize}px</span>
       </div>
     </div>
 
@@ -136,10 +138,11 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiReadInstructionsEveryMessage ? 'bg-accent' : 'bg-bg-active'}"
+        class="rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiReadInstructionsEveryMessage ? 'bg-accent' : 'bg-bg-active'}"
+        style="width: 46px; height: 26px;"
         onclick={() => updateSetting('aiReadInstructionsEveryMessage', !$settings.aiReadInstructionsEveryMessage)}
       >
-        <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiReadInstructionsEveryMessage ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+        <div class="absolute rounded-full bg-white shadow transition-transform {$settings.aiReadInstructionsEveryMessage ? 'translate-x-[22px]' : 'translate-x-[2px]'}" style="top: 2px; width: 22px; height: 22px;"></div>
       </div>
     </div>
 
@@ -152,10 +155,11 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="w-[46px] h-[26px] rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiEnableAtMentions ? 'bg-accent' : 'bg-bg-active'}"
+        class="rounded-full relative cursor-pointer transition-colors shrink-0 {$settings.aiEnableAtMentions ? 'bg-accent' : 'bg-bg-active'}"
+        style="width: 46px; height: 26px;"
         onclick={() => updateSetting('aiEnableAtMentions', !$settings.aiEnableAtMentions)}
       >
-        <div class="absolute top-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform {$settings.aiEnableAtMentions ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></div>
+        <div class="absolute rounded-full bg-white shadow transition-transform {$settings.aiEnableAtMentions ? 'translate-x-[22px]' : 'translate-x-[2px]'}" style="top: 2px; width: 22px; height: 22px;"></div>
       </div>
     </div>
   </div>

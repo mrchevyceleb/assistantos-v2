@@ -789,13 +789,13 @@
     bind:this={messagesContainer}
   >
     {#if $instanceMessages.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-center px-8 gap-5">
-        <div class="w-14 h-14 rounded-2xl bg-accent/8 border border-accent/15 flex items-center justify-center">
+      <div class="flex flex-col items-center justify-center h-full text-center" style="padding: 0 32px; gap: 20px;">
+        <div class="rounded-2xl bg-accent/8 border border-accent/15 flex items-center justify-center" style="width: 56px; height: 56px;">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" class="text-accent/50">
             <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
           </svg>
         </div>
-        <div class="space-y-2">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
           <div class="text-text-secondary font-medium" style="font-size: {$settings.aiChatFontSize + 3}px;">Ask about your workspace</div>
           <div class="text-text-muted leading-relaxed max-w-[280px]" style="font-size: {$settings.aiChatFontSize}px;">
             Read files, search code, edit files, and run commands
@@ -813,24 +813,24 @@
 
   <!-- Confirmation banner -->
   {#if $instancePendingConfirmation}
-    <div class="mx-3 mb-2 p-3 rounded-lg border border-warning/25 bg-warning/8">
-      <div class="flex items-center gap-2 mb-1.5">
+    <div class="rounded-lg border border-warning/25 bg-warning/8" style="margin: 0 12px 8px 12px; padding: 12px;">
+      <div class="flex items-center" style="gap: 8px; margin-bottom: 6px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-warning shrink-0">
           <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
         <span class="text-text-primary font-medium" style="font-size: {$settings.aiChatFontSize - 1}px;">{$instancePendingConfirmation.toolName}</span>
       </div>
-      <div class="text-text-muted font-mono mb-2.5 max-h-20 overflow-auto pl-[22px]" style="font-size: {$settings.aiChatFontSize - 2}px;">{$instancePendingConfirmation.arguments}</div>
-      <div class="flex gap-2 pl-[22px]">
+      <div class="text-text-muted font-mono max-h-20 overflow-auto" style="font-size: {$settings.aiChatFontSize - 2}px; margin-bottom: 10px; padding-left: 22px;">{$instancePendingConfirmation.arguments}</div>
+      <div class="flex" style="gap: 8px; padding-left: 22px;">
         <button
-          class="px-3 py-1.5 rounded-md bg-accent text-bg-primary font-medium hover:opacity-90 transition-opacity"
-          style="font-size: {$settings.aiChatFontSize - 2}px;"
+          class="rounded-md bg-accent text-bg-primary font-medium hover:opacity-90 transition-opacity"
+          style="font-size: {$settings.aiChatFontSize - 2}px; padding: 6px 12px;"
           onclick={() => handleConfirm(true)}
         >Allow</button>
         <button
-          class="px-3 py-1.5 rounded-md border border-border/60 text-text-muted hover:text-text-primary hover:border-border transition-colors"
-          style="font-size: {$settings.aiChatFontSize - 2}px;"
+          class="rounded-md border border-border/60 text-text-muted hover:text-text-primary hover:border-border transition-colors"
+          style="font-size: {$settings.aiChatFontSize - 2}px; padding: 6px 12px;"
           onclick={() => handleConfirm(false)}
         >Deny</button>
       </div>

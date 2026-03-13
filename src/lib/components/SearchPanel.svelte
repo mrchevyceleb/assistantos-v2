@@ -165,14 +165,15 @@
   // Re-search when case sensitivity changes (handled in toggleCase)
 </script>
 
-<div class="flex flex-col h-full glass-panel-solid">
+<div class="flex flex-col h-full glass-panel-solid" style="padding: 8px;">
   <!-- Search header -->
-  <div class="px-3 py-2.5 border-b border-border">
-    <div class="flex items-center gap-2">
+  <div class="border-b border-border" style="padding: 4px 4px 10px 4px;">
+    <div class="flex items-center" style="gap: 8px; padding: 4px 0;">
       <span class="text-xs font-semibold text-text-secondary uppercase tracking-wide flex-1">Search</span>
       <button
         onclick={onClose}
-        class="text-text-muted hover:text-text-primary transition-colors p-1 rounded hover:bg-bg-hover shrink-0"
+        class="text-text-muted hover:text-text-primary transition-colors rounded hover:bg-bg-hover shrink-0"
+        style="padding: 4px;"
         title="Close search (back to Explorer)"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -183,7 +184,7 @@
     </div>
 
     <!-- Search input row -->
-    <div class="mt-2 flex items-center gap-1.5">
+    <div class="flex items-center" style="margin-top: 8px; gap: 6px;">
       <div class="relative flex-1">
         <input
           bind:this={searchInputEl}
@@ -192,13 +193,15 @@
           onkeydown={handleKeydown}
           type="text"
           placeholder="Search in files..."
-          class="w-full bg-bg-primary text-text-primary text-[13px] px-3 py-1.5 pr-8 rounded-md border border-border
+          class="w-full bg-bg-primary text-text-primary text-[13px] rounded-md border border-border
                  focus:border-accent focus:outline-none focus:shadow-[0_0_8px_rgba(88,180,208,0.15)] placeholder-text-muted"
+          style="padding: 6px 32px 6px 12px;"
         />
         {#if query}
           <button
             onclick={clearSearch}
-            class="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+            class="absolute top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+            style="right: 6px;"
             title="Clear search"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -212,7 +215,8 @@
       <!-- Case sensitivity toggle -->
       <button
         onclick={toggleCase}
-        class="shrink-0 text-[11px] font-bold px-1.5 py-1.5 rounded border transition-colors {caseSensitive ? 'border-accent text-accent bg-accent/10' : 'border-border text-text-muted hover:text-text-primary hover:border-text-muted'}"
+        class="shrink-0 text-[11px] font-bold rounded border transition-colors {caseSensitive ? 'border-accent text-accent bg-accent/10' : 'border-border text-text-muted hover:text-text-primary hover:border-text-muted'}"
+        style="padding: 6px 8px;"
         title="Match Case"
       >
         Aa
@@ -221,7 +225,7 @@
 
     <!-- Result count -->
     {#if hasSearched && !isSearching}
-      <div class="mt-1.5 text-[11px] text-text-muted">
+      <div class="text-[11px] text-text-muted" style="margin-top: 6px;">
         {results.length} result{results.length !== 1 ? "s" : ""} in {fileCount} file{fileCount !== 1 ? "s" : ""}
         {#if results.length >= 500}
           <span class="text-yellow-500">(limited to 500)</span>
@@ -234,13 +238,13 @@
   <div class="flex-1 overflow-y-auto overflow-x-hidden">
     {#if isSearching}
       <div class="flex items-center justify-center h-32 text-text-muted text-sm">
-        <svg class="animate-spin mr-2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="animate-spin" style="margin-right: 8px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
         </svg>
         Searching...
       </div>
     {:else if hasSearched && results.length === 0}
-      <div class="flex flex-col items-center justify-center h-32 text-text-muted text-sm gap-1">
+      <div class="flex flex-col items-center justify-center h-32 text-text-muted text-sm" style="gap: 4px; padding: 0 16px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -248,13 +252,14 @@
         <span>No results found</span>
       </div>
     {:else if results.length > 0}
-      <div class="py-1">
+      <div style="padding: 4px 0;">
         {#each [...groupedResults.entries()] as [filePath, fileResults] (filePath)}
           <!-- File group -->
-          <div class="mb-0.5">
+          <div style="margin-bottom: 2px;">
             <!-- File header -->
             <button
-              class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-bg-hover transition-colors group"
+              class="w-full flex items-center text-left hover:bg-bg-hover transition-colors group"
+              style="gap: 8px; padding: 6px 12px;"
               onclick={() => openResult(fileResults[0])}
               title={relativePath(filePath)}
             >
@@ -264,7 +269,7 @@
               </svg>
               <span class="text-[13px] text-text-primary truncate">{fileName(filePath)}</span>
               <span class="text-xs text-text-muted truncate flex-1 min-w-0">{relativePath(filePath)}</span>
-              <span class="text-xs text-text-muted bg-bg-tertiary px-2 py-0.5 rounded-full shrink-0">
+              <span class="text-xs text-text-muted bg-bg-tertiary rounded-full shrink-0" style="padding: 2px 8px;">
                 {fileResults.length}
               </span>
             </button>
@@ -272,10 +277,11 @@
             <!-- Match lines -->
             {#each fileResults as result (result.path + ':' + result.line_number)}
               <button
-                class="w-full flex items-start gap-2 pl-7 pr-3 py-1 text-left hover:bg-bg-hover transition-colors cursor-pointer"
+                class="w-full flex items-start text-left hover:bg-bg-hover transition-colors cursor-pointer"
+                style="gap: 8px; padding: 4px 12px 4px 28px;"
                 onclick={() => openResult(result)}
               >
-                <span class="text-xs text-text-muted tabular-nums shrink-0 mt-px w-6 text-right">
+                <span class="text-xs text-text-muted tabular-nums shrink-0 text-right" style="margin-top: 1px; width: 24px;">
                   {result.line_number}
                 </span>
                 <span class="text-[13px] text-text-secondary truncate min-w-0 leading-relaxed">
@@ -287,7 +293,7 @@
         {/each}
       </div>
     {:else if !hasSearched}
-      <div class="flex flex-col items-center justify-center h-32 text-text-muted gap-2 px-4">
+      <div class="flex flex-col items-center justify-center h-32 text-text-muted" style="gap: 8px; padding: 0 16px;">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -296,7 +302,7 @@
           Type to search across all files in the workspace
         </span>
         <span class="text-[10px] text-text-muted">
-          Press <kbd class="px-1 py-0.5 bg-bg-primary rounded border border-border">Enter</kbd> to search immediately
+          Press <kbd class="bg-bg-primary rounded border border-border" style="padding: 2px 4px;">Enter</kbd> to search immediately
         </span>
       </div>
     {/if}

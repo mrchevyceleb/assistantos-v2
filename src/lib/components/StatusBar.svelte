@@ -45,7 +45,7 @@
 </script>
 
 <div class="flex items-center justify-between bg-bg-tertiary/90 backdrop-blur-sm border-t border-border/60 text-text-muted panel-lift metal-sheen" style="padding: 0 22px; height: 46px; font-size: calc(15.5px * var(--ui-zoom)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), inset 0 -1px 0 rgba(0,0,0,0.56), 0 -4px 14px rgba(0,0,0,0.25);">
-  <div class="flex items-center gap-5">
+  <div class="flex items-center" style="gap: 20px;">
     {#if $activeTab}
       <span class="truncate max-w-[400px]" title={$activeTab.path}>
         {getRelativePath($activeTab.path)}
@@ -61,10 +61,10 @@
     {/if}
   </div>
 
-  <div class="flex items-center gap-5">
+  <div class="flex items-center" style="gap: 20px;">
     <button
       onclick={() => settingsVisible.update((v) => !v)}
-      class="status-btn flex items-center gap-1 hover:text-text-primary transition-colors"
+      class="status-btn flex items-center hover:text-text-primary transition-colors" style="gap: 4px;"
       title="Settings (Ctrl+,)"
     >
       <svg width="20" height="20" style="width: calc(20px * var(--ui-zoom)); height: calc(20px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -83,7 +83,7 @@
           addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock === 'tab' ? 'right' : $settings.aiChatDock);
         }
       }}
-      class="status-btn flex items-center gap-1.5 hover:text-text-primary transition-colors"
+      class="status-btn flex items-center hover:text-text-primary transition-colors" style="gap: 6px;"
       title="AI Chat (Ctrl+L)"
     >
       <svg width="20" height="20" style="width: calc(20px * var(--ui-zoom)); height: calc(20px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -93,7 +93,7 @@
     </button>
     <button
       onclick={toggleTerminal}
-      class="status-btn flex items-center gap-1.5 hover:text-text-primary transition-colors"
+      class="status-btn flex items-center hover:text-text-primary transition-colors" style="gap: 6px;"
       title="Toggle Terminal (Ctrl+`)"
     >
       <svg width="21" height="21" style="width: calc(21px * var(--ui-zoom)); height: calc(21px * var(--ui-zoom));" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
