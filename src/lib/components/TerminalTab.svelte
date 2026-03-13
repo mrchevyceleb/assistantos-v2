@@ -5,7 +5,9 @@
    * preserving the PTY session and xterm.js state.
    */
   import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { terminalInstances, moveTerminal, removeTerminal, appendTerminalBuffer, getTerminalBuffer, clearTerminalBuffer } from "$lib/stores/terminal";
+  import { tabs } from "$lib/stores/tabs";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -253,14 +255,18 @@
     if (unlistenOutput) unlistenOutput();
     if (unlistenClosed) unlistenClosed();
     if (term) {
-      closeTerminal(terminalId).catch(() => {});
       term.dispose();
       term = null;
       fitAddon = null;
     }
-    // Only remove the terminal if it wasn't moved to another dock —
-    // moveTerminal() already handles re-parenting the instance.
-    if (!movedAway) {
+
+    const terminalTabPath = `__terminal__:${terminalId}`;
+    const tabStillExists = get(tabs).some((t) => t.path === terminalTabPath);
+
+    // Only terminate when the terminal tab was intentionally closed.
+    // Component remounts and dock moves should preserve the backend PTY.
+    if (!movedAway && !tabStillExists) {
+      closeTerminal(terminalId).catch(() => {});
       clearTerminalBuffer(terminalId);
       removeTerminal(terminalId);
     }
