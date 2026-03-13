@@ -370,14 +370,15 @@
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (inputText.trim() && !disabled) {
-        if (isLoading) {
+      if (!disabled) {
+        if (isLoading && inputText.trim()) {
           // Send as steering message (interrupts current AI run)
           const text = inputText.trim();
           inputText = "";
+          attachedImages = [];
           if (textarea) textarea.style.height = "auto";
           onSteer(text);
-        } else {
+        } else if (!isLoading && (inputText.trim() || attachedImages.length > 0)) {
           send();
         }
       }
@@ -624,6 +625,7 @@
                 onclick={() => {
                   const text = inputText.trim();
                   inputText = "";
+                  attachedImages = [];
                   if (textarea) textarea.style.height = "auto";
                   onSteer(text);
                 }}
@@ -648,8 +650,8 @@
           {:else}
             <button
               onclick={send}
-              disabled={!inputText.trim()}
-              class="w-10 h-10 rounded-lg flex items-center justify-center transition-all {inputText.trim() ? 'bg-accent/20 text-accent hover:bg-accent/30 border border-accent/25' : 'text-text-muted/30 cursor-default'}"
+              disabled={!inputText.trim() && attachedImages.length === 0}
+              class="w-10 h-10 rounded-lg flex items-center justify-center transition-all {inputText.trim() || attachedImages.length > 0 ? 'bg-accent/20 text-accent hover:bg-accent/30 border border-accent/25' : 'text-text-muted/30 cursor-default'}"
               title="Send (Enter)"
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

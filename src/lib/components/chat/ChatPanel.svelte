@@ -40,6 +40,7 @@
   let modelDropdownPos = $state<{ top: number; left: number } | null>(null);
   let modelSwitcherBtn: HTMLButtonElement;
   let contextUsage = $state<ContextUsage | null>(null);
+  let isCompacting = $state(false);
   let attemptedModelFetch = $state(false);
   let promptSelectorOpen = $state(false);
   let promptSelectorBtn: HTMLButtonElement;
@@ -240,6 +241,13 @@
       },
       onCompaction: (compactedMessageCount: number) => {
         addUIMessage('system', `Context compacted (${compactedMessageCount} earlier messages summarized).`);
+      },
+      onCompactionStart: () => {
+        isCompacting = true;
+        addUIMessage('system', 'Compacting context with AI summary...');
+      },
+      onCompactionEnd: () => {
+        isCompacting = false;
       },
       onDone: (_fullContent: string) => {
         if (istate.currentStreamingId) {
@@ -489,7 +497,7 @@
   }
 
   async function handleCompactNow() {
-    if (get(istate.isLoading)) return;
+    if (get(istate.isLoading) || isCompacting) return;
     if (get(istate.messages).length === 0) return;
     if (!istate.engine) {
       istate.engine = initEngine();
@@ -497,12 +505,11 @@
     try {
       const { usage, compacted } = await istate.engine.compactNow();
       contextUsage = usage;
-      if (compacted) {
-        addUIMessage('system', 'Manual compaction complete.');
-      } else {
+      if (!compacted) {
         addUIMessage('system', 'No compaction needed yet.');
       }
     } catch (e) {
+      isCompacting = false;
       addUIMessage('system', `Compaction failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -772,13 +779,13 @@
         </div>
       </div>
       <button
-        class="rounded-md shrink-0 whitespace-nowrap text-text-muted/50 hover:text-text-primary hover:bg-white/5 transition-all"
+        class="rounded-md shrink-0 whitespace-nowrap text-text-muted/50 hover:text-text-primary hover:bg-white/5 transition-all {isCompacting ? 'opacity-50 cursor-wait' : ''}"
         style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px;"
         onclick={handleCompactNow}
-        disabled={$instanceIsLoading}
+        disabled={$instanceIsLoading || isCompacting}
         title="Compact context now"
       >
-        Compact
+        {isCompacting ? 'Compacting...' : 'Compact'}
       </button>
     </div>
   </div>

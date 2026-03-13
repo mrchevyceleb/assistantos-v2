@@ -129,6 +129,8 @@ export interface ChatEngineCallbacks {
   onToolConfirmation: (toolCall: ToolCall) => Promise<boolean>;
   onContextUsage?: (usage: ContextUsage) => void;
   onCompaction?: (compactedMessageCount: number) => void;
+  onCompactionStart?: () => void;
+  onCompactionEnd?: () => void;
   onDone: (fullContent: string) => void;
   onError: (error: string) => void;
 }

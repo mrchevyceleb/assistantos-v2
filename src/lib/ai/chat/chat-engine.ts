@@ -56,6 +56,8 @@ export class ChatEngine {
 
   abort(): void {
     this.abortController?.abort();
+    this.compactAbort?.abort();
+    this.compactAbort = null;
     this.isRunning = false;
     this.cleanupOrphanedToolCalls();
   }
@@ -109,6 +111,9 @@ export class ChatEngine {
     if (settings.model !== oldModel) {
       this._lastApiInputTokens = 0;
       this._lastApiMessageCount = 0;
+      this._lastCacheCreation = 0;
+      this._lastCacheRead = 0;
+      this._lastApiOutputTokens = 0;
     }
 
     // If context window shrunk, auto-compact to fit
@@ -128,8 +133,14 @@ export class ChatEngine {
     return this.computeContextUsage(this.buildMessages());
   }
 
+  private compactAbort: AbortController | null = null;
+
   async compactNow(): Promise<{ usage: ContextUsage; compacted: boolean }> {
-    const compacted = await this.compactSession(true, 0);
+    // Cancel any in-progress compaction
+    this.compactAbort?.abort();
+    this.compactAbort = new AbortController();
+    const compacted = await this.compactSession(true, 0, this.compactAbort.signal);
+    this.compactAbort = null;
     return {
       usage: this.getContextUsage(),
       compacted,
@@ -247,11 +258,7 @@ export class ChatEngine {
         let lastCacheRead = 0;
 
         await new Promise<void>((resolve, reject) => {
-          const streamFn = this.settings.provider === 'anthropic'
-            ? streamAnthropicCompletion
-            : (this.settings.provider === 'openai' && this.settings.authMode === 'oauth'
-              ? streamOpenAICodexCompletion
-              : streamOpenAICompatibleCompletion); // lmstudio uses OpenAI-compatible
+          const streamFn = this.getStreamFn();
 
           // State for stripping <think> tags from local models
           let inThinkTag = false;
@@ -330,8 +337,8 @@ export class ChatEngine {
                     if (chunk.cacheReadTokens) lastCacheRead = chunk.cacheReadTokens;
                     if (chunk.inputTokens) {
                       this._lastApiInputTokens = chunk.inputTokens;
-                      // +1 for the system message prepended by buildMessages()
-                      this._lastApiMessageCount = this.session.getMessages().length + 1;
+                      // Track against buildMessages() length for consistent comparison
+                      this._lastApiMessageCount = messages.length;
                     }
                     if (chunk.outputTokens) this._lastApiOutputTokens = chunk.outputTokens;
                     break;
@@ -382,6 +389,7 @@ export class ChatEngine {
           });
 
           this.callbacks.onToolCall(toolCalls);
+          this.emitContextUsage();
 
           // Execute each tool call
           const results: ToolResult[] = [];
@@ -568,7 +576,15 @@ export class ChatEngine {
     this.callbacks.onContextUsage?.(this.getContextUsage());
   }
 
-  private buildCompactionSummary(messages: ChatMessage[]): string {
+  /** Get the streaming function for the current provider. */
+  private getStreamFn() {
+    if (this.settings.provider === 'anthropic') return streamAnthropicCompletion;
+    if (this.settings.provider === 'openai' && this.settings.authMode === 'oauth') return streamOpenAICodexCompletion;
+    return streamOpenAICompatibleCompletion;
+  }
+
+  /** Build a quick local summary by truncating messages (used as fallback). */
+  private buildLocalCompactionSummary(messages: ChatMessage[]): string {
     const lines: string[] = [];
 
     for (const message of messages) {
@@ -590,10 +606,80 @@ export class ChatEngine {
     if (!joined) {
       return 'Older context was compacted to save room for newer messages.';
     }
-    return `Older context was compacted to preserve room for new messages.\n\n${joined}`;
+    return joined;
   }
 
-  private async compactSession(force: boolean, preserveLatestCount: number): Promise<boolean> {
+  /** Use the LLM to generate a real semantic summary of compacted messages. */
+  private async buildLLMCompactionSummary(messages: ChatMessage[], signal?: AbortSignal): Promise<string> {
+    // Build the conversation text to summarize
+    const localSummary = this.buildLocalCompactionSummary(messages);
+
+    const summarizeMessages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `You are a conversation summarizer. Your job is to produce a concise but comprehensive summary of a conversation between a user and an AI assistant. The summary will replace the original messages in the conversation context, so it must preserve:
+
+- All key decisions, conclusions, and agreements
+- Important facts, code snippets, file paths, and technical details discussed
+- The current state of any ongoing tasks or problems
+- Any user preferences or constraints mentioned
+- Tool calls made and their outcomes (what was read, written, executed)
+
+Write the summary in a structured format. Be thorough but concise. Do NOT include preamble like "Here is a summary". Just write the summary directly.`,
+      },
+      {
+        role: 'user',
+        content: `Summarize this conversation history:\n\n${localSummary}`,
+      },
+    ];
+
+    let summary = '';
+
+    const streamFn = this.getStreamFn();
+
+    await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new Error('Compaction aborted'));
+        return;
+      }
+
+      const onAbort = () => reject(new Error('Compaction aborted'));
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      streamFn(
+        summarizeMessages,
+        { ...this.settings, maxTokens: 2048, enableToolUse: false },
+        undefined, // no tools
+        {
+          onChunk: (chunk: StreamChunk) => {
+            if (signal?.aborted) return;
+            if (chunk.type === 'text' && chunk.content) {
+              summary += chunk.content;
+            }
+          },
+          onDone: () => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+          },
+          onError: (error: string) => {
+            signal?.removeEventListener('abort', onAbort);
+            reject(new Error(error));
+          },
+        },
+      ).catch((err) => {
+        signal?.removeEventListener('abort', onAbort);
+        reject(err);
+      });
+    });
+
+    if (!summary.trim()) {
+      throw new Error('LLM returned empty summary');
+    }
+
+    return summary.trim();
+  }
+
+  private async compactSession(force: boolean, preserveLatestCount: number, signal?: AbortSignal): Promise<boolean> {
     const usage = this.getContextUsage();
     if (!force && usage.usedPercent < AUTO_COMPACT_THRESHOLD_PERCENT) {
       return false;
@@ -618,7 +704,28 @@ export class ChatEngine {
       return false;
     }
 
-    const summary = this.buildCompactionSummary(head);
+    // Manual compaction (force=true) uses LLM for a real summary.
+    // Auto-compaction (force=false, triggered mid-send) uses fast local truncation
+    // to avoid blocking message flow with an extra API call.
+    let summary: string;
+    if (force) {
+      this.callbacks.onCompactionStart?.();
+      try {
+        summary = await this.buildLLMCompactionSummary(head, signal);
+      } catch (err) {
+        // If aborted, cancel compaction entirely
+        if (signal?.aborted) {
+          this.callbacks.onCompactionEnd?.();
+          return false;
+        }
+        // LLM summarization failed (no API key, network error, etc.)
+        summary = this.buildLocalCompactionSummary(head);
+      }
+      this.callbacks.onCompactionEnd?.();
+    } else {
+      summary = this.buildLocalCompactionSummary(head);
+    }
+
     const compacted: ChatMessage[] = [
       {
         role: 'assistant',
@@ -631,6 +738,9 @@ export class ChatEngine {
     // Reset stale API token data so next check uses fresh estimates
     this._lastApiInputTokens = 0;
     this._lastApiMessageCount = 0;
+    this._lastCacheCreation = 0;
+    this._lastCacheRead = 0;
+    this._lastApiOutputTokens = 0;
     await this.session.save();
     this.callbacks.onCompaction?.(head.length);
     return true;

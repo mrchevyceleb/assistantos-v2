@@ -35,6 +35,35 @@
   let openAIDeviceStatus = $state('');
   let openAIDeviceState = $state<OpenAIDeviceAuthState | null>(null);
 
+  function getProviderLabel(modelId: string): string {
+    if (modelId.startsWith('anthropic/')) return 'Anthropic';
+    if (modelId.startsWith('openai/')) return 'OpenAI';
+    if (modelId.startsWith('google/')) return 'Google';
+    if (modelId.startsWith('mistralai/')) return 'Mistral';
+    if (modelId.startsWith('deepseek/')) return 'DeepSeek';
+    // LM Studio models don't have a prefix
+    if (!modelId.includes('/')) return 'LM Studio';
+    const prefix = modelId.split('/')[0];
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  }
+
+  let enabledModelsList = $derived(
+    ($settings.aiEnabledModels || []).map((id) => {
+      // Try to find the model object for a richer display name
+      const orModel = $availableModels.find((m) => m.id === id);
+      const lmsModel = $lmStudioModels.find((m) => m.id === id);
+      const anthropicModel = ANTHROPIC_MODELS.find((m) => `anthropic/${m.id}` === id);
+      const openaiModel = OPENAI_MODELS.find((m) => `openai/${m.id}` === id);
+      const resolved = orModel || lmsModel || (anthropicModel ? { ...anthropicModel, id } : null) || (openaiModel ? { ...openaiModel, id } : null);
+      return {
+        id,
+        name: resolved ? getModelDisplayName(resolved) : getModelDisplayName(id),
+        provider: getProviderLabel(id),
+        isDefault: $settings.aiModel === id,
+      };
+    }),
+  );
+
   let openRouterModels = $derived(
     $availableModels.filter(
       (m) => !ANTHROPIC_MODELS.some((a) => a.id === m.id) && !OPENAI_MODELS.some((o) => o.id === m.id),
@@ -180,6 +209,44 @@
 </script>
 
 <div style="display: flex; flex-direction: column; gap: 24px;">
+  <!-- Enabled Models Quick Toggle -->
+  <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
+    <div class="provider-header">
+      <div class="flex items-center justify-between">
+        <div class="text-text-primary text-[14px] font-semibold">Enabled Models</div>
+        <span class="text-text-muted text-[11px]">{enabledModelsList.length} active</span>
+      </div>
+    </div>
+    {#if enabledModelsList.length === 0}
+      <div class="text-text-muted text-[12px] text-center" style="padding: 20px;">
+        No models enabled. Toggle models on in the provider sections below.
+      </div>
+    {:else}
+      <div class="divide-y divide-border/15">
+        {#each enabledModelsList as model (model.id)}
+          <div class="model-row enabled-model-row">
+            <div
+              class="rounded-full relative cursor-pointer transition-colors shrink-0 bg-accent"
+              style="width: 38px; height: 22px;"
+              onclick={() => toggleEnabled(model.id)}
+              title="Disable {model.name}"
+            >
+              <div class="absolute rounded-full shadow transition-transform"
+                style="top: 2px; width: 18px; height: 18px; background: #fff; transform: translateX(18px);"></div>
+            </div>
+            <div class="flex-1 min-w-0 flex items-center" style="gap: 8px;">
+              <span class="text-text-primary text-[13px] font-medium">{model.name}</span>
+              <span class="text-text-muted text-[10px] border border-border/20 rounded" style="padding: 1px 6px; opacity: 0.7;">{model.provider}</span>
+            </div>
+            {#if model.isDefault}
+              <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+
   <div class="rounded-xl bg-bg-secondary/40 border border-border/25 overflow-hidden">
     <div class="provider-header">
       <div class="flex items-center" style="gap: 12px;">
@@ -540,5 +607,9 @@
 
   .model-row:hover {
     background: rgba(var(--bg-hover-rgb, 255, 255, 255), 0.03);
+  }
+
+  .enabled-model-row:hover {
+    background: rgba(var(--bg-hover-rgb, 255, 255, 255), 0.05);
   }
 </style>
