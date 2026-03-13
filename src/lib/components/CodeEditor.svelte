@@ -1,14 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { EditorState } from "@codemirror/state";
+  import { EditorState, Compartment } from "@codemirror/state";
+  import type { Extension } from "@codemirror/state";
   import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-  import { markdown } from "@codemirror/lang-markdown";
   import { oneDark } from "@codemirror/theme-one-dark";
   import { searchKeymap } from "@codemirror/search";
   import { bracketMatching, foldGutter, indentUnit } from "@codemirror/language";
   import { settings } from "$lib/stores/settings";
   import { uiZoom } from "$lib/stores/ui";
+  import { getCodeMirrorLanguage } from "$lib/utils/codemirror-language";
 
   interface Props {
     content: string;
@@ -20,6 +21,33 @@
   let { content, onSave, onChange, language = "markdown" }: Props = $props();
   let container: HTMLDivElement;
   let view: EditorView | undefined;
+  const languageCompartment = new Compartment();
+  const wrapCompartment = new Compartment();
+  const typographyCompartment = new Compartment();
+  const tabCompartment = new Compartment();
+
+  function typographyExtension(): Extension {
+    return EditorView.theme({
+      "&": {
+        height: "100%",
+        fontSize: `${Math.round($settings.editorFontSize * $uiZoom)}px`,
+      },
+      ".cm-scroller": {
+        fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+      },
+      ".cm-content": {
+        padding: "8px 0",
+      },
+    });
+  }
+
+  function tabExtension(): Extension {
+    return [indentUnit.of(" ".repeat($settings.tabSize)), EditorState.tabSize.of($settings.tabSize)];
+  }
+
+  function wrapExtension(): Extension {
+    return $settings.wordWrap ? EditorView.lineWrapping : [];
+  }
 
   onMount(() => {
     const saveKeymap = keymap.of([
@@ -34,14 +62,6 @@
       },
     ]);
 
-    let langExtension;
-    if (language === "markdown") {
-      langExtension = markdown();
-    } else {
-      // For other languages, just use basic setup
-      langExtension = markdown(); // fallback for now
-    }
-
     const extensions = [
         lineNumbers(),
         highlightActiveLine(),
@@ -49,7 +69,10 @@
         history(),
         foldGutter(),
         bracketMatching(),
-        langExtension,
+        languageCompartment.of(getCodeMirrorLanguage(language)),
+        wrapCompartment.of(wrapExtension()),
+        typographyCompartment.of(typographyExtension()),
+        tabCompartment.of(tabExtension()),
         oneDark,
         saveKeymap,
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
@@ -58,25 +81,7 @@
             onChange(update.state.doc.toString());
           }
         }),
-        EditorView.theme({
-          "&": {
-            height: "100%",
-            fontSize: `${Math.round($settings.editorFontSize * $uiZoom)}px`,
-          },
-          ".cm-scroller": {
-            fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
-          },
-          ".cm-content": {
-            padding: "8px 0",
-          },
-        }),
-        indentUnit.of(" ".repeat($settings.tabSize)),
-        EditorState.tabSize.of($settings.tabSize),
     ];
-
-    if ($settings.wordWrap) {
-      extensions.push(EditorView.lineWrapping);
-    }
 
     const state = EditorState.create({
       doc: content,
@@ -104,6 +109,34 @@
         },
       });
     }
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: languageCompartment.reconfigure(getCodeMirrorLanguage(language)),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: wrapCompartment.reconfigure(wrapExtension()),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: tabCompartment.reconfigure(tabExtension()),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: typographyCompartment.reconfigure(typographyExtension()),
+    });
   });
 </script>
 

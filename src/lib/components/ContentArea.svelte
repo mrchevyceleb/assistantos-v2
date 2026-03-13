@@ -180,7 +180,7 @@
       </div>
     {:else}
       <!-- Edit/Preview toolbar for text content -->
-      {#if $activeTab.viewerType === "markdown" || $activeTab.viewerType === "code" || $activeTab.viewerType === "text"}
+      {#if $activeTab.viewerType === "markdown" || $activeTab.viewerType === "html" || $activeTab.viewerType === "code" || $activeTab.viewerType === "text"}
         <div class="flex items-center gap-3.5 px-6 py-3 glass-panel-solid border-b border-border panel-lift">
           <button
             class="text-[13px] px-4.5 py-2 rounded-md transition-colors"
@@ -213,7 +213,13 @@
             content={$activeTab.content}
             onSave={handleSave}
             onChange={handleChange}
-            language={$activeTab.viewerType === "markdown" ? "markdown" : $activeTab.ext}
+            language={
+              $activeTab.viewerType === "markdown"
+                ? "markdown"
+                : $activeTab.viewerType === "html"
+                  ? "html"
+                  : ($activeTab.ext || "text")
+            }
           />
         {:else if $activeTab.viewerType === "markdown" && $activeTab.content !== undefined}
           <MarkdownViewer content={$activeTab.content} filePath={$activeTab.path} />
