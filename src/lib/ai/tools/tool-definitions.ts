@@ -201,6 +201,43 @@ export const LOCAL_TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'manage_mcp_servers',
+      description: 'Add, remove, enable, disable, or list MCP tool servers. Use this to configure tool integrations for the user.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['add', 'remove', 'enable', 'disable', 'list'],
+          },
+          transport: {
+            type: 'string',
+            enum: ['http', 'stdio'],
+          },
+          name: {
+            type: 'string',
+          },
+          command: {
+            type: 'string',
+          },
+          args: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          url: {
+            type: 'string',
+          },
+          server_id: {
+            type: 'string',
+          },
+        },
+        required: ['action'],
+      },
+    },
+  },
 ];
 
 let dynamicToolDefinitions: ToolDefinition[] = [];
@@ -280,4 +317,5 @@ export const WRITE_TOOLS = new Set([
   'delete_path',
   'rename_path',
   'run_command',
+  'manage_mcp_servers',
 ]);

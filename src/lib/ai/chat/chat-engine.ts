@@ -21,8 +21,6 @@ import type {
 
 /** File names to look for as workspace instructions (checked in order). */
 const INSTRUCTION_FILES = [
-  'RIPLEY.md', 'RIPLEY.MD', 'ripley.md',
-  '.ripley/instructions.md',
   'AGENTS.MD', 'AGENTS.md', 'agents.md',
   'CLAUDE.md', 'CLAUDE.MD', 'claude.md',
 ];
@@ -170,16 +168,6 @@ export class ChatEngine {
     }
     this.instructionsWorkspacePath = wsPath;
 
-    // Check .ripley/config.json for prompt profile override
-    try {
-      const configContent = await readFileText(`${wsPath}${sep}.ripley${sep}config.json`);
-      const config = JSON.parse(configContent);
-      if (config.prompt) {
-        this.workspacePromptProfile = config.prompt;
-      }
-    } catch {
-      // No ripley config, use default
-    }
   }
 
   setPromptProfile(profileId: string): void {

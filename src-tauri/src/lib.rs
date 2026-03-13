@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
@@ -1981,6 +1982,383 @@ async fn mcp_call_tool(
         .to_string())
 }
 
+// ── Stdio MCP Server Management ─────────────────────────────────────
+
+struct StdioMcpSession {
+    alive: Arc<AtomicBool>,
+    next_id: Arc<AtomicU64>,
+    stdin_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    pending: Arc<tokio::sync::Mutex<HashMap<u64, tokio::sync::oneshot::Sender<serde_json::Value>>>>,
+}
+
+#[derive(Default)]
+struct StdioMcpState {
+    sessions: Arc<tokio::sync::Mutex<HashMap<String, StdioMcpSession>>>,
+}
+
+#[tauri::command]
+async fn stdio_mcp_spawn(
+    server_id: String,
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    state: tauri::State<'_, StdioMcpState>,
+) -> Result<(), String> {
+    // Remove any existing dead session, reject if still alive
+    {
+        let mut sessions = state.sessions.lock().await;
+        if let Some(existing) = sessions.get(&server_id) {
+            if existing.alive.load(Ordering::Relaxed) {
+                return Err(format!("Stdio MCP session already running: {}", server_id));
+            }
+            // Dead session, clean it up
+            sessions.remove(&server_id);
+        }
+    }
+
+    // Build the shell command string from command + args
+    let full_command = if args.is_empty() {
+        command.clone()
+    } else {
+        format!("{} {}", command, args.join(" "))
+    };
+
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = tokio::process::Command::new("cmd.exe");
+        c.arg("/C").arg(&full_command);
+        c
+    } else {
+        let mut c = tokio::process::Command::new("bash");
+        c.arg("-lc").arg(&full_command);
+        c
+    };
+
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    // Add custom environment variables
+    for (k, v) in &env {
+        cmd.env(k, v);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.kill_on_drop(true);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn stdio MCP server: {}", e))?;
+
+    let stdout = child.stdout.take()
+        .ok_or_else(|| "Failed to capture stdout from MCP server".to_string())?;
+    let mut stdin = child.stdin.take()
+        .ok_or_else(|| "Failed to capture stdin of MCP server".to_string())?;
+
+    let alive = Arc::new(AtomicBool::new(true));
+    let next_id = Arc::new(AtomicU64::new(1));
+    let pending: Arc<tokio::sync::Mutex<HashMap<u64, tokio::sync::oneshot::Sender<serde_json::Value>>>> =
+        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+    // Channel for writing to stdin (serializes writes)
+    let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+
+    // Stdin writer task
+    let alive_w = Arc::clone(&alive);
+    tokio::spawn(async move {
+        use tokio::io::AsyncWriteExt;
+        while let Some(data) = stdin_rx.recv().await {
+            if !alive_w.load(Ordering::Relaxed) {
+                break;
+            }
+            if stdin.write_all(&data).await.is_err() {
+                break;
+            }
+            if stdin.flush().await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Stdout reader task - reads newline-delimited JSON-RPC
+    let alive_r = Arc::clone(&alive);
+    let pending_r = Arc::clone(&pending);
+    let server_id_r = server_id.clone();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let reader = BufReader::new(stdout);
+        let mut lines = reader.lines();
+
+        while alive_r.load(Ordering::Relaxed) {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let trimmed = line.trim().to_string();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<serde_json::Value>(&trimmed) {
+                        Ok(msg) => {
+                            // If it has an ID, it's a response to a request
+                            if let Some(id) = msg.get("id").and_then(|v| v.as_u64()) {
+                                let mut pend = pending_r.lock().await;
+                                if let Some(sender) = pend.remove(&id) {
+                                    let _ = sender.send(msg);
+                                }
+                            }
+                            // Notifications (no id) are silently ignored for now
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "Stdio MCP {} received non-JSON line: {} (error: {})",
+                                server_id_r, trimmed, e
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    // EOF - process exited
+                    alive_r.store(false, Ordering::Relaxed);
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("Stdio MCP {} reader error: {}", server_id_r, e);
+                    alive_r.store(false, Ordering::Relaxed);
+                    break;
+                }
+            }
+        }
+
+        // Clean up any remaining pending requests
+        let mut pend = pending_r.lock().await;
+        for (_, sender) in pend.drain() {
+            let _ = sender.send(serde_json::json!({"error": {"code": -1, "message": "MCP server process exited"}}));
+        }
+    });
+
+    // Stderr reader task (just log it)
+    if let Some(stderr) = child.stderr.take() {
+        let server_id_e = server_id.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                eprintln!("Stdio MCP {} stderr: {}", server_id_e, line);
+            }
+        });
+    }
+
+    // Send initialize request before storing session
+    let init_result = stdio_mcp_send_request_inner(
+        &stdin_tx,
+        &pending,
+        &alive,
+        &next_id,
+        "initialize",
+        serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "AssistantOS",
+                "version": "1.0.0"
+            }
+        }),
+    )
+    .await;
+
+    match init_result {
+        Ok(_) => {
+            // Send initialized notification (no id, no response expected)
+            let notification = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {}
+            });
+            let mut data = serde_json::to_string(&notification)
+                .map_err(|e| format!("Failed to serialize notification: {}", e))?;
+            data.push('\n');
+            if stdin_tx.send(data.into_bytes()).await.is_err() {
+                alive.store(false, Ordering::Relaxed);
+                return Err("Failed to send initialized notification to MCP server".to_string());
+            }
+
+            // Store session only after successful init
+            let session = StdioMcpSession {
+                alive: Arc::clone(&alive),
+                next_id,
+                stdin_tx: stdin_tx.clone(),
+                pending: Arc::clone(&pending),
+            };
+            {
+                let mut sessions = state.sessions.lock().await;
+                sessions.insert(server_id.clone(), session);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            alive.store(false, Ordering::Relaxed);
+            Err(format!("Failed to initialize stdio MCP server: {}", e))
+        }
+    }
+}
+
+async fn stdio_mcp_send_request_inner(
+    stdin_tx: &tokio::sync::mpsc::Sender<Vec<u8>>,
+    pending: &Arc<tokio::sync::Mutex<HashMap<u64, tokio::sync::oneshot::Sender<serde_json::Value>>>>,
+    alive: &Arc<AtomicBool>,
+    next_id: &Arc<AtomicU64>,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if !alive.load(Ordering::Relaxed) {
+        return Err("Stdio MCP server is not running".to_string());
+    }
+
+    let id = next_id.fetch_add(1, Ordering::Relaxed);
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": params,
+    });
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    {
+        let mut pend = pending.lock().await;
+        pend.insert(id, tx);
+    }
+
+    let mut data = serde_json::to_string(&request)
+        .map_err(|e| format!("Failed to serialize request: {}", e))?;
+    data.push('\n');
+
+    stdin_tx
+        .send(data.into_bytes())
+        .await
+        .map_err(|_| "Failed to write to MCP server stdin".to_string())?;
+
+    // Wait for response with timeout
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(response)) => {
+            if let Some(err) = response.get("error") {
+                Err(format!("MCP JSON-RPC error: {}", err))
+            } else {
+                Ok(response)
+            }
+        }
+        Ok(Err(_)) => Err("MCP response channel closed".to_string()),
+        Err(_) => {
+            // Remove from pending on timeout
+            let mut pend = pending.lock().await;
+            pend.remove(&id);
+            Err("MCP request timed out".to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn stdio_mcp_stop(
+    server_id: String,
+    state: tauri::State<'_, StdioMcpState>,
+) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().await;
+    if let Some(session) = sessions.remove(&server_id) {
+        session.alive.store(false, Ordering::Relaxed);
+        Ok(())
+    } else {
+        Ok(()) // Already stopped, not an error
+    }
+}
+
+#[tauri::command]
+async fn stdio_mcp_list_tools(
+    server_id: String,
+    state: tauri::State<'_, StdioMcpState>,
+) -> Result<String, String> {
+    let sessions = state.sessions.lock().await;
+    let session = sessions
+        .get(&server_id)
+        .ok_or_else(|| format!("No stdio MCP session: {}", server_id))?;
+
+    let response = stdio_mcp_send_request_inner(
+        &session.stdin_tx,
+        &session.pending,
+        &session.alive,
+        &session.next_id,
+        "tools/list",
+        serde_json::json!({}),
+    )
+    .await?;
+
+    let tools = response
+        .get("result")
+        .and_then(|r| r.get("tools"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+
+    Ok(serde_json::json!({ "tools": tools }).to_string())
+}
+
+#[tauri::command]
+async fn stdio_mcp_call_tool(
+    server_id: String,
+    tool_name: String,
+    arguments_json: String,
+    state: tauri::State<'_, StdioMcpState>,
+) -> Result<String, String> {
+    let sessions = state.sessions.lock().await;
+    let session = sessions
+        .get(&server_id)
+        .ok_or_else(|| format!("No stdio MCP session: {}", server_id))?;
+
+    let args_value: serde_json::Value = if arguments_json.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&arguments_json)
+            .map_err(|e| format!("Invalid MCP tool arguments JSON: {}", e))?
+    };
+
+    let response = stdio_mcp_send_request_inner(
+        &session.stdin_tx,
+        &session.pending,
+        &session.alive,
+        &session.next_id,
+        "tools/call",
+        serde_json::json!({
+            "name": tool_name,
+            "arguments": args_value,
+        }),
+    )
+    .await?;
+
+    Ok(response
+        .get("result")
+        .cloned()
+        .unwrap_or(response)
+        .to_string())
+}
+
+#[tauri::command]
+async fn stdio_mcp_status(
+    server_id: String,
+    state: tauri::State<'_, StdioMcpState>,
+) -> Result<String, String> {
+    let sessions = state.sessions.lock().await;
+    if let Some(session) = sessions.get(&server_id) {
+        if session.alive.load(Ordering::Relaxed) {
+            Ok("running".to_string())
+        } else {
+            Ok("stopped".to_string())
+        }
+    } else {
+        Ok("stopped".to_string())
+    }
+}
+
 // ── Command Execution ───────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -2154,6 +2532,7 @@ fn delete_chat_session(app: tauri::AppHandle, session_id: String) -> Result<(), 
 pub fn run() {
     tauri::Builder::default()
         .manage(TerminalState::default())
+        .manage(StdioMcpState::default())
         .manage(WatcherState {
             watcher: Arc::new(Mutex::new(None)),
         })
@@ -2194,6 +2573,11 @@ pub fn run() {
             ai_openai_refresh_oauth_token,
             mcp_list_tools,
             mcp_call_tool,
+            stdio_mcp_spawn,
+            stdio_mcp_stop,
+            stdio_mcp_list_tools,
+            stdio_mcp_call_tool,
+            stdio_mcp_status,
             run_command_sync,
             save_chat_session,
             load_chat_session,

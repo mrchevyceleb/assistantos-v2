@@ -1,12 +1,13 @@
 import { get } from 'svelte/store';
 import { settings, type MCPServerConfig } from '$lib/stores/settings';
-import { mcpListTools } from '$lib/utils/tauri';
+import { mcpListTools, stdioMcpSpawn, stdioMcpListTools, stdioMcpStop, stdioMcpStatus } from '$lib/utils/tauri';
 import type { ToolDefinition } from '../types';
 import { setDynamicToolDefinitions } from './tool-definitions';
 
 interface McpToolMetadata {
   server: MCPServerConfig;
   originalName: string;
+  transport: 'http' | 'stdio';
 }
 
 const mcpToolMap = new Map<string, McpToolMetadata>();
@@ -32,48 +33,106 @@ export function getMcpToolMetadata(normalizedName: string): McpToolMetadata | un
   return mcpToolMap.get(normalizedName);
 }
 
+function registerToolsFromPayload(
+  raw: string,
+  server: MCPServerConfig,
+  transport: 'http' | 'stdio',
+  dynamicDefinitions: ToolDefinition[],
+) {
+  const tools = parseTools(raw);
+  for (const tool of tools) {
+    if (!tool?.name) continue;
+    const normalized = normalizeToolName(server.id, tool.name);
+    const schema = (tool.inputSchema || tool.input_schema || {
+      type: 'object',
+      properties: {},
+    }) as { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+
+    dynamicDefinitions.push({
+      type: 'function',
+      function: {
+        name: normalized,
+        description: `[MCP:${server.name}] ${tool.description || tool.name}`,
+        parameters: schema,
+      },
+    });
+
+    mcpToolMap.set(normalized, {
+      server,
+      originalName: tool.name,
+      transport,
+    });
+  }
+}
+
+async function ensureStdioServerRunning(server: MCPServerConfig): Promise<void> {
+  try {
+    const status = await stdioMcpStatus(server.id);
+    if (status === 'running') return;
+    // Server exists but is stopped. Clean up the dead session before respawning.
+    await stdioMcpStop(server.id);
+  } catch {
+    // No session exists or status check failed. Try cleaning up just in case.
+    try { await stdioMcpStop(server.id); } catch { /* ignore */ }
+  }
+
+  await stdioMcpSpawn(
+    server.id,
+    server.command || '',
+    server.args || [],
+    server.env || {},
+  );
+}
+
+async function shutdownDisabledStdioServers(enabledIds: Set<string>): Promise<void> {
+  const conf = get(settings);
+  for (const server of conf.mcpServers) {
+    if (server.transport === 'stdio' && !enabledIds.has(server.id)) {
+      try {
+        await stdioMcpStop(server.id);
+      } catch {
+        // Ignore errors on cleanup
+      }
+    }
+  }
+}
+
 export async function refreshMcpToolDefinitions(): Promise<ToolDefinition[]> {
   const conf = get(settings);
-  const enabledServers = conf.mcpServers.filter((s) => s.enabled && s.url.trim());
+  const enabledServers = conf.mcpServers.filter((s) => s.enabled);
 
   const dynamicDefinitions: ToolDefinition[] = [];
   mcpToolMap.clear();
 
+  const enabledStdioIds = new Set<string>();
+
   for (const server of enabledServers) {
+    const transport = server.transport || 'http';
+
     try {
-      const raw = await mcpListTools(
-        server.url.trim(),
-        server.authToken || undefined,
-        server.headersJson || undefined,
-        server.timeoutMs,
-      );
-      const tools = parseTools(raw);
-      for (const tool of tools) {
-        if (!tool?.name) continue;
-        const normalized = normalizeToolName(server.id, tool.name);
-        const schema = (tool.inputSchema || tool.input_schema || {
-          type: 'object',
-          properties: {},
-        }) as { type: 'object'; properties: Record<string, unknown>; required?: string[] };
-
-        dynamicDefinitions.push({
-          type: 'function',
-          function: {
-            name: normalized,
-            description: `[MCP:${server.name}] ${tool.description || tool.name}`,
-            parameters: schema,
-          },
-        });
-
-        mcpToolMap.set(normalized, {
-          server,
-          originalName: tool.name,
-        });
+      if (transport === 'stdio') {
+        if (!server.command?.trim()) continue;
+        enabledStdioIds.add(server.id);
+        await ensureStdioServerRunning(server);
+        const raw = await stdioMcpListTools(server.id);
+        registerToolsFromPayload(raw, server, 'stdio', dynamicDefinitions);
+      } else {
+        if (!server.url?.trim()) continue;
+        const raw = await mcpListTools(
+          server.url.trim(),
+          server.authToken || undefined,
+          server.headersJson || undefined,
+          server.timeoutMs,
+        );
+        registerToolsFromPayload(raw, server, 'http', dynamicDefinitions);
       }
     } catch {
       // Keep going so one broken server does not remove all tools.
     }
   }
+
+  // Stop stdio servers that are no longer enabled
+  await shutdownDisabledStdioServers(enabledStdioIds);
 
   setDynamicToolDefinitions(dynamicDefinitions);
   return dynamicDefinitions;

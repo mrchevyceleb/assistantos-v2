@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { workspacePath, fileTree } from "$lib/stores/workspace";
+  import { workspacePath } from "$lib/stores/workspace";
   import { settings } from "$lib/stores/settings";
   import { listAllFiles, readDirectoryChildren, readFileText } from "$lib/utils/tauri";
 
@@ -56,28 +56,33 @@
       return;
     }
 
-    const folders = new Set<string>();
-    const walk = (node: any) => {
-      if (!node || !node.children) return;
-      for (const child of node.children) {
-        if (child.is_dir) {
-          const rel = child.path.replace(root, "").replace(/^[/\\]/, "");
-          if (rel) folders.add(rel);
-          walk(child);
-        }
-      }
-    };
-    walk($fileTree);
-
     listAllFiles(root, $settings.showHiddenFiles)
       .then((files) => {
-        const mentionItems: Array<{ path: string; kind: "file" | "folder" }> = files
-          .slice(0, 5000)
-          .map((f) => ({ path: f.relative_path, kind: "file" }));
+        const folders = new Set<string>();
+        const mentionItems: Array<{ path: string; kind: "file" | "folder" }> = [];
+
+        for (const file of files.slice(0, 5000)) {
+          const filePath = file.relative_path.replace(/\\/g, "/");
+          mentionItems.push({ path: filePath, kind: "file" });
+
+          const parts = filePath.split("/").filter(Boolean);
+          for (let i = 1; i < parts.length; i += 1) {
+            folders.add(parts.slice(0, i).join("/"));
+          }
+        }
+
         for (const folder of folders) {
           mentionItems.push({ path: folder, kind: "folder" });
         }
-        allMentions = mentionItems;
+
+        const deduped = new Map<string, { path: string; kind: "file" | "folder" }>();
+        for (const item of mentionItems) {
+          const existing = deduped.get(item.path);
+          if (!existing || existing.kind === "file") {
+            deduped.set(item.path, item);
+          }
+        }
+        allMentions = Array.from(deduped.values());
       })
       .catch(() => {
         allMentions = [];

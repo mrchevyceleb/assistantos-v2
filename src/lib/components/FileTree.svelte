@@ -438,7 +438,7 @@
   bind:this={treeRootEl}
   onpointermove={handleTreePointerMove}
   onpointerup={handleTreePointerUp}
-  ondragstart={() => { dragState = null; dragOverPath = null; ghostPos = null; }}
+  ondragstart={(e) => { if (dragState) { e.preventDefault(); return; } dragState = null; dragOverPath = null; ghostPos = null; }}
 >
   <!-- Header -->
   <div class="flex items-center justify-between border-b border-border gap-2 min-w-0 metal-sheen" style="padding: 14px 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.11), inset 0 -1px 0 rgba(0,0,0,0.45);">

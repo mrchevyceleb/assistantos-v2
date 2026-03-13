@@ -46,6 +46,8 @@
   let promptSelectorBtn: HTMLButtonElement;
   let promptDropdownPos = $state<{ top: number; left: number } | null>(null);
   let selectedPromptId = $state($settings.aiBasePrompt || 'default');
+  let shouldAutoScroll = $state(true);
+  const AUTO_SCROLL_THRESHOLD_PX = 96;
 
   // ── Helpers for per-instance message manipulation ─────────────────
 
@@ -344,7 +346,7 @@
 
     istate.isLoading.set(true);
     istate.currentStreamingId = addStreamingMessage();
-    scrollToBottom();
+    scrollToBottom(true);
 
     await istate.engine.sendMessage(message, payload);
   }
@@ -392,10 +394,28 @@
     }
   }
 
-  async function scrollToBottom() {
+  function isNearBottom(): boolean {
+    if (!messagesContainer) return true;
+    const distanceFromBottom =
+      messagesContainer.scrollHeight - (messagesContainer.scrollTop + messagesContainer.clientHeight);
+    return distanceFromBottom <= AUTO_SCROLL_THRESHOLD_PX;
+  }
+
+  function handleMessagesScroll() {
+    shouldAutoScroll = isNearBottom();
+  }
+
+  function jumpToLatest() {
+    shouldAutoScroll = true;
+    void scrollToBottom(true);
+  }
+
+  async function scrollToBottom(force = false) {
+    if (!force && !shouldAutoScroll) return;
     await tick();
     if (messagesContainer) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      shouldAutoScroll = true;
     }
   }
 
@@ -794,6 +814,7 @@
   <div
     class="flex-1 overflow-y-auto metal-inset rounded-lg" style="margin: 10px 10px 4px 10px;"
     bind:this={messagesContainer}
+    onscroll={handleMessagesScroll}
   >
     {#if $instanceMessages.length === 0}
       <div class="flex flex-col items-center justify-center h-full text-center" style="padding: 0 32px; gap: 20px;">
@@ -817,6 +838,19 @@
       </div>
     {/if}
   </div>
+
+  {#if !shouldAutoScroll && $instanceMessages.length > 0}
+    <div class="flex justify-center" style="margin: 0 12px 8px 12px;">
+      <button
+        class="rounded-full border border-accent/30 bg-bg-secondary/95 text-accent hover:bg-accent/12 transition-colors shadow-lg"
+        style="font-size: {Math.max(11, $settings.aiChatFontSize - 2)}px; padding: 6px 12px;"
+        onclick={jumpToLatest}
+        title="Jump to latest message"
+      >
+        Jump to latest
+      </button>
+    </div>
+  {/if}
 
   <!-- Confirmation banner -->
   {#if $instancePendingConfirmation}
@@ -853,5 +887,3 @@
     disabled={!getActiveAIKey($settings)}
   />
 </div>
-
-

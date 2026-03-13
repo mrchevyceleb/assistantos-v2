@@ -59,11 +59,17 @@ export interface AppSettings {
 export interface MCPServerConfig {
   id: string;
   name: string;
-  url: string;
   enabled: boolean;
+  timeoutMs: number;
+  transport: 'http' | 'stdio';
+  // HTTP fields
+  url: string;
   authToken: string;
   headersJson: string;
-  timeoutMs: number;
+  // Stdio fields
+  command: string;
+  args: string[];
+  env: Record<string, string>;
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────

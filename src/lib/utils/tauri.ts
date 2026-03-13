@@ -325,3 +325,34 @@ export async function mcpCallTool(
     timeoutMs,
   });
 }
+
+// ── Stdio MCP wrappers ─────────────────────────────────────────────
+
+export async function stdioMcpSpawn(
+  serverId: string,
+  command: string,
+  args: string[],
+  env: Record<string, string>,
+): Promise<void> {
+  return invoke("stdio_mcp_spawn", { serverId, command, args, env });
+}
+
+export async function stdioMcpStop(serverId: string): Promise<void> {
+  return invoke("stdio_mcp_stop", { serverId });
+}
+
+export async function stdioMcpListTools(serverId: string): Promise<string> {
+  return invoke("stdio_mcp_list_tools", { serverId });
+}
+
+export async function stdioMcpCallTool(
+  serverId: string,
+  toolName: string,
+  argumentsJson: string,
+): Promise<string> {
+  return invoke("stdio_mcp_call_tool", { serverId, toolName, argumentsJson });
+}
+
+export async function stdioMcpStatus(serverId: string): Promise<string> {
+  return invoke("stdio_mcp_status", { serverId });
+}

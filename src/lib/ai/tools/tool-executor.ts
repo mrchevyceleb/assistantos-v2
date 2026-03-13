@@ -3,6 +3,7 @@ import { workspacePath } from '$lib/stores/workspace';
 import {
   readFileText, writeFileText, createFile, deletePath, renamePath,
   searchFiles, getFileInfo, readDirectoryTree, listAllFiles, runCommandSync, mcpCallTool,
+  stdioMcpCallTool,
 } from '$lib/utils/tauri';
 import type { ToolCall, ToolResult } from '../types';
 import { MAX_READ_FILE_CHARS, MAX_SEARCH_RESULTS, MAX_LIST_FILES, MAX_TOOL_RESULT_CHARS } from '../constants';
@@ -152,6 +153,12 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         break;
       }
 
+      case 'manage_mcp_servers': {
+        const { manageMcpServers } = await import('./mcp-manager');
+        result = await manageMcpServers(args);
+        break;
+      }
+
       default:
         if (name.startsWith('mcp__')) {
           const metadata = getMcpToolMetadata(name);
@@ -165,14 +172,22 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
           }
 
           const payload = JSON.stringify(args || {});
-          result = await mcpCallTool(
-            metadata.server.url,
-            metadata.originalName,
-            payload,
-            metadata.server.authToken || undefined,
-            metadata.server.headersJson || undefined,
-            metadata.server.timeoutMs,
-          );
+          if (metadata.transport === 'stdio') {
+            result = await stdioMcpCallTool(
+              metadata.server.id,
+              metadata.originalName,
+              payload,
+            );
+          } else {
+            result = await mcpCallTool(
+              metadata.server.url,
+              metadata.originalName,
+              payload,
+              metadata.server.authToken || undefined,
+              metadata.server.headersJson || undefined,
+              metadata.server.timeoutMs,
+            );
+          }
           break;
         }
 
