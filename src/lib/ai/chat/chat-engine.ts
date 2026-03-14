@@ -567,8 +567,14 @@ export class ChatEngine {
   /** Get the streaming function for the current provider. */
   private getStreamFn() {
     if (this.settings.provider === 'anthropic') return streamAnthropicCompletion;
-    if (this.settings.provider === 'openai' && this.settings.authMode === 'oauth') return streamOpenAICodexCompletion;
+    if (this.settings.provider === 'openai' && this.settings.authMode === 'oauth' && this.isResponsesApiModel()) return streamOpenAICodexCompletion;
     return streamOpenAICompatibleCompletion;
+  }
+
+  /** Check if the current model uses OpenAI's Responses API (codex models). */
+  private isResponsesApiModel(): boolean {
+    const model = (this.settings.model || '').toLowerCase();
+    return model.includes('codex');
   }
 
   /** Build a quick local summary by truncating messages (used as fallback). */

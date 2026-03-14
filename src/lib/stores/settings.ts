@@ -226,7 +226,12 @@ export function getActiveAIBaseUrl(s: AppSettings): string {
   if (s.aiProvider === "openai") {
     const oauthToken = (s.aiOpenAIOAuthAccessToken || "").trim();
     if (oauthToken) {
-      return (s.aiOpenAICodexBaseUrl || 'https://chatgpt.com/backend-api/codex').trim();
+      // Only use Codex backend URL for codex models; standard models use the regular OpenAI API
+      const model = (s.aiModel || "").toLowerCase();
+      if (model.includes("codex")) {
+        return (s.aiOpenAICodexBaseUrl || 'https://chatgpt.com/backend-api/codex').trim();
+      }
+      return (s.aiOpenAIBaseUrl || "https://api.openai.com/v1").trim();
     }
     return (s.aiOpenAIBaseUrl || "https://api.openai.com/v1").trim();
   }
