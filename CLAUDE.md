@@ -31,6 +31,7 @@ There is no test suite configured. No linter is configured.
 **Rust backend** (`src-tauri/src/lib.rs`) — single file containing all Tauri command handlers:
 - File system operations (read/write/delete/rename/search/tree)
 - PTY terminal management via `portable-pty` (spawn/write/resize/close)
+- Claude Code process management (spawn/close per-message processes)
 - Filesystem watcher via `notify` crate (emits `fs-change` events)
 - App state persistence to `{app_data_dir}/assistantos-state.json`
 
@@ -54,11 +55,12 @@ There is no test suite configured. No linter is configured.
 | `tabs.ts` | Tab lifecycle (open/close/reorder), active tab, edit mode toggle |
 | `terminal.ts` | Terminal instances with dock positions (bottom/tab/right) |
 | `ui.ts` | UI zoom level (0.6x-2.0x), persisted to localStorage |
+| `claude-code.ts` | Claude Code CLI sessions, message parsing, context tracking |
 | `persistence.ts` | Auto-save (1s debounce) of full app state to Tauri backend |
 
 ### Content Viewers
 
-`ContentArea.svelte` dispatches to the appropriate viewer based on `tab.viewerType`, which is determined by file extension in `src/lib/utils/file-types.ts`. Viewer types: `markdown`, `html`, `image`, `video`, `pdf`, `code`, `text`, `terminal`.
+`ContentArea.svelte` dispatches to the appropriate viewer based on `tab.viewerType`, which is determined by file extension in `src/lib/utils/file-types.ts`. Viewer types: `markdown`, `html`, `image`, `video`, `pdf`, `code`, `text`, `terminal`, `chat`, `claude-code`.
 
 - Code editing uses **CodeMirror 6** (`CodeEditor.svelte`)
 - Markdown rendering uses the **unified** pipeline (remark-parse -> remark-gfm -> remark-rehype -> shiki highlighting -> rehype-stringify)
@@ -68,10 +70,37 @@ There is no test suite configured. No linter is configured.
 
 Terminals have a unique architecture: each terminal instance has a `dock` property (`bottom` | `tab` | `right`) determining where it renders. The Rust backend maintains a `HashMap<String, PtySession>` keyed by terminal ID. A reader thread per session emits `terminal-output` events to the frontend. Terminal containers stay always-mounted to preserve PTY state.
 
+### Claude Code Integration
+
+Claude Code runs as an embedded panel inside AssistantOS, using the CLI's `--output-format stream-json` protocol. No API keys needed. It uses the user's existing Claude Code subscription.
+
+**Architecture**: Per-message process spawning. Each user message spawns a fresh `claude -p "message" --output-format stream-json --verbose --dangerously-skip-permissions` process. Multi-turn conversations use `--resume SESSION_ID` (captured from the init event) to continue the CLI session.
+
+**Rust backend** (`lib.rs`): `ClaudeCodeState` manages a `HashMap<String, ClaudeCodeProcess>`. `spawn_claude_code` spawns the process with piped stdout/stderr, reader threads emit `claude-code-output` events (newline-delimited JSON). Processes auto-clean from the HashMap on natural exit (stdout EOF), with proper child reaping via `wait()`.
+
+**Store** (`claude-code.ts`): Parses JSON events from the CLI into typed messages. Tracks session state (ready/running/error), context usage (tokens vs window), model, cost, and available slash commands. All store updates create new session objects (not mutations) for Svelte 5 `$derived` referential equality.
+
+**UI** (`src/lib/components/claude-code/`):
+- `ClaudeCodePanel.svelte` - Main panel with header (model switcher, context bar, status, settings)
+- `ClaudeCodeMessage.svelte` - Renders messages with markdown (shared `renderMarkdown` + `chat-prose` styles), tool call blocks, result summaries
+- Reuses `ChatInput.svelte` for input (@ mentions, slash commands, steering, image paste, drag-drop)
+- Always-mounted in `ContentArea.svelte` to preserve session state across tab switches
+- Launched via right-click context menu on tab bar or empty area
+
+**Key details**:
+- Synthetic tab paths: `__claude-code__:{id}`
+- Model switcher passes `--model` flag on next spawn
+- Context window: Opus = 1M tokens, Sonnet/Haiku = 200K. Parsed from `[1m]` suffix in model string.
+- CLI slash commands captured from init event's `slash_commands` array and merged into ChatInput autocomplete
+- `ChatInput` auto-discovers slash commands from `{workspacePath}/.claude/commands/` and `~/.claude/commands/`
+- HTML sanitization strips event handler attributes before `{@html}` injection
+- Async markdown render uses version guard to prevent stale content
+
 ### Event Flow
 
 - **File watcher**: Rust `notify` -> `fs-change` event -> frontend debounces (500ms) -> refreshes tree + reloads open tabs (skips unsaved)
 - **Terminal I/O**: User types -> `writeTerminal()` -> Rust PTY -> reader thread -> `terminal-output` event -> xterm.js
+- **Claude Code**: User sends message -> `spawnClaudeCode()` -> Rust spawns `claude -p` -> stdout reader thread -> `claude-code-output` events -> store parses JSON -> UI renders messages
 - **Persistence**: Store changes -> subscription -> debounced (1s) -> `saveAppState()` -> Rust writes JSON
 
 ### File Tree Filtering
@@ -102,6 +131,7 @@ This applies especially to the chat components (`ChatPanel`, `ChatMessage`, `Cha
 - **Vite dev server**: Port 1420, HMR on 1421. Ignores `src-tauri/` in watch.
 - **Tab deduplication**: Opening an already-open file activates the existing tab instead of creating a new one.
 - **Terminal tabs**: Use synthetic paths `__terminal__:{id}` to integrate terminals into the tab bar.
+- **Claude Code tabs**: Use synthetic paths `__claude-code__:{id}` with per-message process spawning and `--resume` for multi-turn.
 - **Encoding fallback**: Rust file reading tries UTF-8 first, falls back to `encoding_rs` detection.
 
 ## Releases and Auto-Updates
