@@ -889,7 +889,8 @@ fn spawn_claude_code(
     // Base args for stream-json print mode
     cmd.arg("-p")
         .arg("--output-format").arg("stream-json")
-        .arg("--verbose");
+        .arg("--verbose")
+        .arg("--dangerously-skip-permissions");
 
     // Resume existing Claude session for multi-turn
     if let Some(ref session_id) = claude_session_id {

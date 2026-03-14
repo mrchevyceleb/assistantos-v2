@@ -14,15 +14,26 @@ export interface ClaudeCodeMessage {
   seq: number;
 }
 
+export interface ContextUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  contextWindow: number;
+}
+
 export interface ClaudeCodeSession {
   id: string;
-  /** "ready" = waiting for user input, "running" = process active, "error" = spawn failed */
   status: "ready" | "running" | "error";
   messages: ClaudeCodeMessage[];
   model?: string;
-  /** The Claude CLI session ID (for --resume). Set from the init event. */
+  /** User-selected model override (passed as --model) */
+  selectedModel?: string;
   claudeSessionId?: string;
   totalCost?: number;
+  contextUsage?: ContextUsage;
+  /** Slash commands available from the CLI */
+  slashCommands: string[];
   error?: string;
   cwd: string;
 }
@@ -31,11 +42,6 @@ export interface ClaudeCodeSession {
 
 export const claudeCodeSessions = writable<Map<string, ClaudeCodeSession>>(new Map());
 
-/**
- * Helper: immutably update a session by ID.
- * Creates a new session object (for Svelte 5 $derived referential equality)
- * and a new Map.
- */
 function updateSession(id: string, updater: (session: ClaudeCodeSession) => Partial<ClaudeCodeSession>) {
   claudeCodeSessions.update((sessions) => {
     const session = sessions.get(id);
@@ -47,6 +53,34 @@ function updateSession(id: string, updater: (session: ClaudeCodeSession) => Part
   });
 }
 
+/** Parse context window size from model string like "claude-opus-4-6[1m]" */
+function parseContextWindow(model: string): number {
+  // Check for explicit context window in brackets like [1m] or [200k]
+  const match = model.match(/\[(\d+)([km])\]/i);
+  if (match) {
+    const num = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    return unit === "m" ? num * 1_000_000 : num * 1_000;
+  }
+  // Defaults by model family
+  if (model.includes("opus")) return 1_000_000;
+  if (model.includes("sonnet")) return 200_000;
+  if (model.includes("haiku")) return 200_000;
+  return 200_000;
+}
+
+/** Extract usage data from an assistant or result message */
+function extractUsage(parsed: any): Partial<ContextUsage> | null {
+  const usage = parsed.usage || parsed.message?.usage;
+  if (!usage) return null;
+  return {
+    inputTokens: usage.input_tokens || 0,
+    outputTokens: usage.output_tokens || 0,
+    cacheReadTokens: usage.cache_read_input_tokens || 0,
+    cacheCreationTokens: usage.cache_creation_input_tokens || 0,
+  };
+}
+
 let listenersInitialized = false;
 
 function initListeners() {
@@ -56,7 +90,6 @@ function initListeners() {
   listen<{ id: string; data: string }>("claude-code-output", (event) => {
     const { id, data } = event.payload;
 
-    // Handle stderr lines
     if (data.startsWith("[stderr] ")) {
       updateSession(id, (s) => ({
         messages: [...s.messages, {
@@ -69,7 +102,6 @@ function initListeners() {
       return;
     }
 
-    // Parse JSON line
     try {
       const parsed = JSON.parse(data);
       updateSession(id, (s) => {
@@ -90,18 +122,50 @@ function initListeners() {
           if (parsed.session_id) {
             updates.claudeSessionId = parsed.session_id;
           }
+          // Capture slash commands
+          if (Array.isArray(parsed.slash_commands)) {
+            updates.slashCommands = parsed.slash_commands;
+          }
+          // Initialize context window from model
+          if (parsed.model) {
+            updates.contextUsage = {
+              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+              contextWindow: parseContextWindow(parsed.model),
+            };
+          }
         }
 
-        // Extract cost from result - process finished this turn
+        // Update context usage from assistant messages
+        if (parsed.type === "assistant") {
+          const usage = extractUsage(parsed);
+          if (usage) {
+            updates.contextUsage = {
+              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+              ...usage,
+            };
+          }
+        }
+
+        // Extract cost and final usage from result
         if (parsed.type === "result") {
           updates.totalCost = (s.totalCost || 0) + (parsed.total_cost_usd || 0);
           updates.status = "ready";
+          // Result has cumulative usage for the turn
+          const resultUsage = parsed.usage;
+          if (resultUsage) {
+            updates.contextUsage = {
+              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+              inputTokens: resultUsage.input_tokens || 0,
+              outputTokens: resultUsage.output_tokens || 0,
+              cacheReadTokens: resultUsage.cache_read_input_tokens || 0,
+              cacheCreationTokens: resultUsage.cache_creation_input_tokens || 0,
+            };
+          }
         }
 
         return updates;
       });
     } catch {
-      // Non-JSON output, treat as raw text
       updateSession(id, (s) => ({
         messages: [...s.messages, {
           type: "stderr" as const,
@@ -127,7 +191,6 @@ function initListeners() {
 
 // ── Actions ─────────────────────────────────────────────────────────
 
-/** Create a new Claude Code UI session and open its tab. No process is spawned yet. */
 export function launchClaudeCode(cwd: string): string {
   initListeners();
 
@@ -136,6 +199,7 @@ export function launchClaudeCode(cwd: string): string {
     id,
     status: "ready",
     messages: [],
+    slashCommands: [],
     cwd,
   };
 
@@ -149,18 +213,16 @@ export function launchClaudeCode(cwd: string): string {
   return id;
 }
 
-/** Send a message. Spawns a new `claude -p "message"` process (with --resume for follow-ups). */
 export async function sendToClaudeCode(id: string, message: string): Promise<void> {
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);
   if (!session) throw new Error("Session not found");
   if (session.status === "running") throw new Error("Already running");
 
-  // Capture values we need for the spawn call before updating
   const cwd = session.cwd;
   const claudeSessionId = session.claudeSessionId;
+  const selectedModel = session.selectedModel;
 
-  // Add user message to the store (immutable update)
   updateSession(id, (s) => ({
     messages: [...s.messages, {
       type: "user" as const,
@@ -172,9 +234,12 @@ export async function sendToClaudeCode(id: string, message: string): Promise<voi
     error: undefined,
   }));
 
-  // Spawn a new process for this turn
   try {
-    await spawnClaudeCode(id, cwd, message, claudeSessionId);
+    const extraArgs: string[] = [];
+    if (selectedModel) {
+      extraArgs.push("--model", selectedModel);
+    }
+    await spawnClaudeCode(id, cwd, message, claudeSessionId, extraArgs);
   } catch (err) {
     updateSession(id, () => ({
       status: "error",
@@ -183,13 +248,15 @@ export async function sendToClaudeCode(id: string, message: string): Promise<voi
   }
 }
 
-/** Kill the currently running process (if any). Session stays open for new messages. */
+export function setClaudeCodeModel(id: string, model: string): void {
+  updateSession(id, () => ({ selectedModel: model || undefined }));
+}
+
 export async function stopClaudeCode(id: string): Promise<void> {
   await closeClaudeCode(id);
   updateSession(id, () => ({ status: "ready" }));
 }
 
-/** Destroy the UI session entirely: kill process, remove from store, close tab. */
 export function removeClaudeCodeSession(id: string): void {
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);

@@ -30,9 +30,11 @@
     onSteer: (steer: string) => void;
     isLoading: boolean;
     disabled: boolean;
+    /** Extra slash commands injected by parent (e.g. Claude Code CLI commands) */
+    extraSlashCommands?: string[];
   }
 
-  let { onSend, onStop, onSteer, isLoading, disabled }: Props = $props();
+  let { onSend, onStop, onSteer, isLoading, disabled, extraSlashCommands = [] }: Props = $props();
   let inputText = $state("");
   let textarea = $state<HTMLTextAreaElement | null>(null);
 
@@ -145,7 +147,28 @@
   }
 
   async function loadSlashCommands() {
-    const dirs = $settings.aiSlashCommandDirs || [];
+    const dirs = [...($settings.aiSlashCommandDirs || [])];
+
+    // Auto-discover project-local .claude/commands/
+    const ws = $workspacePath;
+    if (ws) {
+      const sep = ws.includes("\\") ? "\\" : "/";
+      const projectCmds = `${ws}${sep}.claude${sep}commands`;
+      if (!dirs.includes(projectCmds)) dirs.push(projectCmds);
+    }
+
+    // Auto-discover global ~/.claude/commands/
+    try {
+      const homeDir = await import("@tauri-apps/api/path").then(m => m.homeDir());
+      if (homeDir) {
+        const sep = homeDir.includes("\\") ? "\\" : "/";
+        const globalCmds = `${homeDir.replace(/[\\/]+$/, "")}${sep}.claude${sep}commands`;
+        if (!dirs.includes(globalCmds)) dirs.push(globalCmds);
+      }
+    } catch {
+      // homeDir not available
+    }
+
     if (dirs.length === 0) {
       slashCommands = [];
       slashSuggestions = [];
@@ -209,6 +232,7 @@
 
   $effect(() => {
     $settings.aiSlashCommandDirs;
+    $workspacePath;
     void loadSlashCommands();
   });
 
@@ -228,9 +252,18 @@
     }
 
     const query = tokenMatch[1].toLowerCase();
-    slashSuggestions = slashCommands
+
+    // Merge file-based commands with extra CLI commands
+    const allCommands = [...slashCommands];
+    for (const name of extraSlashCommands) {
+      if (!allCommands.some((c) => c.name === name)) {
+        allCommands.push({ name, prompt: "", description: "Claude Code command", sourcePath: "" });
+      }
+    }
+
+    slashSuggestions = allCommands
       .filter((cmd) => !query || cmd.name.includes(query))
-      .slice(0, 8);
+      .slice(0, 12);
     slashSelectedIndex = 0;
   }
 
