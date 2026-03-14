@@ -27,12 +27,6 @@
     await win.close();
   }
 
-  async function handleDrag(e: MouseEvent) {
-    if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
-    const win = await getWindow();
-    await win.startDragging();
-  }
-
   async function handleDoubleClick(e: MouseEvent) {
     if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
     await handleMaximize();
@@ -58,35 +52,13 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  data-tauri-drag-region
   class="titlebar flex items-center shrink-0 select-none"
-  onmousedown={handleDrag}
   ondblclick={handleDoubleClick}
 >
-  <!-- Left: macOS traffic lights or Windows spacer -->
+  <!-- Left: spacer for macOS native traffic lights or Windows spacer -->
   {#if isMac}
-    <div class="flex items-center shrink-0" style="padding-left: 14px; gap: 8px;" data-no-drag>
-      <button
-        class="mac-btn mac-close"
-        onclick={handleClose}
-        onmouseenter={() => hoveredBtn = "close"}
-        onmouseleave={() => hoveredBtn = null}
-        title="Close"
-      >{hoveredBtn === "close" ? "×" : ""}</button>
-      <button
-        class="mac-btn mac-minimize"
-        onclick={handleMinimize}
-        onmouseenter={() => hoveredBtn = "minimize"}
-        onmouseleave={() => hoveredBtn = null}
-        title="Minimize"
-      >{hoveredBtn === "minimize" ? "−" : ""}</button>
-      <button
-        class="mac-btn mac-maximize"
-        onclick={handleMaximize}
-        onmouseenter={() => hoveredBtn = "maximize"}
-        onmouseleave={() => hoveredBtn = null}
-        title={isMaximized ? "Restore" : "Maximize"}
-      >{hoveredBtn === "maximize" ? "+" : ""}</button>
-    </div>
+    <div class="shrink-0" style="width: 78px;"></div>
   {:else}
     <div style="width: 138px;" class="shrink-0"></div>
   {/if}
@@ -237,35 +209,4 @@
     background: #b22a1a !important;
   }
 
-  /* macOS traffic light buttons */
-  .mac-btn {
-    width: 13px;
-    height: 13px;
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    font-size: 10px;
-    line-height: 13px;
-    text-align: center;
-    color: transparent;
-    padding: 0;
-    transition: filter 0.1s;
-  }
-
-  .mac-btn:hover {
-    color: rgba(0, 0, 0, 0.6);
-    filter: brightness(0.9);
-  }
-
-  .mac-close {
-    background: #ff5f57;
-  }
-
-  .mac-minimize {
-    background: #ffbd2e;
-  }
-
-  .mac-maximize {
-    background: #28c840;
-  }
 </style>
