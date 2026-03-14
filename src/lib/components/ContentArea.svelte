@@ -5,6 +5,7 @@
   import { settings } from "$lib/stores/settings";
   import { workspacePath, fileTree, workspaceName } from "$lib/stores/workspace";
   import { addTerminal } from "$lib/stores/terminal";
+  import { launchClaudeCode } from "$lib/stores/claude-code";
   import MarkdownViewer from "./MarkdownViewer.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import CodeViewer from "./CodeViewer.svelte";
@@ -14,6 +15,7 @@
   import PdfViewer from "./PdfViewer.svelte";
   import TerminalTab from "./TerminalTab.svelte";
   import ChatPanel from "./chat/ChatPanel.svelte";
+  import ClaudeCodePanel from "./claude-code/ClaudeCodePanel.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import type { MenuItem } from "./ContextMenu.svelte";
 
@@ -64,6 +66,12 @@
           addChat($settings.aiModel, $settings.aiProvider, $settings.aiChatDock);
         },
       },
+      {
+        label: "Launch Claude Code",
+        action: () => {
+          launchClaudeCode($workspacePath || "");
+        },
+      },
     ];
 
     if ($workspacePath) {
@@ -106,8 +114,9 @@
   // Derived: all terminal tabs that need to stay mounted
   let terminalTabs = $derived($tabs.filter((t) => t.viewerType === "terminal"));
   let chatTabs = $derived($tabs.filter((t) => t.viewerType === "chat"));
-  // Is the active tab a terminal?
-  let activeIsSpecial = $derived($activeTab?.viewerType === "terminal" || $activeTab?.viewerType === "chat");
+  let claudeCodeTabs = $derived($tabs.filter((t) => t.viewerType === "claude-code"));
+  // Is the active tab a special always-mounted type?
+  let activeIsSpecial = $derived($activeTab?.viewerType === "terminal" || $activeTab?.viewerType === "chat" || $activeTab?.viewerType === "claude-code");
 
   async function handleSave(content: string) {
     const tab = $activeTab;
@@ -169,6 +178,15 @@
       class:hidden={$activeTabId !== ctab.id}
     >
       <ChatPanel instanceId={ctab.path.replace("__chat__:", "").replace("__chat__", "legacy")} />
+    </div>
+  {/each}
+
+  {#each claudeCodeTabs as cctab (cctab.id)}
+    <div
+      class="absolute inset-0"
+      class:hidden={$activeTabId !== cctab.id}
+    >
+      <ClaudeCodePanel sessionId={cctab.path.replace("__claude-code__:", "")} />
     </div>
   {/each}
 

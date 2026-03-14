@@ -804,6 +804,235 @@ fn close_terminal(id: String, state: tauri::State<'_, TerminalState>) -> Result<
     Ok(())
 }
 
+// ── Claude Code Process Backend ──────────────────────────────────────
+//
+// Architecture: Each user message spawns a fresh `claude -p "prompt"` process.
+// Multi-turn conversations use `--resume SESSION_ID` to continue the CLI session.
+// The frontend tracks a UI session ID (for tabs/store) and a separate Claude
+// CLI session ID (returned in the init event) for --resume.
+
+struct ClaudeCodeProcess {
+    child: std::process::Child,
+    alive: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+struct ClaudeCodeState {
+    // Keyed by UI session ID; holds the currently-running process (if any)
+    processes: Arc<Mutex<HashMap<String, ClaudeCodeProcess>>>,
+}
+
+#[derive(Clone, Serialize)]
+struct ClaudeCodeOutputPayload {
+    id: String,
+    data: String,
+}
+
+#[derive(Clone, Serialize)]
+struct ClaudeCodeClosedPayload {
+    id: String,
+    exit_code: Option<i32>,
+}
+
+fn find_claude_exe() -> String {
+    if cfg!(target_os = "windows") {
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        // Check .local/bin first (official installer location)
+        let local_bin = format!("{}\\.local\\bin\\claude.exe", home);
+        if std::path::Path::new(&local_bin).exists() {
+            return local_bin;
+        }
+        // Check npm global install location
+        let appdata = std::env::var("APPDATA").unwrap_or_default();
+        let npm_bin = format!("{}\\npm\\claude.cmd", appdata);
+        if std::path::Path::new(&npm_bin).exists() {
+            return npm_bin;
+        }
+        // Fall back to PATH
+        "claude".to_string()
+    } else {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let local_bin = format!("{}/.local/bin/claude", home);
+        if std::path::Path::new(&local_bin).exists() {
+            return local_bin;
+        }
+        "claude".to_string()
+    }
+}
+
+/// Spawn a claude -p process for a single message turn.
+/// `id` = UI session ID, `prompt` = user message text.
+/// Optional `claude_session_id` for --resume on follow-up turns.
+#[tauri::command]
+fn spawn_claude_code(
+    id: String,
+    cwd: String,
+    prompt: String,
+    claude_session_id: Option<String>,
+    args: Vec<String>,
+    state: tauri::State<'_, ClaudeCodeState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    // Kill any existing process for this UI session (e.g. if user sends while one is running)
+    {
+        let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+        if let Some(mut old) = processes.remove(&id) {
+            old.alive.store(false, Ordering::Relaxed);
+            let _ = old.child.kill();
+            let _ = old.child.wait();
+        }
+    }
+
+    let claude_exe = find_claude_exe();
+    let mut cmd = std::process::Command::new(&claude_exe);
+
+    // Base args for stream-json print mode
+    cmd.arg("-p")
+        .arg("--output-format").arg("stream-json")
+        .arg("--verbose");
+
+    // Resume existing Claude session for multi-turn
+    if let Some(ref session_id) = claude_session_id {
+        cmd.arg("--resume").arg(session_id);
+    }
+
+    // Add any extra args from the frontend
+    for arg in &args {
+        cmd.arg(arg);
+    }
+
+    // The prompt itself (positional arg)
+    cmd.arg(&prompt);
+
+    // Set working directory
+    let cwd_path = PathBuf::from(&cwd);
+    if cwd_path.exists() && cwd_path.is_dir() {
+        cmd.current_dir(&cwd_path);
+    }
+
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // On Windows, prevent console window from appearing
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn claude: {}", e))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    let alive = Arc::new(AtomicBool::new(true));
+    let alive_stdout = Arc::clone(&alive);
+    let alive_stderr = Arc::clone(&alive);
+
+    let process = ClaudeCodeProcess { child, alive };
+
+    {
+        let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+        processes.insert(id.clone(), process);
+    }
+
+    let state_arc = Arc::clone(&state.processes);
+
+    // Spawn stdout reader thread
+    if let Some(stdout) = stdout {
+        let reader_id = id.clone();
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines() {
+                if !alive_stdout.load(Ordering::Relaxed) {
+                    break;
+                }
+                match line {
+                    Ok(data) => {
+                        if !data.is_empty() {
+                            let _ = app_handle.emit(
+                                "claude-code-output",
+                                ClaudeCodeOutputPayload {
+                                    id: reader_id.clone(),
+                                    data,
+                                },
+                            );
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            // Process finished naturally. Reap child and report exit status.
+            let exit_code = if let Ok(mut processes) = state_arc.lock() {
+                if let Some(mut proc) = processes.remove(&reader_id) {
+                    proc.child.wait()
+                        .ok()
+                        .and_then(|s| s.code())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let _ = app_handle.emit(
+                "claude-code-closed",
+                ClaudeCodeClosedPayload {
+                    id: reader_id.clone(),
+                    exit_code,
+                },
+            );
+        });
+    }
+
+    // Spawn stderr reader thread
+    if let Some(stderr) = stderr {
+        let reader_id = id.clone();
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(stderr);
+            for line in reader.lines() {
+                if !alive_stderr.load(Ordering::Relaxed) {
+                    break;
+                }
+                match line {
+                    Ok(data) => {
+                        if !data.is_empty() {
+                            let _ = app_handle.emit(
+                                "claude-code-output",
+                                ClaudeCodeOutputPayload {
+                                    id: reader_id.clone(),
+                                    data: format!("[stderr] {}", data),
+                                },
+                            );
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn close_claude_code(
+    id: String,
+    state: tauri::State<'_, ClaudeCodeState>,
+) -> Result<(), String> {
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+    if let Some(mut process) = processes.remove(&id) {
+        process.alive.store(false, Ordering::Relaxed);
+        let _ = process.child.kill();
+        let _ = process.child.wait();
+    }
+    Ok(())
+}
+
 // ── File System Watcher ──────────────────────────────────────────────
 
 struct WatcherState {
@@ -2532,6 +2761,7 @@ fn delete_chat_session(app: tauri::AppHandle, session_id: String) -> Result<(), 
 pub fn run() {
     tauri::Builder::default()
         .manage(TerminalState::default())
+        .manage(ClaudeCodeState::default())
         .manage(StdioMcpState::default())
         .manage(WatcherState {
             watcher: Arc::new(Mutex::new(None)),
@@ -2583,6 +2813,8 @@ pub fn run() {
             load_chat_session,
             list_chat_sessions,
             delete_chat_session,
+            spawn_claude_code,
+            close_claude_code,
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

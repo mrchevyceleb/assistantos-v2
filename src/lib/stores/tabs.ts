@@ -94,7 +94,7 @@ export async function closeTab(id: string, options?: { forceTerminal?: boolean; 
   }
 
   // Track recently closed tabs so users can recover accidental closes.
-  if (!closingTab.path.startsWith("__terminal__:") && !closingTab.path.startsWith("__chat__")) {
+  if (!closingTab.path.startsWith("__terminal__:") && !closingTab.path.startsWith("__chat__") && !closingTab.path.startsWith("__claude-code__:")) {
     const entry: ClosedTabEntry = {
       path: closingTab.path,
       name: closingTab.name,
@@ -286,6 +286,42 @@ export function openChatInstanceTab(chatId: string, title: string): string {
   tabs.update((t) => [...t, newTab]);
   activeTabId.set(newTab.id);
   return newTab.id;
+}
+
+/** Open a Claude Code session as a document tab */
+export function openClaudeCodeTab(sessionId: string, title: string): string {
+  const currentTabs = get(tabs);
+  const path = `__claude-code__:${sessionId}`;
+  const existing = currentTabs.find((t) => t.path === path);
+  if (existing) {
+    activeTabId.set(existing.id);
+    return existing.id;
+  }
+
+  const newTab: Tab = {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    path,
+    name: title,
+    ext: undefined,
+    viewerType: "claude-code" as ViewerType,
+    isModified: false,
+    isLoading: false,
+    editMode: false,
+  };
+
+  tabs.update((t) => [...t, newTab]);
+  activeTabId.set(newTab.id);
+  return newTab.id;
+}
+
+/** Remove Claude Code tab for a given session ID */
+export function closeClaudeCodeTab(sessionId: string) {
+  const currentTabs = get(tabs);
+  const path = `__claude-code__:${sessionId}`;
+  const tab = currentTabs.find((t) => t.path === path);
+  if (tab) {
+    closeTab(tab.id, { skipConfirm: true });
+  }
 }
 
 /** Remove chat instance tabs for a given chat ID */
