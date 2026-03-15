@@ -806,13 +806,13 @@ fn close_terminal(id: String, state: tauri::State<'_, TerminalState>) -> Result<
 
 // ── Claude Code Process Backend ──────────────────────────────────────
 //
-// Architecture: Each user message spawns a fresh `claude -p "prompt"` process.
-// Multi-turn conversations use `--resume SESSION_ID` to continue the CLI session.
-// The frontend tracks a UI session ID (for tabs/store) and a separate Claude
-// CLI session ID (returned in the init event) for --resume.
+// Architecture: A persistent `claude` process is spawned per UI session using
+// `--input-format stream-json` on stdin and `--output-format stream-json` on stdout.
+// Messages are sent via `write_claude_code` which writes JSON to stdin.
 
 struct ClaudeCodeProcess {
     child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
     alive: Arc<AtomicBool>,
 }
 
@@ -860,15 +860,12 @@ fn find_claude_exe() -> String {
     }
 }
 
-/// Spawn a claude -p process for a single message turn.
-/// `id` = UI session ID, `prompt` = user message text.
-/// Optional `claude_session_id` for --resume on follow-up turns.
+/// Spawn a persistent Claude Code process that accepts stream-json on stdin.
+/// `id` = UI session ID. Messages are sent via `write_claude_code`.
 #[tauri::command]
 fn spawn_claude_code(
     id: String,
     cwd: String,
-    prompt: String,
-    claude_session_id: Option<String>,
     args: Vec<String>,
     state: tauri::State<'_, ClaudeCodeState>,
     app: tauri::AppHandle,
@@ -878,6 +875,7 @@ fn spawn_claude_code(
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
         if let Some(mut old) = processes.remove(&id) {
             old.alive.store(false, Ordering::Relaxed);
+            drop(old.stdin.take());
             let _ = old.child.kill();
             let _ = old.child.wait();
         }
@@ -886,24 +884,20 @@ fn spawn_claude_code(
     let claude_exe = find_claude_exe();
     let mut cmd = std::process::Command::new(&claude_exe);
 
-    // Base args for stream-json print mode
+    // Base args for persistent stream-json mode
+    // -p + --input-format stream-json: non-interactive but stays alive reading stdin
+    // --include-partial-messages: required for token-by-token streaming deltas
     cmd.arg("-p")
         .arg("--output-format").arg("stream-json")
+        .arg("--input-format").arg("stream-json")
         .arg("--verbose")
+        .arg("--include-partial-messages")
         .arg("--dangerously-skip-permissions");
-
-    // Resume existing Claude session for multi-turn
-    if let Some(ref session_id) = claude_session_id {
-        cmd.arg("--resume").arg(session_id);
-    }
 
     // Add any extra args from the frontend
     for arg in &args {
         cmd.arg(arg);
     }
-
-    // The prompt itself (positional arg)
-    cmd.arg(&prompt);
 
     // Set working directory
     let cwd_path = PathBuf::from(&cwd);
@@ -911,7 +905,7 @@ fn spawn_claude_code(
         cmd.current_dir(&cwd_path);
     }
 
-    cmd.stdin(std::process::Stdio::null())
+    cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
@@ -927,11 +921,13 @@ fn spawn_claude_code(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
+    let stdin = child.stdin.take();
+
     let alive = Arc::new(AtomicBool::new(true));
     let alive_stdout = Arc::clone(&alive);
     let alive_stderr = Arc::clone(&alive);
 
-    let process = ClaudeCodeProcess { child, alive };
+    let process = ClaudeCodeProcess { child, stdin, alive };
 
     {
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
@@ -1028,9 +1024,28 @@ fn close_claude_code(
     let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
     if let Some(mut process) = processes.remove(&id) {
         process.alive.store(false, Ordering::Relaxed);
+        drop(process.stdin.take());
         let _ = process.child.kill();
         let _ = process.child.wait();
     }
+    Ok(())
+}
+
+#[tauri::command]
+fn write_claude_code(
+    id: String,
+    message: String,
+    state: tauri::State<'_, ClaudeCodeState>,
+) -> Result<(), String> {
+    use std::io::Write;
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+    let process = processes.get_mut(&id)
+        .ok_or_else(|| format!("Claude Code session not found: {}", id))?;
+    let stdin = process.stdin.as_mut()
+        .ok_or_else(|| "Claude Code stdin not available".to_string())?;
+    stdin.write_all(message.as_bytes()).map_err(|e| format!("stdin write failed: {}", e))?;
+    stdin.write_all(b"\n").map_err(|e| format!("stdin newline failed: {}", e))?;
+    stdin.flush().map_err(|e| format!("stdin flush failed: {}", e))?;
     Ok(())
 }
 
@@ -2815,6 +2830,7 @@ pub fn run() {
             list_chat_sessions,
             delete_chat_session,
             spawn_claude_code,
+            write_claude_code,
             close_claude_code,
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())

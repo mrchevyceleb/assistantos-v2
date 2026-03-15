@@ -169,6 +169,10 @@
       0%, 100% { opacity: 0.4; }
       50% { opacity: 0.8; }
     }
+    @keyframes cc-bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40% { transform: translateY(-8px); opacity: 1; }
+    }
     @keyframes cc-drift {
       0% { transform: translateY(0) translateX(0); }
       50% { transform: translateY(-15px) translateX(8px); }
@@ -263,40 +267,41 @@
     <!-- Context usage bar -->
     {#if contextUsage && contextUsage.inputTokens > 0}
       <div class="flex items-center gap-2" title="{formatTokens(contextUsage.inputTokens + contextUsage.outputTokens)} / {formatTokens(contextUsage.contextWindow)} tokens ({contextPercent}%)">
-        <div class="rounded-full overflow-hidden bg-bg-tertiary" style="width: 80px; height: 6px;">
+        <div class="rounded-full overflow-hidden bg-bg-tertiary" style="width: 120px; height: 8px;">
           <div
             class="h-full rounded-full transition-all"
             style="width: {contextPercent}%; background: {contextColor};"
           ></div>
         </div>
-        <span class="text-text-muted font-mono" style="font-size: 12px;">{contextPercent}%</span>
+        <span class="text-text-muted font-mono" style="font-size: 13px;">{contextPercent}%</span>
       </div>
     {/if}
 
     <!-- Status -->
     {#if isRunning}
-      <div class="flex items-center gap-1.5">
-        <div class="w-2 h-2 rounded-full bg-accent" style="animation: cc-pulse 1.5s ease-in-out infinite;"></div>
-        <span class="text-accent" style="font-size: 12px;">Running</span>
+      <div class="flex items-center gap-2">
+        <div class="rounded-full bg-accent" style="width: 8px; height: 8px; animation: cc-pulse 1.5s ease-in-out infinite;"></div>
+        <span class="text-accent font-medium" style="font-size: 13px;">Running</span>
       </div>
     {:else if session?.status === "error"}
-      <span class="text-error" style="font-size: 12px;">Error</span>
+      <span class="text-error font-medium" style="font-size: 13px;">Error</span>
     {/if}
 
     <!-- Slash commands hint -->
     {#if slashCommands.length > 0 && !isRunning}
-      <span class="text-text-muted/50 font-mono" style="font-size: 11px;" title={slashCommands.map(c => `/${c}`).join(', ')}>
+      <span class="text-text-muted/60 font-mono" style="font-size: 12px;" title={slashCommands.map(c => `/${c}`).join(', ')}>
         /{slashCommands.length} cmds
       </span>
     {/if}
 
     <!-- Settings -->
     <button
-      class="p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+      class="rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+      style="padding: 6px;"
       onclick={() => aiSettingsVisible.set(true)}
       title="AI & Display Settings"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
     </button>
@@ -304,8 +309,8 @@
     <!-- Stop -->
     {#if isRunning}
       <button
-        class="rounded-md bg-error/15 text-error border border-error/25 hover:bg-error/25 transition-colors"
-        style="padding: 5px 12px; font-size: 13px;"
+        class="rounded-md bg-error/15 text-error border border-error/25 hover:bg-error/25 transition-colors font-medium"
+        style="padding: 6px 14px; font-size: 13px;"
         onclick={handleStop}
       >
         Stop
@@ -314,11 +319,12 @@
 
     <!-- Close -->
     <button
-      class="p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+      class="rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+      style="padding: 6px;"
       onclick={handleClose}
       title="Close session"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
     </button>
@@ -350,6 +356,18 @@
         {#each visibleMessages as msg (msg.seq)}
           <CCMessage message={msg} fontSize={chatFs} fontFamily={chatFont} />
         {/each}
+
+        <!-- Thinking indicator: show when running and last message is from user -->
+        {#if isRunning && visibleMessages.length > 0 && visibleMessages[visibleMessages.length - 1].type === "user"}
+          <div class="flex items-center gap-3" style="padding: 10px 14px;">
+            <div class="flex items-center gap-1">
+              <div class="rounded-full bg-accent/60" style="width: 6px; height: 6px; animation: cc-bounce 1.4s ease-in-out infinite;"></div>
+              <div class="rounded-full bg-accent/60" style="width: 6px; height: 6px; animation: cc-bounce 1.4s ease-in-out 0.2s infinite;"></div>
+              <div class="rounded-full bg-accent/60" style="width: 6px; height: 6px; animation: cc-bounce 1.4s ease-in-out 0.4s infinite;"></div>
+            </div>
+            <span class="text-text-muted" style="font-size: {chatFs - 2}px;">Thinking...</span>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>

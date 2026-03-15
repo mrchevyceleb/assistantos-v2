@@ -302,15 +302,20 @@ export async function deleteChatSession(
 export async function spawnClaudeCode(
   id: string,
   cwd: string,
-  prompt: string,
-  claudeSessionId?: string,
   args: string[] = [],
 ): Promise<void> {
-  return invoke("spawn_claude_code", { id, cwd, prompt, claudeSessionId, args });
+  return invoke("spawn_claude_code", { id, cwd, args });
 }
 
 export async function closeClaudeCode(id: string): Promise<void> {
   return invoke("close_claude_code", { id });
+}
+
+export async function writeClaudeCode(
+  id: string,
+  message: string,
+): Promise<void> {
+  return invoke("write_claude_code", { id, message });
 }
 
 // ── MCP HTTP wrappers ───────────────────────────────────────────────

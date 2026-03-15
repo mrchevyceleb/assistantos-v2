@@ -1,6 +1,6 @@
 import { writable, get } from "svelte/store";
 import { listen } from "@tauri-apps/api/event";
-import { spawnClaudeCode, closeClaudeCode } from "$lib/utils/tauri";
+import { spawnClaudeCode, closeClaudeCode, writeClaudeCode } from "$lib/utils/tauri";
 import { openClaudeCodeTab, closeClaudeCodeTab } from "$lib/stores/tabs";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -29,7 +29,13 @@ export interface ClaudeCodeSession {
   model?: string;
   /** User-selected model override (passed as --model) */
   selectedModel?: string;
+  processAlive: boolean;
+  /** CLI session ID for --resume when respawning after process kill */
   claudeSessionId?: string;
+  /** Process needs restart (e.g. model changed while running) */
+  pendingModelRestart: boolean;
+  /** Set before deliberate kills to suppress spurious error from claude-code-closed */
+  deliberateKill?: boolean;
   totalCost?: number;
   contextUsage?: ContextUsage;
   /** Slash commands available from the CLI */
@@ -87,6 +93,9 @@ function initListeners() {
   if (listenersInitialized) return;
   listenersInitialized = true;
 
+  // Track streaming state per session (outside store to avoid unnecessary reactivity)
+  const streamingState = new Map<string, { text: string; toolUses: any[]; seq: number; currentBlockType: string }>();
+
   listen<{ id: string; data: string }>("claude-code-output", (event) => {
     const { id, data } = event.payload;
 
@@ -104,17 +113,82 @@ function initListeners() {
 
     try {
       const parsed = JSON.parse(data);
-      updateSession(id, (s) => {
-        const msg: ClaudeCodeMessage = {
-          type: parsed.type || "error",
-          raw: parsed,
-          timestamp: Date.now(),
-          seq: messageSeq++,
-        };
 
-        const updates: Partial<ClaudeCodeSession> = {
-          messages: [...s.messages, msg],
-        };
+      // ── Streaming delta handling ──
+      // CLI wraps streaming events as: {"type": "stream_event", "event": {...}}
+      // Unwrap to get the actual event for content_block_start/delta/stop
+      const streamEvent = parsed.type === "stream_event" ? parsed.event : null;
+
+      if (streamEvent?.type === "content_block_start") {
+        if (!streamingState.has(id)) {
+          streamingState.set(id, { text: "", toolUses: [], seq: messageSeq++, currentBlockType: "text" });
+        }
+        const state = streamingState.get(id)!;
+        state.currentBlockType = streamEvent.content_block?.type || "text";
+        // If it's a tool_use block, start tracking it
+        if (streamEvent.content_block?.type === "tool_use") {
+          state.toolUses.push({
+            type: "tool_use",
+            id: streamEvent.content_block.id,
+            name: streamEvent.content_block.name,
+            input: {},
+          });
+        }
+        return;
+      }
+
+      if (streamEvent?.type === "content_block_delta") {
+        const state = streamingState.get(id);
+        if (state) {
+          const delta = streamEvent.delta;
+          if (delta?.type === "text_delta" && delta.text) {
+            state.text += delta.text;
+          } else if (delta?.type === "input_json_delta" && delta.partial_json && state.currentBlockType === "tool_use") {
+            // Accumulate tool input JSON only for the current tool_use block
+            const lastTool = state.toolUses[state.toolUses.length - 1];
+            if (lastTool) {
+              lastTool._rawInput = (lastTool._rawInput || "") + delta.partial_json;
+            }
+          }
+          // Update the live streaming message in the session
+          updateSession(id, (s) => {
+            const streamMsg: ClaudeCodeMessage = {
+              type: "assistant",
+              raw: {
+                type: "assistant",
+                message: {
+                  role: "assistant",
+                  content: [
+                    ...(state.text ? [{ type: "text", text: state.text }] : []),
+                    ...state.toolUses.map(t => ({ ...t })),
+                  ],
+                },
+              },
+              timestamp: Date.now(),
+              seq: state.seq,
+            };
+            // Replace the streaming message (same seq) or append it
+            const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
+            const messages = [...s.messages];
+            if (existingIdx >= 0) {
+              messages[existingIdx] = streamMsg;
+            } else {
+              messages.push(streamMsg);
+            }
+            return { messages };
+          });
+        }
+        return;
+      }
+
+      if (streamEvent?.type === "content_block_stop") {
+        // Block finished, but keep accumulating (there may be more blocks)
+        return;
+      }
+
+      // ── Final message handling ──
+      updateSession(id, (s) => {
+        const updates: Partial<ClaudeCodeSession> = {};
 
         // Extract metadata from init message
         if (parsed.type === "system" && parsed.subtype === "init") {
@@ -122,11 +196,9 @@ function initListeners() {
           if (parsed.session_id) {
             updates.claudeSessionId = parsed.session_id;
           }
-          // Capture slash commands
           if (Array.isArray(parsed.slash_commands)) {
             updates.slashCommands = parsed.slash_commands;
           }
-          // Initialize context window from model
           if (parsed.model) {
             updates.contextUsage = {
               ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
@@ -135,8 +207,35 @@ function initListeners() {
           }
         }
 
-        // Update context usage from assistant messages
+        // Final assistant message replaces streaming message
         if (parsed.type === "assistant") {
+          const state = streamingState.get(id);
+          if (state) {
+            // Replace the streaming message with the final one
+            const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
+            const messages = [...s.messages];
+            const finalMsg: ClaudeCodeMessage = {
+              type: "assistant",
+              raw: parsed,
+              timestamp: Date.now(),
+              seq: state.seq,
+            };
+            if (existingIdx >= 0) {
+              messages[existingIdx] = finalMsg;
+            } else {
+              messages.push(finalMsg);
+            }
+            updates.messages = messages;
+            streamingState.delete(id);
+          } else {
+            // No streaming state, just append
+            updates.messages = [...s.messages, {
+              type: "assistant" as const,
+              raw: parsed,
+              timestamp: Date.now(),
+              seq: messageSeq++,
+            }];
+          }
           const usage = extractUsage(parsed);
           if (usage) {
             updates.contextUsage = {
@@ -150,7 +249,7 @@ function initListeners() {
         if (parsed.type === "result") {
           updates.totalCost = (s.totalCost || 0) + (parsed.total_cost_usd || 0);
           updates.status = "ready";
-          // Result has cumulative usage for the turn
+          streamingState.delete(id); // Clean up any leftover streaming state
           const resultUsage = parsed.usage;
           if (resultUsage) {
             updates.contextUsage = {
@@ -161,6 +260,18 @@ function initListeners() {
               cacheCreationTokens: resultUsage.cache_creation_input_tokens || 0,
             };
           }
+        }
+
+        // For other event types (system, error, etc.), just append as a message
+        // Skip stream_event wrappers (already handled above) and assistant (handled above)
+        if (!updates.messages && parsed.type !== "assistant" && parsed.type !== "stream_event") {
+          const msg: ClaudeCodeMessage = {
+            type: parsed.type || "error",
+            raw: parsed,
+            timestamp: Date.now(),
+            seq: messageSeq++,
+          };
+          updates.messages = [...s.messages, msg];
         }
 
         return updates;
@@ -179,14 +290,54 @@ function initListeners() {
 
   listen<{ id: string; exit_code: number | null }>("claude-code-closed", (event) => {
     const { id, exit_code } = event.payload;
+    // Finalize any in-flight streaming message before updating session
+    const orphanedStream = streamingState.get(id);
+    if (orphanedStream) {
+      streamingState.delete(id);
+    }
     updateSession(id, (s) => {
-      if (s.status !== "running") return {};
-      if (exit_code !== null && exit_code !== 0) {
-        return { status: "error", error: `Claude process exited with code ${exit_code}` };
+      const updates: Partial<ClaudeCodeSession> = { processAlive: false };
+      // If there was an orphaned streaming message, stamp it so isStreaming becomes false
+      if (orphanedStream) {
+        const idx = s.messages.findIndex(m => m.seq === orphanedStream.seq);
+        if (idx >= 0) {
+          const messages = [...s.messages];
+          const msg = { ...messages[idx] };
+          msg.raw = { ...msg.raw, message: { ...msg.raw.message, stop_reason: "interrupted" } };
+          messages[idx] = msg;
+          updates.messages = messages;
+        }
       }
-      return { status: "ready" };
+      // Only set error status if the process crashed unexpectedly while running.
+      // If status is already "ready" (deliberate stop/steer) or "error", don't override.
+      if (s.status === "running") {
+        if (s.deliberateKill) {
+          updates.status = "ready";
+          updates.deliberateKill = false;
+        } else if (exit_code !== null && exit_code !== 0) {
+          updates.status = "error";
+          updates.error = `Claude process exited with code ${exit_code}`;
+        } else {
+          updates.status = "ready";
+        }
+      }
+      return updates;
     });
   });
+}
+
+async function ensureProcess(session: ClaudeCodeSession): Promise<void> {
+  if (session.processAlive) return;
+  const extraArgs: string[] = [];
+  if (session.selectedModel) {
+    extraArgs.push("--model", session.selectedModel);
+  }
+  // Resume from CLI session if respawning after a kill (steer, stop, model change)
+  if (session.claudeSessionId) {
+    extraArgs.push("--resume", session.claudeSessionId);
+  }
+  await spawnClaudeCode(session.id, session.cwd, extraArgs);
+  updateSession(session.id, () => ({ processAlive: true }));
 }
 
 // ── Actions ─────────────────────────────────────────────────────────
@@ -201,6 +352,8 @@ export function launchClaudeCode(cwd: string): string {
     messages: [],
     slashCommands: [],
     cwd,
+    processAlive: false,
+    pendingModelRestart: false,
   };
 
   claudeCodeSessions.update((sessions) => {
@@ -219,10 +372,6 @@ export async function sendToClaudeCode(id: string, message: string): Promise<voi
   if (!session) throw new Error("Session not found");
   if (session.status === "running") throw new Error("Already running");
 
-  const cwd = session.cwd;
-  const claudeSessionId = session.claudeSessionId;
-  const selectedModel = session.selectedModel;
-
   updateSession(id, (s) => ({
     messages: [...s.messages, {
       type: "user" as const,
@@ -235,32 +384,57 @@ export async function sendToClaudeCode(id: string, message: string): Promise<voi
   }));
 
   try {
-    const extraArgs: string[] = [];
-    if (selectedModel) {
-      extraArgs.push("--model", selectedModel);
+    // Always re-read fresh session state (the original snapshot may be stale if
+    // claude-code-closed fired between get() and here)
+    let current = get(claudeCodeSessions).get(id);
+    if (!current) throw new Error("Session lost");
+
+    // If model changed while running, kill process so ensureProcess respawns with new model
+    if (current.pendingModelRestart && current.processAlive) {
+      updateSession(id, () => ({ deliberateKill: true }));
+      await closeClaudeCode(id);
+      updateSession(id, () => ({ processAlive: false, pendingModelRestart: false, deliberateKill: false }));
+      current = get(claudeCodeSessions).get(id);
+      if (!current) throw new Error("Session lost during model restart");
     }
-    await spawnClaudeCode(id, cwd, message, claudeSessionId, extraArgs);
+
+    await ensureProcess(current);
+    const inputMsg = JSON.stringify({
+      type: "user",
+      message: { role: "user", content: message }
+    });
+    await writeClaudeCode(id, inputMsg);
   } catch (err) {
-    updateSession(id, () => ({
-      status: "error",
-      error: String(err),
-    }));
+    updateSession(id, () => ({ status: "error", error: String(err) }));
   }
 }
 
 export function setClaudeCodeModel(id: string, model: string): void {
+  const sessions = get(claudeCodeSessions);
+  const session = sessions.get(id);
   updateSession(id, () => ({ selectedModel: model || undefined }));
+  if (session?.processAlive) {
+    if (session.status === "running") {
+      // Can't kill mid-run; flag for restart when the run finishes
+      updateSession(id, () => ({ pendingModelRestart: true }));
+    } else {
+      updateSession(id, () => ({ deliberateKill: true }));
+      closeClaudeCode(id).catch(() => {});
+      updateSession(id, () => ({ processAlive: false }));
+    }
+  }
 }
 
 export async function stopClaudeCode(id: string): Promise<void> {
+  updateSession(id, () => ({ deliberateKill: true }));
   await closeClaudeCode(id);
-  updateSession(id, () => ({ status: "ready" }));
+  updateSession(id, () => ({ status: "ready", processAlive: false }));
 }
 
 export function removeClaudeCodeSession(id: string): void {
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);
-  if (session && session.status === "running") {
+  if (session?.processAlive) {
     closeClaudeCode(id).catch(() => {});
   }
   claudeCodeSessions.update((sessions) => {

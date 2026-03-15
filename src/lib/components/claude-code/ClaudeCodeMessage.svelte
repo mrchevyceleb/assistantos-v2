@@ -21,9 +21,11 @@
       const content = message.raw?.message?.content;
       if (Array.isArray(content)) {
         return content
-          .filter((c: any) => c.type === "text")
-          .map((c: any) => c.text)
-          .join("\n");
+          .filter((c: any) => c.type === "text" && c.text)
+          .map((c: any) => c.text.trim())
+          .filter(Boolean)
+          .join("\n")
+          .trim();
       }
       return "";
     }
@@ -69,24 +71,42 @@
   let isError = $derived(message.type === "error");
   let isAssistant = $derived(message.type === "assistant");
 
-  // Render markdown for assistant text content (with version guard against stale renders)
+  // Detect if this is a streaming (in-progress) assistant message vs final
+  // Final messages have usage data or stop_reason; streaming ones don't
+  let isStreaming = $derived(
+    isAssistant && !message.raw?.message?.usage && !message.raw?.message?.stop_reason
+  );
+
+  // Render markdown for assistant text content (debounced during streaming, immediate on final)
   let renderedHtml = $state('');
   let renderVersion = 0;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function doRender(text: string) {
+    const thisVersion = ++renderVersion;
+    renderMarkdown(text).then(html => {
+      if (thisVersion === renderVersion) {
+        renderedHtml = html.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+      }
+    });
+  }
 
   $effect(() => {
     if (!isAssistant || !textContent) {
       renderedHtml = '';
       renderVersion++;
+      if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
       return;
     }
-    const thisVersion = ++renderVersion;
-    renderMarkdown(textContent).then(html => {
-      // Only apply if this is still the latest render request
-      if (thisVersion === renderVersion) {
-        // Sanitize: strip event handler attributes (onerror, onclick, etc.)
-        renderedHtml = html.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '');
-      }
-    });
+    if (isStreaming) {
+      // Debounce during streaming: render every 300ms
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => { debounceTimer = null; doRender(textContent); }, 300);
+    } else {
+      // Final message: render immediately
+      if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+      doRender(textContent);
+    }
   });
 
   // Tool call expand state
@@ -200,7 +220,11 @@
           onclick={() => toggleTool(idx)}
         >
           <div class="w-3.5 h-3.5 shrink-0 flex items-center justify-center">
-            <div class="w-2 h-2 rounded-full bg-accent/60" style="animation: cc-pulse 1.5s ease-in-out infinite;"></div>
+            {#if isStreaming}
+              <div class="w-2 h-2 rounded-full bg-accent/60" style="animation: cc-pulse 1.5s ease-in-out infinite;"></div>
+            {:else}
+              <div class="w-2 h-2 rounded-full bg-accent/40"></div>
+            {/if}
           </div>
           <span class="text-text-secondary font-mono truncate">{tool.name}</span>
           <span class="flex-1"></span>
