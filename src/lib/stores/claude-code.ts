@@ -119,6 +119,36 @@ function initListeners() {
       // Unwrap to get the actual event for content_block_start/delta/stop
       const streamEvent = parsed.type === "stream_event" ? parsed.event : null;
 
+      // message_start carries input token usage (context consumed so far)
+      if (streamEvent?.type === "message_start") {
+        const msgUsage = streamEvent.message?.usage;
+        if (msgUsage) {
+          updateSession(id, (s) => ({
+            contextUsage: {
+              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+              inputTokens: msgUsage.input_tokens || 0,
+              cacheReadTokens: msgUsage.cache_read_input_tokens || 0,
+              cacheCreationTokens: msgUsage.cache_creation_input_tokens || 0,
+            },
+          }));
+        }
+        return;
+      }
+
+      // message_delta carries output token usage
+      if (streamEvent?.type === "message_delta") {
+        const deltaUsage = streamEvent.usage;
+        if (deltaUsage) {
+          updateSession(id, (s) => ({
+            contextUsage: {
+              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+              outputTokens: deltaUsage.output_tokens || 0,
+            },
+          }));
+        }
+        return;
+      }
+
       if (streamEvent?.type === "content_block_start") {
         if (!streamingState.has(id)) {
           streamingState.set(id, { text: "", toolUses: [], seq: messageSeq++, currentBlockType: "text" });
