@@ -10,10 +10,20 @@
 
   let { message, fontSize = 15, fontFamily = 'inherit' }: Props = $props();
 
+  // Extract user-attached images
+  let userImages = $derived((() => {
+    if (message.type !== "user") return [];
+    if (typeof message.raw === "object" && message.raw !== null && Array.isArray(message.raw.images)) {
+      return message.raw.images as Array<{ base64: string; mediaType: string }>;
+    }
+    return [];
+  })());
+
   // Extract text content from messages
   let textContent = $derived((() => {
     if (message.type === "user") {
       if (typeof message.raw === "string") return message.raw;
+      if (typeof message.raw === "object" && message.raw !== null && typeof message.raw.text === "string") return message.raw.text;
       // tool_result messages from CLI have type "user" but contain objects - skip them
       return "";
     }
@@ -119,7 +129,7 @@
   }
 </script>
 
-{#if isUser && textContent}
+{#if isUser && (textContent || userImages.length > 0)}
   <!-- User message -->
   <div class="flex justify-end">
     <div
@@ -132,7 +142,21 @@
         border: 1px solid rgba(88, 180, 208, 0.2);
       "
     >
-      <pre class="whitespace-pre-wrap break-words font-sans" style="margin: 0;">{textContent}</pre>
+      {#if userImages.length > 0}
+        <div class="flex flex-wrap gap-2" style="margin-bottom: {textContent ? '8px' : '0'};">
+          {#each userImages as img}
+            <img
+              src="data:{img.mediaType};base64,{img.base64}"
+              alt="Attached image"
+              class="rounded-lg border border-border/30 cursor-pointer hover:opacity-80 transition-opacity"
+              style="max-width: 240px; max-height: 180px; object-fit: contain;"
+            />
+          {/each}
+        </div>
+      {/if}
+      {#if textContent}
+        <pre class="whitespace-pre-wrap break-words font-sans" style="margin: 0;">{textContent}</pre>
+      {/if}
     </div>
   </div>
 {:else if isSystem}

@@ -55,11 +55,16 @@
       const anthropicModel = ANTHROPIC_MODELS.find((m) => `anthropic/${m.id}` === id);
       const openaiModel = OPENAI_MODELS.find((m) => `openai/${m.id}` === id);
       const resolved = orModel || lmsModel || (anthropicModel ? { ...anthropicModel, id } : null) || (openaiModel ? { ...openaiModel, id } : null);
+      // Mark as stale if it's an OpenRouter model (has prefix/) but not found in available models
+      // Exclude Anthropic, OpenAI, and LM Studio models from stale detection
+      const isOpenRouterModel = id.includes('/') && !id.startsWith('anthropic/') && !id.startsWith('openai/') && !lmsModel;
+      const stale = isOpenRouterModel && $availableModels.length > 0 && !orModel;
       return {
         id,
         name: resolved ? getModelDisplayName(resolved) : getModelDisplayName(id),
         provider: getProviderLabel(id),
         isDefault: $settings.aiModel === id,
+        stale,
       };
     }),
   );
@@ -235,8 +240,11 @@
                 style="top: 2px; width: 18px; height: 18px; background: #fff; transform: translateX(18px);"></div>
             </div>
             <div class="flex-1 min-w-0 flex items-center" style="gap: 8px;">
-              <span class="text-text-primary text-[13px] font-medium">{model.name}</span>
+              <span class="{model.stale ? 'text-red-400 line-through' : 'text-text-primary'} text-[13px] font-medium">{model.name}</span>
               <span class="text-text-muted text-[10px] border border-border/20 rounded" style="padding: 1px 6px; opacity: 0.7;">{model.provider}</span>
+              {#if model.stale}
+                <span class="text-red-400 text-[10px] border border-red-400/30 rounded" style="padding: 1px 6px;">Not found on OpenRouter</span>
+              {/if}
             </div>
             {#if model.isDefault}
               <span class="text-accent text-[11px] font-medium border border-accent/30 rounded" style="padding: 2px 8px;">Default</span>
@@ -325,7 +333,7 @@
           <button
             class="text-accent hover:bg-accent/10 rounded text-[11px] shrink-0 border border-accent/30 disabled:opacity-50"
             style="padding: 4px 8px;"
-            onclick={() => fetchModels()}
+            onclick={() => fetchModels('openrouter')}
             disabled={$modelsLoading || !$settings.aiOpenRouterApiKey.trim()}
           >{$modelsLoading ? 'Loading...' : 'Refresh Models'}</button>
         </div>

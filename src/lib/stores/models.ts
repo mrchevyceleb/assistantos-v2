@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { aiFetchModels, aiLMStudioLoadModel, aiLMStudioUnloadModel } from '$lib/utils/tauri';
-import { settings, getActiveAIBaseUrl, getActiveAIKey } from './settings';
+import { settings, getActiveAIBaseUrl, getActiveAIKey, updateSetting } from './settings';
 import { inferModelSettings } from '$lib/ai/model-registry';
 
 export interface OpenRouterModel {
@@ -18,6 +18,8 @@ export const TOP_PROVIDERS = [
   'google/',
   'mistralai/',
   'deepseek/',
+  'qwen/',
+  'meta-llama/',
   'z-ai/',
   'minimax/',
   'moonshotai/',
@@ -139,9 +141,16 @@ export function inferContextLength(modelId: string): number {
   return inferModelSettings(modelId).contextWindow;
 }
 
-export async function fetchModels(): Promise<void> {
+/**
+ * Fetch available models. When called without arguments, uses the current
+ * provider setting. Pass `providerOverride` to force fetching from a
+ * specific provider (e.g. 'openrouter' from the OpenRouter refresh button).
+ */
+export async function fetchModels(providerOverride?: 'openrouter' | 'anthropic' | 'openai' | 'lmstudio'): Promise<void> {
   const s = get(settings);
-  if (s.aiProvider === 'anthropic') {
+  const provider = providerOverride || s.aiProvider;
+
+  if (provider === 'anthropic') {
     availableModels.set(
       ANTHROPIC_MODELS.map((m) => ({
         ...m,
@@ -153,7 +162,7 @@ export async function fetchModels(): Promise<void> {
     return;
   }
 
-  if (s.aiProvider === 'openai') {
+  if (provider === 'openai') {
     availableModels.set(
       OPENAI_MODELS.map((m) => ({
         ...m,
@@ -165,10 +174,15 @@ export async function fetchModels(): Promise<void> {
     return;
   }
 
-  const apiKey = getActiveAIKey(s);
-  const baseUrl = getActiveAIBaseUrl(s);
+  // For OpenRouter (explicit or fallback), always use the OpenRouter key and base URL
+  const apiKey = provider === 'openrouter'
+    ? (s.aiOpenRouterApiKey || '').trim()
+    : getActiveAIKey(s);
+  const baseUrl = provider === 'openrouter'
+    ? (s.aiOpenRouterBaseUrl || 'https://openrouter.ai/api/v1').trim()
+    : getActiveAIBaseUrl(s);
 
-  if (!apiKey && s.aiProvider !== 'lmstudio') {
+  if (!apiKey && provider !== 'lmstudio') {
     modelsError.set('No API key configured');
     return;
   }
@@ -191,9 +205,75 @@ export async function fetchModels(): Promise<void> {
 
     availableModels.set(models);
     modelsLastFetched.set(Date.now());
+
+    // Prune stale enabled models that no longer exist on the provider
+    pruneStaleModels(models);
   } catch (e) {
     modelsError.set(e instanceof Error ? e.message : String(e));
   } finally {
     modelsLoading.set(false);
+  }
+}
+
+/**
+ * Remove enabled models that no longer exist in the fetched model list.
+ * Only prunes OpenRouter models (those with a prefix/ that aren't anthropic/ or openai/).
+ * If the current default model was pruned, falls back to the first remaining enabled model.
+ */
+function pruneStaleModels(freshModels: OpenRouterModel[]): void {
+  const s = get(settings);
+  const freshIds = new Set(freshModels.map((m) => m.id));
+
+  // Also include hardcoded Anthropic/OpenAI models as always-valid
+  for (const m of ANTHROPIC_MODELS) freshIds.add(`anthropic/${m.id}`);
+  for (const m of OPENAI_MODELS) freshIds.add(`openai/${m.id}`);
+
+  // Also include LM Studio models as always-valid (they use org/model IDs too)
+  const lmsIds = new Set(get(lmStudioModels).map((m) => m.id));
+
+  const enabled = s.aiEnabledModels || [];
+  const pruned = enabled.filter((id) => {
+    // Models without a prefix are managed separately (LM Studio bare IDs)
+    if (!id.includes('/')) return true;
+    // Anthropic/OpenAI direct models are always valid (hardcoded lists)
+    if (id.startsWith('anthropic/') || id.startsWith('openai/')) return true;
+    // LM Studio models with org/model format are always valid
+    if (lmsIds.has(id)) return true;
+    // If LM Studio is the active provider, don't prune slash models
+    // (LM Studio list may not be loaded yet)
+    if (s.aiProvider === 'lmstudio') return true;
+    // OpenRouter models must exist in the fresh list
+    return freshIds.has(id);
+  });
+
+  if (pruned.length < enabled.length) {
+    const removed = enabled.filter((id) => !pruned.includes(id));
+    console.warn('[models] Pruned stale models:', removed);
+    updateSetting('aiEnabledModels', pruned);
+
+    // If the default model was pruned, switch to first available
+    if (s.aiModel && !pruned.includes(s.aiModel) && !freshIds.has(s.aiModel)) {
+      const fallback = pruned[0] || 'anthropic/claude-sonnet-4-6';
+      console.warn(`[models] Default model ${s.aiModel} no longer available, switching to ${fallback}`);
+      updateSetting('aiModel', fallback);
+    }
+  }
+}
+
+/**
+ * Auto-refresh OpenRouter models on app startup.
+ * Silently fetches the latest model list if an OpenRouter API key exists.
+ */
+export async function refreshModelsOnStartup(): Promise<void> {
+  const s = get(settings);
+  const orKey = (s.aiOpenRouterApiKey || '').trim();
+
+  // Always refresh OpenRouter models if we have a key
+  if (orKey) {
+    try {
+      await fetchModels('openrouter');
+    } catch {
+      // Silent failure on startup - don't block the app
+    }
   }
 }

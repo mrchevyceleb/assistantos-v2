@@ -199,6 +199,13 @@ export function inferProviderForModel(
   if (id.startsWith('claude-')) return 'Anthropic';
   if (id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('codex-')) return 'OpenAI';
 
+  // Any model with a prefix/ format (e.g. qwen/, meta-llama/, cohere/) is an OpenRouter model
+  if (id.includes('/')) {
+    const prefix = id.split('/')[0];
+    const label = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+    return `${label} via OpenRouter`;
+  }
+
   if (activeProvider) return getProviderDisplayName(activeProvider);
   return 'Unknown';
 }
@@ -211,11 +218,13 @@ export function inferRoutingProviderForModel(
   const id = (modelId || '').toLowerCase();
   if (!id) return fallback;
 
-  if (id.startsWith('google/') || id.startsWith('mistralai/') || id.startsWith('deepseek/') || id.startsWith('moonshotai/') || id.startsWith('z-ai/') || id.startsWith('minimax/')) {
-    return 'openrouter';
-  }
   if (id.startsWith('anthropic/') || id.startsWith('claude-')) return 'anthropic';
   if (id.startsWith('openai/') || id.startsWith('gpt-') || id.startsWith('o3') || id.startsWith('o4') || id.startsWith('codex-')) return 'openai';
+
+  // Any model with a prefix/ format (e.g. qwen/, google/, meta-llama/) routes through OpenRouter,
+  // unless the current fallback is lmstudio (LM Studio also uses org/model IDs)
+  if (id.includes('/') && fallback !== 'lmstudio') return 'openrouter';
+
   return fallback;
 }
 

@@ -98,14 +98,14 @@
     }
   });
 
-  function handleSend(message: string, payload?: { mentions?: string[] }) {
+  function handleSend(message: string, payload?: { mentions?: string[]; images?: Array<{ mediaType: string; base64: string }> }) {
     if (!session || isRunning) return;
     let fullMessage = message;
     if (payload?.mentions && payload.mentions.length > 0) {
       const mentionList = payload.mentions.map(m => `@${m}`).join(' ');
       fullMessage = `${mentionList}\n\n${message}`;
     }
-    sendToClaudeCode(sessionId, fullMessage);
+    sendToClaudeCode(sessionId, fullMessage, payload?.images);
   }
 
   function handleStop() {

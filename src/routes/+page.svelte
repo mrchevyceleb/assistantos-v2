@@ -21,6 +21,7 @@
   import { restoreState, startAutoSave, stopAutoSave, setSidebarViewRef } from "$lib/stores/persistence";
   import { initZoom, zoomIn, zoomOut, resetZoom } from "$lib/stores/ui";
   import { settingsVisible, aiSettingsVisible, settings } from "$lib/stores/settings";
+  import { refreshModelsOnStartup } from "$lib/stores/models";
   import ChatDockPanel from "$lib/components/chat/ChatDockPanel.svelte";
   import AISettingsPage from "$lib/components/ai-settings/AISettingsPage.svelte";
   import {
@@ -145,6 +146,9 @@
 
       // Start auto-saving after restore is complete
       startAutoSave();
+
+      // Auto-refresh OpenRouter models and prune stale ones
+      refreshModelsOnStartup();
     });
 
     return () => {

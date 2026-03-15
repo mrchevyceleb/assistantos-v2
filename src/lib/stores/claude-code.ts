@@ -366,7 +366,12 @@ export function launchClaudeCode(cwd: string): string {
   return id;
 }
 
-export async function sendToClaudeCode(id: string, message: string): Promise<void> {
+export interface ImageAttachment {
+  mediaType: string;
+  base64: string;
+}
+
+export async function sendToClaudeCode(id: string, message: string, images?: ImageAttachment[]): Promise<void> {
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);
   if (!session) throw new Error("Session not found");
@@ -375,7 +380,7 @@ export async function sendToClaudeCode(id: string, message: string): Promise<voi
   updateSession(id, (s) => ({
     messages: [...s.messages, {
       type: "user" as const,
-      raw: message,
+      raw: { text: message, images: images?.map(img => ({ base64: img.base64, mediaType: img.mediaType })) },
       timestamp: Date.now(),
       seq: messageSeq++,
     }],
@@ -399,9 +404,31 @@ export async function sendToClaudeCode(id: string, message: string): Promise<voi
     }
 
     await ensureProcess(current);
+
+    // Build content: text + optional images in Anthropic content block format
+    let content: any;
+    if (images && images.length > 0) {
+      content = [];
+      for (const img of images) {
+        content.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: img.mediaType,
+            data: img.base64,
+          },
+        });
+      }
+      if (message) {
+        content.push({ type: "text", text: message });
+      }
+    } else {
+      content = message;
+    }
+
     const inputMsg = JSON.stringify({
       type: "user",
-      message: { role: "user", content: message }
+      message: { role: "user", content }
     });
     await writeClaudeCode(id, inputMsg);
   } catch (err) {
