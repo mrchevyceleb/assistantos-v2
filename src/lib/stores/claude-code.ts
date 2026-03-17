@@ -89,12 +89,62 @@ function extractUsage(parsed: any): Partial<ContextUsage> | null {
 
 let listenersInitialized = false;
 
+// Track streaming state per session (outside store to avoid unnecessary reactivity)
+const streamingState = new Map<string, { text: string; toolUses: any[]; seq: number; currentBlockType: string }>();
+
+// Throttle store updates for streaming deltas to avoid flooding Svelte reactivity
+const STREAM_FLUSH_INTERVAL_MS = 80;
+const pendingFlush = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleStreamFlush(id: string) {
+  if (pendingFlush.has(id)) return; // already scheduled
+  pendingFlush.set(id, setTimeout(() => {
+    pendingFlush.delete(id);
+    flushStreamToStore(id);
+  }, STREAM_FLUSH_INTERVAL_MS));
+}
+
+function flushStreamToStore(id: string) {
+  const state = streamingState.get(id);
+  if (!state) return;
+  updateSession(id, (s) => {
+    const streamMsg: ClaudeCodeMessage = {
+      type: "assistant",
+      raw: {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            ...(state.text ? [{ type: "text", text: state.text }] : []),
+            ...state.toolUses.map(t => ({ ...t })),
+          ],
+        },
+      },
+      timestamp: Date.now(),
+      seq: state.seq,
+    };
+    const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
+    const messages = [...s.messages];
+    if (existingIdx >= 0) {
+      messages[existingIdx] = streamMsg;
+    } else {
+      messages.push(streamMsg);
+    }
+    return { messages };
+  });
+}
+
+function cancelStreamFlush(id: string) {
+  const timer = pendingFlush.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    pendingFlush.delete(id);
+  }
+}
+
 function initListeners() {
   if (listenersInitialized) return;
   listenersInitialized = true;
-
-  // Track streaming state per session (outside store to avoid unnecessary reactivity)
-  const streamingState = new Map<string, { text: string; toolUses: any[]; seq: number; currentBlockType: string }>();
 
   listen<{ id: string; data: string }>("claude-code-output", (event) => {
     const { id, data } = event.payload;
@@ -180,33 +230,8 @@ function initListeners() {
               lastTool._rawInput = (lastTool._rawInput || "") + delta.partial_json;
             }
           }
-          // Update the live streaming message in the session
-          updateSession(id, (s) => {
-            const streamMsg: ClaudeCodeMessage = {
-              type: "assistant",
-              raw: {
-                type: "assistant",
-                message: {
-                  role: "assistant",
-                  content: [
-                    ...(state.text ? [{ type: "text", text: state.text }] : []),
-                    ...state.toolUses.map(t => ({ ...t })),
-                  ],
-                },
-              },
-              timestamp: Date.now(),
-              seq: state.seq,
-            };
-            // Replace the streaming message (same seq) or append it
-            const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
-            const messages = [...s.messages];
-            if (existingIdx >= 0) {
-              messages[existingIdx] = streamMsg;
-            } else {
-              messages.push(streamMsg);
-            }
-            return { messages };
-          });
+          // Schedule a throttled flush to the store instead of updating immediately
+          scheduleStreamFlush(id);
         }
         return;
       }
@@ -239,6 +264,7 @@ function initListeners() {
 
         // Final assistant message replaces streaming message
         if (parsed.type === "assistant") {
+          cancelStreamFlush(id); // cancel any pending throttled flush
           const state = streamingState.get(id);
           if (state) {
             // Replace the streaming message with the final one
@@ -279,6 +305,7 @@ function initListeners() {
         if (parsed.type === "result") {
           updates.totalCost = (s.totalCost || 0) + (parsed.total_cost_usd || 0);
           updates.status = "ready";
+          cancelStreamFlush(id);
           streamingState.delete(id); // Clean up any leftover streaming state
           const resultUsage = parsed.usage;
           if (resultUsage) {
@@ -321,6 +348,7 @@ function initListeners() {
   listen<{ id: string; exit_code: number | null }>("claude-code-closed", (event) => {
     const { id, exit_code } = event.payload;
     // Finalize any in-flight streaming message before updating session
+    cancelStreamFlush(id);
     const orphanedStream = streamingState.get(id);
     if (orphanedStream) {
       streamingState.delete(id);
@@ -489,6 +517,8 @@ export async function stopClaudeCode(id: string): Promise<void> {
 }
 
 export function removeClaudeCodeSession(id: string): void {
+  cancelStreamFlush(id);
+  streamingState.delete(id);
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);
   if (session?.processAlive) {

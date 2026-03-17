@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { tick } from 'svelte';
   import { claudeCodeSessions, sendToClaudeCode, stopClaudeCode, removeClaudeCodeSession, setClaudeCodeModel } from '$lib/stores/claude-code';
   import { settings, aiSettingsVisible } from '$lib/stores/settings';
   import CCMessage from './ClaudeCodeMessage.svelte';
@@ -85,11 +84,16 @@
     shouldAutoScroll = scrollHeight - scrollTop - clientHeight < AUTO_SCROLL_THRESHOLD_PX;
   }
 
-  async function scrollToBottom() {
-    await tick();
-    if (messagesContainer && shouldAutoScroll) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
+  let scrollRafId: number | null = null;
+
+  function scrollToBottom() {
+    if (scrollRafId !== null) return; // already scheduled
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null;
+      if (messagesContainer && shouldAutoScroll) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    });
   }
 
   $effect(() => {
