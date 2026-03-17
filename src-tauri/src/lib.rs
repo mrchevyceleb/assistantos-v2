@@ -810,10 +810,16 @@ fn close_terminal(id: String, state: tauri::State<'_, TerminalState>) -> Result<
 // `--input-format stream-json` on stdin and `--output-format stream-json` on stdout.
 // Messages are sent via `write_claude_code` which writes JSON to stdin.
 
+/// Monotonically increasing generation counter to prevent batcher threads from
+/// reaping a respawned process that reuses the same session ID.
+static CLAUDE_SPAWN_GEN: AtomicU64 = AtomicU64::new(0);
+
 struct ClaudeCodeProcess {
     child: std::process::Child,
     stdin: Option<std::process::ChildStdin>,
     alive: Arc<AtomicBool>,
+    /// Unique generation token assigned at spawn time.
+    generation: u64,
 }
 
 #[derive(Default)]
@@ -825,7 +831,7 @@ struct ClaudeCodeState {
 #[derive(Clone, Serialize)]
 struct ClaudeCodeOutputPayload {
     id: String,
-    data: String,
+    lines: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -877,7 +883,10 @@ fn spawn_claude_code(
             old.alive.store(false, Ordering::Relaxed);
             drop(old.stdin.take());
             let _ = old.child.kill();
-            let _ = old.child.wait();
+            // Reap on background thread to avoid blocking the IPC dispatcher
+            std::thread::spawn(move || {
+                let _ = old.child.wait();
+            });
         }
     }
 
@@ -927,7 +936,8 @@ fn spawn_claude_code(
     let alive_stdout = Arc::clone(&alive);
     let alive_stderr = Arc::clone(&alive);
 
-    let process = ClaudeCodeProcess { child, stdin, alive };
+    let generation = CLAUDE_SPAWN_GEN.fetch_add(1, Ordering::Relaxed);
+    let process = ClaudeCodeProcess { child, stdin, alive, generation };
 
     {
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
@@ -936,10 +946,14 @@ fn spawn_claude_code(
 
     let state_arc = Arc::clone(&state.processes);
 
-    // Spawn stdout reader thread
+    // Spawn stdout reader + batcher threads for batched event emission
     if let Some(stdout) = stdout {
         let reader_id = id.clone();
         let app_handle = app.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+
+        // Reader thread: reads lines from stdout and sends to channel
         std::thread::spawn(move || {
             use std::io::BufRead;
             let reader = std::io::BufReader::new(stdout);
@@ -950,25 +964,87 @@ fn spawn_claude_code(
                 match line {
                     Ok(data) => {
                         if !data.is_empty() {
-                            let _ = app_handle.emit(
-                                "claude-code-output",
-                                ClaudeCodeOutputPayload {
-                                    id: reader_id.clone(),
-                                    data,
-                                },
-                            );
+                            if tx.send(data).is_err() {
+                                break;
+                            }
                         }
                     }
                     Err(_) => break,
                 }
             }
+            // tx drops here, signaling the batcher thread
+        });
+
+        // Batcher thread: collects lines and emits them in batches every ~50ms
+        let batcher_generation = generation;
+        std::thread::spawn(move || {
+            use std::time::{Duration, Instant};
+
+            const BATCH_INTERVAL: Duration = Duration::from_millis(50);
+            let mut batch: Vec<String> = Vec::new();
+
+            loop {
+                // Wait for first item (blocks until data or channel closes)
+                match rx.recv() {
+                    Ok(line) => batch.push(line),
+                    Err(_) => {
+                        // Channel closed (reader done). Flush remaining and exit.
+                        if !batch.is_empty() {
+                            let _ = app_handle.emit(
+                                "claude-code-output",
+                                ClaudeCodeOutputPayload {
+                                    id: reader_id.clone(),
+                                    lines: std::mem::take(&mut batch),
+                                },
+                            );
+                        }
+                        break;
+                    }
+                }
+
+                // Drain any additional items that arrived within the batch interval
+                let deadline = Instant::now() + BATCH_INTERVAL;
+                loop {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        break;
+                    }
+                    match rx.recv_timeout(remaining) {
+                        Ok(line) => batch.push(line),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+
+                // Emit the batch
+                if !batch.is_empty() {
+                    let _ = app_handle.emit(
+                        "claude-code-output",
+                        ClaudeCodeOutputPayload {
+                            id: reader_id.clone(),
+                            lines: std::mem::take(&mut batch),
+                        },
+                    );
+                }
+            }
+
             // Process finished naturally. Reap child and report exit status.
+            // Only reap if the process in the map is still OUR generation (not a respawned one).
             let exit_code = if let Ok(mut processes) = state_arc.lock() {
-                if let Some(mut proc) = processes.remove(&reader_id) {
-                    proc.child.wait()
-                        .ok()
-                        .and_then(|s| s.code())
+                if let Some(proc) = processes.get(&reader_id) {
+                    if proc.generation == batcher_generation {
+                        // It's ours. Remove and reap.
+                        if let Some(mut proc) = processes.remove(&reader_id) {
+                            proc.child.wait().ok().and_then(|s| s.code())
+                        } else {
+                            None
+                        }
+                    } else {
+                        // A new process was spawned under the same ID. Don't touch it.
+                        None
+                    }
                 } else {
+                    // Already removed (e.g. by close_claude_code). Nothing to reap.
                     None
                 }
             } else {
@@ -1002,7 +1078,7 @@ fn spawn_claude_code(
                                 "claude-code-output",
                                 ClaudeCodeOutputPayload {
                                     id: reader_id.clone(),
-                                    data: format!("[stderr] {}", data),
+                                    lines: vec![format!("[stderr] {}", data)],
                                 },
                             );
                         }
@@ -1026,7 +1102,11 @@ fn close_claude_code(
         process.alive.store(false, Ordering::Relaxed);
         drop(process.stdin.take());
         let _ = process.child.kill();
-        let _ = process.child.wait();
+        // Reap the child on a background thread so we don't block the IPC dispatcher.
+        // Blocking here starves ALL Tauri commands (terminals, file ops, etc.).
+        std::thread::spawn(move || {
+            let _ = process.child.wait();
+        });
     }
     Ok(())
 }

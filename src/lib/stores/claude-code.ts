@@ -92,6 +92,9 @@ let listenersInitialized = false;
 // Track streaming state per session (outside store to avoid unnecessary reactivity)
 const streamingState = new Map<string, { text: string; toolUses: any[]; seq: number; currentBlockType: string }>();
 
+// Pending usage updates (batched to avoid unthrottled updateSession calls)
+const pendingUsage = new Map<string, Partial<ContextUsage>>();
+
 // Throttle store updates for streaming deltas to avoid flooding Svelte reactivity
 const STREAM_FLUSH_INTERVAL_MS = 80;
 const pendingFlush = new Map<string, ReturnType<typeof setTimeout>>();
@@ -106,31 +109,49 @@ function scheduleStreamFlush(id: string) {
 
 function flushStreamToStore(id: string) {
   const state = streamingState.get(id);
-  if (!state) return;
+  const usage = pendingUsage.get(id);
+  if (!state && !usage) return;
+
   updateSession(id, (s) => {
-    const streamMsg: ClaudeCodeMessage = {
-      type: "assistant",
-      raw: {
-        type: "assistant",
-        message: {
-          role: "assistant",
-          content: [
-            ...(state.text ? [{ type: "text", text: state.text }] : []),
-            ...state.toolUses.map(t => ({ ...t })),
-          ],
-        },
-      },
-      timestamp: Date.now(),
-      seq: state.seq,
-    };
-    const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
-    const messages = [...s.messages];
-    if (existingIdx >= 0) {
-      messages[existingIdx] = streamMsg;
-    } else {
-      messages.push(streamMsg);
+    const updates: Partial<ClaudeCodeSession> = {};
+
+    // Flush pending usage updates
+    if (usage) {
+      updates.contextUsage = {
+        ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+        ...usage,
+      };
+      pendingUsage.delete(id);
     }
-    return { messages };
+
+    // Flush streaming message
+    if (state) {
+      const streamMsg: ClaudeCodeMessage = {
+        type: "assistant",
+        raw: {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [
+              ...(state.text ? [{ type: "text", text: state.text }] : []),
+              ...state.toolUses.map(t => ({ ...t })),
+            ],
+          },
+        },
+        timestamp: Date.now(),
+        seq: state.seq,
+      };
+      const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
+      const messages = [...s.messages];
+      if (existingIdx >= 0) {
+        messages[existingIdx] = streamMsg;
+      } else {
+        messages.push(streamMsg);
+      }
+      updates.messages = messages;
+    }
+
+    return updates;
   });
 }
 
@@ -146,57 +167,89 @@ function initListeners() {
   if (listenersInitialized) return;
   listenersInitialized = true;
 
-  listen<{ id: string; data: string }>("claude-code-output", (event) => {
-    const { id, data } = event.payload;
+  listen<{ id: string; lines: string[] }>("claude-code-output", (event) => {
+    const { id, lines } = event.payload;
 
-    if (data.startsWith("[stderr] ")) {
-      updateSession(id, (s) => ({
-        messages: [...s.messages, {
+    // Process the entire batch, accumulating non-streaming updates into a single
+    // updateSession call at the end. This prevents N store updates (and N Svelte
+    // reactive cascades) per batch, which was the primary cause of main-thread starvation.
+    let batchUpdates: Partial<ClaudeCodeSession> | null = null;
+    let batchMessages: ClaudeCodeMessage[] | null = null;
+    // Track whether we need a store update at all for this batch
+    let needsStoreUpdate = false;
+
+    // Helper: get the messages array we're building up (lazy-copies from session)
+    function getMessages(): ClaudeCodeMessage[] {
+      if (batchMessages) return batchMessages;
+      const sessions = get(claudeCodeSessions);
+      const session = sessions.get(id);
+      batchMessages = session ? [...session.messages] : [];
+      return batchMessages;
+    }
+
+    function ensureBatchUpdates(): Partial<ClaudeCodeSession> {
+      if (!batchUpdates) batchUpdates = {};
+      needsStoreUpdate = true;
+      return batchUpdates;
+    }
+
+    for (const data of lines) {
+      if (data.startsWith("[stderr] ")) {
+        const msgs = getMessages();
+        msgs.push({
           type: "stderr" as const,
           raw: data.slice(9),
           timestamp: Date.now(),
           seq: messageSeq++,
-        }],
-      }));
-      return;
-    }
+        });
+        ensureBatchUpdates().messages = msgs;
+        continue;
+      }
 
-    try {
-      const parsed = JSON.parse(data);
+      let parsed: any;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        const msgs = getMessages();
+        msgs.push({
+          type: "stderr" as const,
+          raw: data,
+          timestamp: Date.now(),
+          seq: messageSeq++,
+        });
+        ensureBatchUpdates().messages = msgs;
+        continue;
+      }
 
       // ── Streaming delta handling ──
-      // CLI wraps streaming events as: {"type": "stream_event", "event": {...}}
-      // Unwrap to get the actual event for content_block_start/delta/stop
       const streamEvent = parsed.type === "stream_event" ? parsed.event : null;
 
-      // message_start carries input token usage (context consumed so far)
+      // message_start carries input token usage - accumulate, don't flush
       if (streamEvent?.type === "message_start") {
         const msgUsage = streamEvent.message?.usage;
         if (msgUsage) {
-          updateSession(id, (s) => ({
-            contextUsage: {
-              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
-              inputTokens: msgUsage.input_tokens || 0,
-              cacheReadTokens: msgUsage.cache_read_input_tokens || 0,
-              cacheCreationTokens: msgUsage.cache_creation_input_tokens || 0,
-            },
-          }));
+          pendingUsage.set(id, {
+            ...(pendingUsage.get(id) || {}),
+            inputTokens: msgUsage.input_tokens || 0,
+            cacheReadTokens: msgUsage.cache_read_input_tokens || 0,
+            cacheCreationTokens: msgUsage.cache_creation_input_tokens || 0,
+          });
+          scheduleStreamFlush(id);
         }
-        return;
+        continue;
       }
 
-      // message_delta carries output token usage
+      // message_delta carries output token usage - accumulate, don't flush
       if (streamEvent?.type === "message_delta") {
         const deltaUsage = streamEvent.usage;
         if (deltaUsage) {
-          updateSession(id, (s) => ({
-            contextUsage: {
-              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
-              outputTokens: deltaUsage.output_tokens || 0,
-            },
-          }));
+          pendingUsage.set(id, {
+            ...(pendingUsage.get(id) || {}),
+            outputTokens: deltaUsage.output_tokens || 0,
+          });
+          scheduleStreamFlush(id);
         }
-        return;
+        continue;
       }
 
       if (streamEvent?.type === "content_block_start") {
@@ -205,7 +258,6 @@ function initListeners() {
         }
         const state = streamingState.get(id)!;
         state.currentBlockType = streamEvent.content_block?.type || "text";
-        // If it's a tool_use block, start tracking it
         if (streamEvent.content_block?.type === "tool_use") {
           state.toolUses.push({
             type: "tool_use",
@@ -214,7 +266,7 @@ function initListeners() {
             input: {},
           });
         }
-        return;
+        continue;
       }
 
       if (streamEvent?.type === "content_block_delta") {
@@ -224,124 +276,120 @@ function initListeners() {
           if (delta?.type === "text_delta" && delta.text) {
             state.text += delta.text;
           } else if (delta?.type === "input_json_delta" && delta.partial_json && state.currentBlockType === "tool_use") {
-            // Accumulate tool input JSON only for the current tool_use block
             const lastTool = state.toolUses[state.toolUses.length - 1];
             if (lastTool) {
               lastTool._rawInput = (lastTool._rawInput || "") + delta.partial_json;
             }
           }
-          // Schedule a throttled flush to the store instead of updating immediately
           scheduleStreamFlush(id);
         }
-        return;
+        continue;
       }
 
       if (streamEvent?.type === "content_block_stop") {
-        // Block finished, but keep accumulating (there may be more blocks)
-        return;
+        continue;
       }
 
-      // ── Final message handling ──
-      updateSession(id, (s) => {
-        const updates: Partial<ClaudeCodeSession> = {};
+      // ── Final message handling (non-streaming) ──
+      const updates = ensureBatchUpdates();
 
-        // Extract metadata from init message
-        if (parsed.type === "system" && parsed.subtype === "init") {
-          updates.model = parsed.model;
-          if (parsed.session_id) {
-            updates.claudeSessionId = parsed.session_id;
-          }
-          if (Array.isArray(parsed.slash_commands)) {
-            updates.slashCommands = parsed.slash_commands;
-          }
-          if (parsed.model) {
-            updates.contextUsage = {
-              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
-              contextWindow: parseContextWindow(parsed.model),
-            };
-          }
+      if (parsed.type === "system" && parsed.subtype === "init") {
+        updates.model = parsed.model;
+        if (parsed.session_id) updates.claudeSessionId = parsed.session_id;
+        if (Array.isArray(parsed.slash_commands)) updates.slashCommands = parsed.slash_commands;
+        if (parsed.model) {
+          const sessions = get(claudeCodeSessions);
+          const session = sessions.get(id);
+          updates.contextUsage = {
+            ...(session?.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+            contextWindow: parseContextWindow(parsed.model),
+          };
         }
+      }
 
-        // Final assistant message replaces streaming message
-        if (parsed.type === "assistant") {
-          cancelStreamFlush(id); // cancel any pending throttled flush
-          const state = streamingState.get(id);
-          if (state) {
-            // Replace the streaming message with the final one
-            const existingIdx = s.messages.findIndex(m => m.seq === state.seq);
-            const messages = [...s.messages];
-            const finalMsg: ClaudeCodeMessage = {
-              type: "assistant",
-              raw: parsed,
-              timestamp: Date.now(),
-              seq: state.seq,
-            };
-            if (existingIdx >= 0) {
-              messages[existingIdx] = finalMsg;
-            } else {
-              messages.push(finalMsg);
-            }
-            updates.messages = messages;
-            streamingState.delete(id);
+      if (parsed.type === "assistant") {
+        cancelStreamFlush(id);
+        pendingUsage.delete(id);
+        const state = streamingState.get(id);
+        const msgs = getMessages();
+        if (state) {
+          const existingIdx = msgs.findIndex(m => m.seq === state.seq);
+          const finalMsg: ClaudeCodeMessage = {
+            type: "assistant",
+            raw: parsed,
+            timestamp: Date.now(),
+            seq: state.seq,
+          };
+          if (existingIdx >= 0) {
+            msgs[existingIdx] = finalMsg;
           } else {
-            // No streaming state, just append
-            updates.messages = [...s.messages, {
-              type: "assistant" as const,
-              raw: parsed,
-              timestamp: Date.now(),
-              seq: messageSeq++,
-            }];
+            msgs.push(finalMsg);
           }
-          const usage = extractUsage(parsed);
-          if (usage) {
-            updates.contextUsage = {
-              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
-              ...usage,
-            };
-          }
-        }
-
-        // Extract cost and final usage from result
-        if (parsed.type === "result") {
-          updates.totalCost = (s.totalCost || 0) + (parsed.total_cost_usd || 0);
-          updates.status = "ready";
-          cancelStreamFlush(id);
-          streamingState.delete(id); // Clean up any leftover streaming state
-          const resultUsage = parsed.usage;
-          if (resultUsage) {
-            updates.contextUsage = {
-              ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
-              inputTokens: resultUsage.input_tokens || 0,
-              outputTokens: resultUsage.output_tokens || 0,
-              cacheReadTokens: resultUsage.cache_read_input_tokens || 0,
-              cacheCreationTokens: resultUsage.cache_creation_input_tokens || 0,
-            };
-          }
-        }
-
-        // For other event types (system, error, etc.), just append as a message
-        // Skip stream_event wrappers (already handled above) and assistant (handled above)
-        if (!updates.messages && parsed.type !== "assistant" && parsed.type !== "stream_event") {
-          const msg: ClaudeCodeMessage = {
-            type: parsed.type || "error",
+          streamingState.delete(id);
+        } else {
+          msgs.push({
+            type: "assistant" as const,
             raw: parsed,
             timestamp: Date.now(),
             seq: messageSeq++,
-          };
-          updates.messages = [...s.messages, msg];
+          });
         }
+        updates.messages = msgs;
+        const usage = extractUsage(parsed);
+        if (usage) {
+          const sessions = get(claudeCodeSessions);
+          const session = sessions.get(id);
+          updates.contextUsage = {
+            ...(session?.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+            ...usage,
+          };
+        }
+      }
 
-        return updates;
-      });
-    } catch {
-      updateSession(id, (s) => ({
-        messages: [...s.messages, {
-          type: "stderr" as const,
-          raw: data,
+      if (parsed.type === "result") {
+        const sessions = get(claudeCodeSessions);
+        const session = sessions.get(id);
+        updates.totalCost = (session?.totalCost || 0) + (parsed.total_cost_usd || 0);
+        updates.status = "ready";
+        cancelStreamFlush(id);
+        pendingUsage.delete(id);
+        streamingState.delete(id);
+        const resultUsage = parsed.usage;
+        if (resultUsage) {
+          updates.contextUsage = {
+            ...(session?.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+            inputTokens: resultUsage.input_tokens || 0,
+            outputTokens: resultUsage.output_tokens || 0,
+            cacheReadTokens: resultUsage.cache_read_input_tokens || 0,
+            cacheCreationTokens: resultUsage.cache_creation_input_tokens || 0,
+          };
+        }
+        // Append result message so the cost summary card renders in the UI
+        const msgs = getMessages();
+        msgs.push({ type: "result" as const, raw: parsed, timestamp: Date.now(), seq: messageSeq++ });
+        updates.messages = msgs;
+      }
+
+      // For other event types (system, error, etc.), just append as a message
+      if (parsed.type !== "assistant" && parsed.type !== "result" && parsed.type !== "stream_event") {
+        const msgs = getMessages();
+        msgs.push({
+          type: parsed.type || "error",
+          raw: parsed,
           timestamp: Date.now(),
           seq: messageSeq++,
-        }],
-      }));
+        });
+        updates.messages = msgs;
+      }
+    }
+
+    // Single store update for the entire batch
+    if (needsStoreUpdate && batchUpdates) {
+      const finalUpdates = batchUpdates as Partial<ClaudeCodeSession>;
+      if (batchMessages && !finalUpdates.messages) {
+        finalUpdates.messages = batchMessages;
+      }
+      updateSession(id, () => finalUpdates);
     }
   });
 
@@ -519,6 +567,7 @@ export async function stopClaudeCode(id: string): Promise<void> {
 export function removeClaudeCodeSession(id: string): void {
   cancelStreamFlush(id);
   streamingState.delete(id);
+  pendingUsage.delete(id);
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);
   if (session?.processAlive) {
