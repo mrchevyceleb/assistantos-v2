@@ -80,6 +80,7 @@
   let isResult = $derived(message.type === "result");
   let isError = $derived(message.type === "error");
   let isAssistant = $derived(message.type === "assistant");
+  let isStderr = $derived(message.type === "stderr");
 
   // Detect if this is a streaming (in-progress) assistant message vs final
   // Final messages have usage data or stop_reason; streaming ones don't
@@ -195,6 +196,14 @@
     style="padding: 10px 14px; font-size: {fontSize}px; background: rgba(239, 68, 68, 0.06);"
   >
     <pre class="whitespace-pre-wrap break-words font-mono" style="margin: 0;">{textContent}</pre>
+  </div>
+{:else if isStderr}
+  <!-- Stderr message (CLI debug output, errors) -->
+  <div
+    class="rounded-lg border border-border/10 select-text"
+    style="padding: 6px 12px; font-size: {fontSize - 3}px; background: rgba(255, 255, 255, 0.02);"
+  >
+    <pre class="whitespace-pre-wrap break-words font-mono text-text-muted/50" style="margin: 0;">{typeof message.raw === 'string' ? message.raw : JSON.stringify(message.raw)}</pre>
   </div>
 {:else if isAssistant}
   <!-- Assistant message -->

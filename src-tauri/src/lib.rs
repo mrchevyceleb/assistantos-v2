@@ -840,31 +840,37 @@ struct ClaudeCodeClosedPayload {
     exit_code: Option<i32>,
 }
 
-fn find_claude_exe() -> String {
+/// Returns (executable, prefix_args) for spawning the Claude CLI.
+/// On Windows with npm install, we bypass claude.cmd to avoid cmd.exe pipe
+/// inheritance issues — directly invoking `node cli.js` keeps stdin reliable.
+fn find_claude_command() -> (String, Vec<String>) {
     if cfg!(target_os = "windows") {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
-        // Check .local/bin first (official installer location)
+        // Official installer: direct .exe, no intermediary needed
         let local_bin = format!("{}\\.local\\bin\\claude.exe", home);
         if std::path::Path::new(&local_bin).exists() {
-            return local_bin;
+            return (local_bin, vec![]);
         }
-        // Check npm global install location
+        // npm global install: bypass claude.cmd to avoid cmd.exe stdin pipe issues.
+        // claude.cmd → cmd.exe /c → node cli.js breaks stdin inheritance with CREATE_NO_WINDOW.
+        // Directly invoking node + cli.js avoids the cmd.exe layer entirely.
         let appdata = std::env::var("APPDATA").unwrap_or_default();
-        let npm_bin = format!("{}\\npm\\claude.cmd", appdata);
-        if std::path::Path::new(&npm_bin).exists() {
-            return npm_bin;
+        let cli_js = format!("{}\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js", appdata);
+        if std::path::Path::new(&cli_js).exists() {
+            return ("node".to_string(), vec![cli_js]);
         }
-        // Fall back to PATH
-        "claude".to_string()
+        // Fall back to claude on PATH (handles other install methods)
+        ("claude".to_string(), vec![])
     } else {
         let home = std::env::var("HOME").unwrap_or_default();
         let local_bin = format!("{}/.local/bin/claude", home);
         if std::path::Path::new(&local_bin).exists() {
-            return local_bin;
+            return (local_bin, vec![]);
         }
-        "claude".to_string()
+        ("claude".to_string(), vec![])
     }
 }
+
 
 /// Spawn a persistent Claude Code process that accepts stream-json on stdin.
 /// `id` = UI session ID. Messages are sent via `write_claude_code`.
@@ -890,8 +896,13 @@ fn spawn_claude_code(
         }
     }
 
-    let claude_exe = find_claude_exe();
+    let (claude_exe, prefix_args) = find_claude_command();
     let mut cmd = std::process::Command::new(&claude_exe);
+
+    // Prepend any prefix args (e.g. the cli.js path when invoking node directly)
+    for arg in &prefix_args {
+        cmd.arg(arg);
+    }
 
     // Base args for persistent stream-json mode
     // -p + --input-format stream-json: non-interactive but stays alive reading stdin

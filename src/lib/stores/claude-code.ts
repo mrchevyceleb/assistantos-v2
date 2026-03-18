@@ -169,6 +169,11 @@ function initListeners() {
 
   listen<{ id: string; lines: string[] }>("claude-code-output", (event) => {
     const { id, lines } = event.payload;
+    if (!Array.isArray(lines)) {
+      console.error("[CC] Unexpected payload format - lines is not an array:", event.payload);
+      return;
+    }
+    console.debug("[CC] batch", id.slice(-8), lines.length, "lines", lines.map(l => l.slice(0, 60)));
 
     // Process the entire batch, accumulating non-streaming updates into a single
     // updateSession call at the end. This prevents N store updates (and N Svelte
@@ -536,8 +541,11 @@ export async function sendToClaudeCode(id: string, message: string, images?: Ima
       type: "user",
       message: { role: "user", content }
     });
+    console.debug("[CC] writing to stdin:", inputMsg.slice(0, 120));
     await writeClaudeCode(id, inputMsg);
+    console.debug("[CC] write ok");
   } catch (err) {
+    console.error("[CC] write error:", err);
     updateSession(id, () => ({ status: "error", error: String(err) }));
   }
 }

@@ -44,7 +44,7 @@
     if (!session) return [];
     let seenInit = false;
     return session.messages.filter((m) => {
-      if (m.type === "user" || m.type === "assistant" || m.type === "result" || m.type === "error") return true;
+      if (m.type === "user" || m.type === "assistant" || m.type === "result" || m.type === "error" || m.type === "stderr") return true;
       if (m.type === "system" && m.raw?.subtype === "init" && !seenInit) {
         seenInit = true;
         return true;
@@ -362,7 +362,7 @@
         {/each}
 
         <!-- Thinking indicator: show when running and last message is from user -->
-        {#if isRunning && visibleMessages.length > 0 && visibleMessages[visibleMessages.length - 1].type === "user"}
+        {#if isRunning && visibleMessages.length > 0 && (visibleMessages[visibleMessages.length - 1].type === "user" || visibleMessages[visibleMessages.length - 1].type === "stderr")}
           <div class="flex items-center gap-3" style="padding: 10px 14px;">
             <div class="flex items-center gap-1">
               <div class="rounded-full bg-accent/60" style="width: 6px; height: 6px; animation: cc-bounce 1.4s ease-in-out infinite;"></div>
