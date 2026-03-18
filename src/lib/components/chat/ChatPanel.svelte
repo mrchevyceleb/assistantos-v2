@@ -185,6 +185,15 @@
     const session = new ChatSession();
     const aiSettings = getAISettings();
 
+    // Seed session with existing UI messages (e.g. restored from persistence)
+    // so the AI has conversation context from prior sessions.
+    const existingMsgs = get(istate.messages);
+    for (const uiMsg of existingMsgs) {
+      if (uiMsg.role === 'user' || uiMsg.role === 'assistant') {
+        session.addMessage({ role: uiMsg.role, content: uiMsg.content || '' });
+      }
+    }
+
     const createdEngine = new ChatEngine(session, aiSettings, {
       onChunk: (content: string) => {
         if (istate.currentStreamingId) {

@@ -1,8 +1,39 @@
-<script>
+<script lang="ts">
   import "../app.css";
+  import { onMount } from "svelte";
   let { children } = $props();
 
   const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
+
+  // Global navigation guard: intercept ALL <a> clicks with external URLs
+  // and open them in the system browser instead of navigating the webview.
+  onMount(() => {
+    function handleGlobalClick(e: MouseEvent) {
+      const anchor = (e.target as HTMLElement)?.closest?.("a");
+      if (!anchor) return;
+
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+
+      // Only intercept http/https links (external URLs)
+      if (href.startsWith("http://") || href.startsWith("https://")) {
+        e.preventDefault();
+        e.stopPropagation();
+        import("@tauri-apps/plugin-opener").then(({ openUrl }) => {
+          openUrl(href).catch((err: unknown) => console.error("Failed to open URL:", err));
+        });
+      }
+    }
+
+    // Capture phase so we catch it before any component handlers
+    document.addEventListener("click", handleGlobalClick, true);
+    // Also catch middle-click (auxclick) which fires instead of click for button 1
+    document.addEventListener("auxclick", handleGlobalClick, true);
+    return () => {
+      document.removeEventListener("click", handleGlobalClick, true);
+      document.removeEventListener("auxclick", handleGlobalClick, true);
+    };
+  });
 </script>
 
 {#if isMac}

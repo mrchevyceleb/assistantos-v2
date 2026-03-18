@@ -1,6 +1,6 @@
 import { writable, get } from "svelte/store";
 import { listen } from "@tauri-apps/api/event";
-import { spawnClaudeCode, closeClaudeCode, writeClaudeCode } from "$lib/utils/tauri";
+import { spawnClaudeCode, closeClaudeCode, writeClaudeCode, saveChatSession, loadChatSession, deleteChatSession } from "$lib/utils/tauri";
 import { openClaudeCodeTab, closeClaudeCodeTab } from "$lib/stores/tabs";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -587,4 +587,116 @@ export function removeClaudeCodeSession(id: string): void {
     return next;
   });
   closeClaudeCodeTab(id);
+  // Remove persisted session
+  deleteChatSession(`cc-${id}`).catch(() => {});
+}
+
+// ── Persistence ─────────────────────────────────────────────────────
+
+interface SerializedCCSession {
+  id: string;
+  messages: ClaudeCodeMessage[];
+  claudeSessionId?: string;
+  selectedModel?: string;
+  totalCost?: number;
+  contextUsage?: ContextUsage;
+  cwd: string;
+  model?: string;
+  slashCommands: string[];
+}
+
+/** Save all Claude Code sessions to disk */
+export async function saveClaudeCodeSessions(): Promise<void> {
+  const sessions = get(claudeCodeSessions);
+  const promises: Promise<void>[] = [];
+  for (const [id, session] of sessions) {
+    if (session.messages.length === 0) continue;
+    const data: SerializedCCSession = {
+      id: session.id,
+      messages: session.messages,
+      claudeSessionId: session.claudeSessionId,
+      selectedModel: session.selectedModel,
+      totalCost: session.totalCost,
+      contextUsage: session.contextUsage,
+      cwd: session.cwd,
+      model: session.model,
+      slashCommands: session.slashCommands,
+    };
+    promises.push(saveChatSession(`cc-${id}`, JSON.stringify(data)));
+  }
+  await Promise.allSettled(promises);
+}
+
+/** Get metadata for all Claude Code sessions (for app state, no messages) */
+export function getClaudeCodeSessionMeta(): Array<{
+  id: string;
+  claudeSessionId?: string;
+  selectedModel?: string;
+  totalCost?: number;
+  cwd: string;
+  model?: string;
+}> {
+  const sessions = get(claudeCodeSessions);
+  const result: Array<{
+    id: string;
+    claudeSessionId?: string;
+    selectedModel?: string;
+    totalCost?: number;
+    cwd: string;
+    model?: string;
+  }> = [];
+  for (const [, session] of sessions) {
+    if (session.messages.length === 0) continue;
+    result.push({
+      id: session.id,
+      claudeSessionId: session.claudeSessionId,
+      selectedModel: session.selectedModel,
+      totalCost: session.totalCost,
+      cwd: session.cwd,
+      model: session.model,
+    });
+  }
+  return result;
+}
+
+/** Restore a Claude Code session from disk */
+export async function restoreClaudeCodeSession(sessionId: string): Promise<boolean> {
+  try {
+    const json = await loadChatSession(`cc-${sessionId}`);
+    if (!json) return false;
+    const data: SerializedCCSession = JSON.parse(json);
+
+    initListeners();
+
+    const session: ClaudeCodeSession = {
+      id: data.id,
+      status: "ready",
+      messages: data.messages,
+      model: data.model,
+      selectedModel: data.selectedModel,
+      processAlive: false,
+      claudeSessionId: data.claudeSessionId,
+      pendingModelRestart: false,
+      totalCost: data.totalCost,
+      contextUsage: data.contextUsage,
+      slashCommands: data.slashCommands || [],
+      cwd: data.cwd,
+    };
+
+    claudeCodeSessions.update((sessions) => {
+      const next = new Map(sessions);
+      next.set(data.id, session);
+      return next;
+    });
+
+    // Update messageSeq to avoid collisions
+    const maxSeq = data.messages.reduce((max, m) => Math.max(max, m.seq), 0);
+    if (maxSeq >= messageSeq) {
+      messageSeq = maxSeq + 1;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }

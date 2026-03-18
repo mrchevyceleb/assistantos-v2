@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import CodeViewer from "./CodeViewer.svelte";
 
   interface Props {
@@ -14,11 +15,37 @@
     showPreview = !showPreview;
   }
 
+  // Script injected into iframe srcdoc to intercept link clicks
+  // and post them to the parent window instead of navigating.
+  const LINK_INTERCEPT_SCRIPT = `<script>
+    document.addEventListener('click', function(e) {
+      var a = e.target.closest('a');
+      if (a && a.href && (a.href.startsWith('http://') || a.href.startsWith('https://'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.parent.postMessage({ type: 'open-external-url', url: a.href }, '*');
+      }
+    }, true);
+  <\/script>`;
+
   $effect(() => {
     if (showPreview && iframeEl) {
-      // Use srcdoc for sandboxed preview
-      iframeEl.srcdoc = content;
+      // Inject link interceptor into the HTML content
+      iframeEl.srcdoc = content + LINK_INTERCEPT_SCRIPT;
     }
+  });
+
+  // Listen for messages from the iframe to open external URLs
+  onMount(() => {
+    function handleMessage(e: MessageEvent) {
+      if (e.data?.type === 'open-external-url' && typeof e.data.url === 'string') {
+        import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
+          openUrl(e.data.url).catch((err: unknown) => console.error('Failed to open URL:', err));
+        });
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   });
 </script>
 

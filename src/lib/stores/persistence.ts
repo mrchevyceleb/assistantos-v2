@@ -25,6 +25,13 @@ import {
   DEFAULT_SETTINGS,
   type AppSettings,
 } from "$lib/stores/settings";
+import { saveAllInstanceMessages, loadInstanceMessages } from "$lib/stores/chat-instance-state";
+import {
+  claudeCodeSessions,
+  saveClaudeCodeSessions,
+  getClaudeCodeSessionMeta,
+  restoreClaudeCodeSession,
+} from "$lib/stores/claude-code";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -50,6 +57,14 @@ export interface AppState {
   chatInstances?: Array<{ id: string; title: string; model: string; provider: string; dock: ChatDock }>;
   chatVisible?: boolean;
   expandedPaths?: string[];
+  claudeCodeSessions?: Array<{
+    id: string;
+    claudeSessionId?: string;
+    selectedModel?: string;
+    totalCost?: number;
+    cwd: string;
+    model?: string;
+  }>;
 }
 
 // ── Save ─────────────────────────────────────────────────────────────
@@ -82,6 +97,7 @@ export async function saveState(): Promise<void> {
     chatInstances: get(chatInstances).map(({ id, title, model, provider, dock }) => ({ id, title, model, provider, dock })),
     chatVisible: get(chatVisible),
     expandedPaths: Array.from(get(expandedPaths)),
+    claudeCodeSessions: getClaudeCodeSessionMeta(),
     openTabs: $tabs
       .filter((t) => !t.path.startsWith("__terminal__:") && !t.path.startsWith("__chat__"))
       .map((t) => ({
@@ -94,6 +110,11 @@ export async function saveState(): Promise<void> {
 
   try {
     await saveAppState(JSON.stringify(state));
+    // Persist chat messages and Claude Code sessions to individual files
+    await Promise.allSettled([
+      saveAllInstanceMessages(),
+      saveClaudeCodeSessions(),
+    ]);
   } catch (e) {
     console.error("Failed to save app state:", e);
   }
@@ -181,11 +202,26 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
     workspacePath.set(state.workspacePath);
   }
 
+  // Restore Claude Code sessions from disk (before tabs so tabs can find them)
+  if (state.claudeCodeSessions && state.claudeCodeSessions.length > 0) {
+    for (const ccMeta of state.claudeCodeSessions) {
+      await restoreClaudeCodeSession(ccMeta.id);
+    }
+  }
+
   // Restore tabs — open each one and load content
   if (state.openTabs && state.openTabs.length > 0) {
     for (const tab of state.openTabs) {
       // Skip terminal tabs — they can't be restored across sessions
       if (tab.path.startsWith("__terminal__:") || tab.path.startsWith("__chat__")) continue;
+
+      // Restore Claude Code tabs
+      if (tab.path.startsWith("__claude-code__:")) {
+        const ccId = tab.path.replace("__claude-code__:", "");
+        const { openClaudeCodeTab } = await import("$lib/stores/tabs");
+        openClaudeCodeTab(ccId, tab.name || "Claude Code");
+        continue;
+      }
 
       try {
         // Check if file still exists by trying to read it
@@ -234,6 +270,10 @@ export async function restoreState(): Promise<"explorer" | "search" | null> {
         openChatInstanceTab(inst.id, inst.title);
       }
     }
+    // Load persisted messages for each chat instance
+    for (const inst of state.chatInstances) {
+      await loadInstanceMessages(inst.id);
+    }
   }
 
   // Restore chat visibility
@@ -279,6 +319,7 @@ export function startAutoSave() {
   unsubscribers.push(chatPanelHeight.subscribe(() => debouncedSave()));
   unsubscribers.push(chatPanelDock.subscribe(() => debouncedSave()));
   unsubscribers.push(chatInstances.subscribe(() => debouncedSave()));
+  unsubscribers.push(claudeCodeSessions.subscribe(() => debouncedSave()));
   unsubscribers.push(expandedPaths.subscribe(() => debouncedSave()));
 }
 
