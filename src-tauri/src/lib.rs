@@ -840,6 +840,34 @@ struct ClaudeCodeClosedPayload {
     exit_code: Option<i32>,
 }
 
+/// On macOS, GUI apps launched from Dock/Finder get a minimal environment
+/// (no shell profile, stripped PATH). This loads the user's login shell env
+/// so that spawned processes like Claude CLI can find MCP servers, node, etc.
+fn get_shell_env() -> HashMap<String, String> {
+    let mut env_map = HashMap::new();
+    if cfg!(target_os = "macos") {
+        // Determine the user's login shell
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        // Run a login shell to dump its environment
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", "env"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+        {
+            if output.status.success() {
+                let env_str = String::from_utf8_lossy(&output.stdout);
+                for line in env_str.lines() {
+                    if let Some((key, value)) = line.split_once('=') {
+                        env_map.insert(key.to_string(), value.to_string());
+                    }
+                }
+            }
+        }
+    }
+    env_map
+}
+
 /// Returns (executable, prefix_args) for spawning the Claude CLI.
 /// On Windows with npm install, we bypass claude.cmd to avoid cmd.exe pipe
 /// inheritance issues — directly invoking `node cli.js` keeps stdin reliable.
@@ -923,6 +951,13 @@ fn spawn_claude_code(
     let cwd_path = PathBuf::from(&cwd);
     if cwd_path.exists() && cwd_path.is_dir() {
         cmd.current_dir(&cwd_path);
+    }
+
+    // On macOS, GUI apps get a minimal environment. Load the user's shell
+    // environment so Claude CLI can find MCP servers, node, npx, etc.
+    let shell_env = get_shell_env();
+    for (key, value) in &shell_env {
+        cmd.env(key, value);
     }
 
     cmd.stdin(std::process::Stdio::piped())
