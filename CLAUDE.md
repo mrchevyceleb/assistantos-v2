@@ -136,7 +136,7 @@ This applies especially to the chat components (`ChatPanel`, `ChatMessage`, `Cha
 
 ## Releases and Auto-Updates
 
-**GitHub repo**: `mrchevyceleb/assistantos-v2` (private)
+**GitHub repo**: `mrchevyceleb/assistantos-v2` (public)
 
 **Auto-updater** is built in via `tauri-plugin-updater`. The app checks GitHub releases on launch (3s delay) and every 30 minutes. The `UpdateNotification.svelte` component handles the UI toast. Update manifests are served from the `latest.json` asset attached to each GitHub release.
 
