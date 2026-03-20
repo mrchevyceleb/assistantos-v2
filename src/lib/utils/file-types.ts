@@ -4,6 +4,7 @@ export type ViewerType =
   | "image"
   | "video"
   | "pdf"
+  | "csv"
   | "code"
   | "text"
   | "terminal"
@@ -28,7 +29,8 @@ const CODE_EXTS = new Set([
   "env", "gitignore", "gitattributes", "editorconfig",
   "lock",
 ]);
-const TEXT_EXTS = new Set(["txt", "log", "csv", "tsv", "ini", "cfg", "conf", "properties"]);
+const CSV_EXTS = new Set(["csv", "tsv"]);
+const TEXT_EXTS = new Set(["txt", "log", "ini", "cfg", "conf", "properties"]);
 
 export function getViewerType(ext?: string): ViewerType {
   if (!ext) return "text";
@@ -39,6 +41,7 @@ export function getViewerType(ext?: string): ViewerType {
   if (VIDEO_EXTS.has(lower)) return "video";
   if (PDF_EXTS.has(lower)) return "pdf";
   if (CODE_EXTS.has(lower)) return "code";
+  if (CSV_EXTS.has(lower)) return "csv";
   if (TEXT_EXTS.has(lower)) return "text";
   return "unsupported";
 }
@@ -113,6 +116,7 @@ export function getFileIcon(name: string, isDir: boolean, ext?: string): string 
   if (["json", "yaml", "yml", "toml"].includes(lower)) return "file-json";
   if (["css", "scss", "less"].includes(lower)) return "file-code";
   if (["sql"].includes(lower)) return "database";
+  if (CSV_EXTS.has(lower)) return "table";
   if (CODE_EXTS.has(lower)) return "file-code";
   return "file";
 }
@@ -158,6 +162,8 @@ export function getFileColor(name: string, isDir: boolean, ext?: string): string
     svg: "#facc15",
     webp: "#34d399",
     pdf: "#f87171",
+    csv: "#4ade80",
+    tsv: "#4ade80",
     sh: "#86efac",
     ps1: "#38bdf8",
     bat: "#38bdf8",

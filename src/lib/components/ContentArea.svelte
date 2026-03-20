@@ -13,6 +13,7 @@
   import ImageViewer from "./ImageViewer.svelte";
   import VideoPlayer from "./VideoPlayer.svelte";
   import PdfViewer from "./PdfViewer.svelte";
+  import CsvViewer from "./CsvViewer.svelte";
   import TerminalTab from "./TerminalTab.svelte";
   import ChatPanel from "./chat/ChatPanel.svelte";
   import ClaudeCodePanel from "./claude-code/ClaudeCodePanel.svelte";
@@ -198,7 +199,7 @@
       </div>
     {:else}
       <!-- Edit/Preview toolbar for text content -->
-      {#if $activeTab.viewerType === "markdown" || $activeTab.viewerType === "html" || $activeTab.viewerType === "code" || $activeTab.viewerType === "text"}
+      {#if $activeTab.viewerType === "markdown" || $activeTab.viewerType === "html" || $activeTab.viewerType === "code" || $activeTab.viewerType === "text" || $activeTab.viewerType === "csv"}
         <div class="flex items-center gap-3.5 px-6 py-3 glass-panel-solid border-b border-border panel-lift">
           <button
             class="text-[13px] px-4.5 py-2 rounded-md transition-colors"
@@ -249,6 +250,8 @@
           <VideoPlayer filePath={$activeTab.path} />
         {:else if $activeTab.viewerType === "pdf"}
           <PdfViewer filePath={$activeTab.path} />
+        {:else if $activeTab.viewerType === "csv" && $activeTab.content !== undefined}
+          <CsvViewer content={$activeTab.content} ext={$activeTab.ext} />
         {:else if ($activeTab.viewerType === "code" || $activeTab.viewerType === "text") && $activeTab.content !== undefined}
           <CodeViewer content={$activeTab.content} ext={$activeTab.ext} />
         {:else}

@@ -402,86 +402,90 @@ pub struct SearchResult {
 }
 
 #[tauri::command]
-fn search_files(
+async fn search_files(
     root: String,
     query: String,
     case_sensitive: bool,
     show_hidden: bool,
 ) -> Result<Vec<SearchResult>, String> {
-    let mut results = Vec::new();
-    let query_lower = if !case_sensitive {
-        query.to_lowercase()
-    } else {
-        query.clone()
-    };
+    tokio::task::spawn_blocking(move || {
+        let mut results = Vec::new();
+        let query_lower = if !case_sensitive {
+            query.to_lowercase()
+        } else {
+            query.clone()
+        };
 
-    for entry in WalkDir::new(&root)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            !should_skip(&name, show_hidden)
-        })
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_type().is_file() {
-            let path = entry.path();
-            // Skip binary files by extension
-            let ext = path
-                .extension()
-                .map(|e| e.to_string_lossy().to_lowercase())
-                .unwrap_or_default();
-            if matches!(
-                ext.as_str(),
-                "png"
-                    | "jpg"
-                    | "jpeg"
-                    | "gif"
-                    | "svg"
-                    | "ico"
-                    | "webp"
-                    | "mp4"
-                    | "webm"
-                    | "mov"
-                    | "avi"
-                    | "pdf"
-                    | "zip"
-                    | "tar"
-                    | "gz"
-                    | "exe"
-                    | "dll"
-                    | "so"
-                    | "dylib"
-                    | "woff"
-                    | "woff2"
-                    | "ttf"
-                    | "eot"
-            ) {
-                continue;
-            }
+        for entry in WalkDir::new(&root)
+            .into_iter()
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                !should_skip(&name, show_hidden)
+            })
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_file() {
+                let path = entry.path();
+                // Skip binary files by extension
+                let ext = path
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                if matches!(
+                    ext.as_str(),
+                    "png"
+                        | "jpg"
+                        | "jpeg"
+                        | "gif"
+                        | "svg"
+                        | "ico"
+                        | "webp"
+                        | "mp4"
+                        | "webm"
+                        | "mov"
+                        | "avi"
+                        | "pdf"
+                        | "zip"
+                        | "tar"
+                        | "gz"
+                        | "exe"
+                        | "dll"
+                        | "so"
+                        | "dylib"
+                        | "woff"
+                        | "woff2"
+                        | "ttf"
+                        | "eot"
+                ) {
+                    continue;
+                }
 
-            if let Ok(content) = fs::read_to_string(path) {
-                for (i, line) in content.lines().enumerate() {
-                    let matches = if case_sensitive {
-                        line.contains(&query)
-                    } else {
-                        line.to_lowercase().contains(&query_lower)
-                    };
-                    if matches {
-                        results.push(SearchResult {
-                            path: path.to_string_lossy().to_string(),
-                            line_number: i + 1,
-                            line_content: line.to_string(),
-                        });
-                        if results.len() >= 500 {
-                            return Ok(results);
+                if let Ok(content) = fs::read_to_string(path) {
+                    for (i, line) in content.lines().enumerate() {
+                        let matches = if case_sensitive {
+                            line.contains(&query)
+                        } else {
+                            line.to_lowercase().contains(&query_lower)
+                        };
+                        if matches {
+                            results.push(SearchResult {
+                                path: path.to_string_lossy().to_string(),
+                                line_number: i + 1,
+                                line_content: line.to_string(),
+                            });
+                            if results.len() >= 500 {
+                                return results;
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    Ok(results)
+        results
+    })
+    .await
+    .map_err(|e| format!("Search task failed: {}", e))
 }
 
 #[derive(Debug, Serialize)]
