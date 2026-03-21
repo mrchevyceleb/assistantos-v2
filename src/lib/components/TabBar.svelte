@@ -193,6 +193,11 @@
 
     // Keep chat instance store in sync when closing chat tabs via the tab bar.
     if (tab.path.startsWith("__chat__:")) {
+      const confirmed = await ask(`Close chat "${tab.name}"? This will end the session.`, {
+        title: "Close Chat",
+        kind: "warning",
+      });
+      if (!confirmed) return;
       const chatId = tab.path.slice("__chat__:".length);
       if (chatId) {
         destroyInstanceState(chatId);
@@ -203,6 +208,11 @@
 
     // Clean up Claude Code session when closing its tab.
     if (tab.path.startsWith("__claude-code__:")) {
+      const confirmed = await ask(`Close Claude Code "${tab.name}"? This will end the session.`, {
+        title: "Close Claude Code",
+        kind: "warning",
+      });
+      if (!confirmed) return;
       const ccId = tab.path.slice("__claude-code__:".length);
       if (ccId) {
         removeClaudeCodeSession(ccId);

@@ -911,6 +911,7 @@ fn spawn_claude_code(
     id: String,
     cwd: String,
     args: Vec<String>,
+    prompt: Option<String>,
     state: tauri::State<'_, ClaudeCodeState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -936,15 +937,19 @@ fn spawn_claude_code(
         cmd.arg(arg);
     }
 
-    // Base args for persistent stream-json mode
-    // -p + --input-format stream-json: non-interactive but stays alive reading stdin
-    // --include-partial-messages: required for token-by-token streaming deltas
-    cmd.arg("-p")
-        .arg("--output-format").arg("stream-json")
-        .arg("--input-format").arg("stream-json")
+    // -p alone = pipe mode (stays alive reading stdin via --input-format stream-json)
+    // -p "message" = one-shot mode (runs single prompt, exits after result)
+    cmd.arg("-p");
+    if let Some(ref p) = prompt {
+        cmd.arg(p);
+    }
+    cmd.arg("--output-format").arg("stream-json")
         .arg("--verbose")
         .arg("--include-partial-messages")
         .arg("--dangerously-skip-permissions");
+    if prompt.is_none() {
+        cmd.arg("--input-format").arg("stream-json");
+    }
 
     // Add any extra args from the frontend
     for arg in &args {

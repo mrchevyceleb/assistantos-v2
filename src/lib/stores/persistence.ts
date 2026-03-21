@@ -41,7 +41,7 @@ export interface AppState {
   sidebarVisible: boolean;
   terminalVisible: boolean;
   terminalHeight: number;
-  sidebarView: "explorer" | "search";
+  sidebarView: "explorer" | "search" | "history";
   uiZoom?: number;
   settings?: Partial<AppSettings>;
   openTabs: Array<{
@@ -69,10 +69,10 @@ export interface AppState {
 
 // ── Save ─────────────────────────────────────────────────────────────
 
-let sidebarViewRef: "explorer" | "search" = "explorer";
+let sidebarViewRef: "explorer" | "search" | "history" = "explorer";
 
 /** Call this from +page.svelte whenever sidebarView changes */
-export function setSidebarViewRef(view: "explorer" | "search") {
+export function setSidebarViewRef(view: "explorer" | "search" | "history") {
   sidebarViewRef = view;
 }
 
@@ -136,7 +136,7 @@ export async function loadState(): Promise<AppState | null> {
 }
 
 /** Restore all stores from saved state. Returns sidebarView for the page component. */
-export async function restoreState(): Promise<"explorer" | "search" | null> {
+export async function restoreState(): Promise<"explorer" | "search" | "history" | null> {
   const state = await loadState();
   if (!state) return null;
 

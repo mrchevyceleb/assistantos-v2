@@ -66,7 +66,7 @@
   let contextUsage = $derived(session?.contextUsage);
   let contextPercent = $derived((() => {
     if (!contextUsage) return 0;
-    const total = contextUsage.inputTokens + contextUsage.outputTokens + contextUsage.cacheCreationTokens;
+    const total = contextUsage.inputTokens + contextUsage.outputTokens + contextUsage.cacheCreationTokens + contextUsage.cacheReadTokens;
     return Math.min(100, Math.round((total / contextUsage.contextWindow) * 100));
   })());
   let contextColor = $derived(
@@ -269,8 +269,8 @@
     <div class="flex-1"></div>
 
     <!-- Context usage bar -->
-    {#if contextUsage && contextUsage.inputTokens > 0}
-      <div class="flex items-center gap-2" title="{formatTokens(contextUsage.inputTokens + contextUsage.outputTokens)} / {formatTokens(contextUsage.contextWindow)} tokens ({contextPercent}%)">
+    {#if contextUsage && (contextUsage.inputTokens > 0 || contextUsage.cacheReadTokens > 0)}
+      <div class="flex items-center gap-2" title="In: {formatTokens(contextUsage.inputTokens)} | Out: {formatTokens(contextUsage.outputTokens)} | Cache: {formatTokens(contextUsage.cacheReadTokens)} | {formatTokens(contextUsage.inputTokens + contextUsage.outputTokens + contextUsage.cacheCreationTokens + contextUsage.cacheReadTokens)}/{formatTokens(contextUsage.contextWindow)} ({contextPercent}%)">
         <div class="rounded-full overflow-hidden bg-bg-tertiary" style="width: 120px; height: 8px;">
           <div
             class="h-full rounded-full transition-all"

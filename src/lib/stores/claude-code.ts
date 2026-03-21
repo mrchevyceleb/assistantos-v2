@@ -1,6 +1,6 @@
 import { writable, get } from "svelte/store";
 import { listen } from "@tauri-apps/api/event";
-import { spawnClaudeCode, closeClaudeCode, writeClaudeCode, saveChatSession, loadChatSession, deleteChatSession } from "$lib/utils/tauri";
+import { spawnClaudeCode, closeClaudeCode, writeClaudeCode, saveChatSession, loadChatSession } from "$lib/utils/tauri";
 import { openClaudeCodeTab, closeClaudeCodeTab } from "$lib/stores/tabs";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -75,6 +75,11 @@ function parseContextWindow(model: string): number {
   return 200_000;
 }
 
+/** Safe fallback that preserves an already-parsed contextWindow (e.g. 1M for Opus) */
+function getContextBase(existing?: ContextUsage): ContextUsage {
+  return existing ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 };
+}
+
 /** Extract usage data from an assistant or result message */
 function extractUsage(parsed: any): Partial<ContextUsage> | null {
   const usage = parsed.usage || parsed.message?.usage;
@@ -118,7 +123,7 @@ function flushStreamToStore(id: string) {
     // Flush pending usage updates
     if (usage) {
       updates.contextUsage = {
-        ...(s.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+        ...getContextBase(s.contextUsage),
         ...usage,
       };
       pendingUsage.delete(id);
@@ -301,12 +306,12 @@ function initListeners() {
       if (parsed.type === "system" && parsed.subtype === "init") {
         updates.model = parsed.model;
         if (parsed.session_id) updates.claudeSessionId = parsed.session_id;
-        if (Array.isArray(parsed.slash_commands)) updates.slashCommands = parsed.slash_commands;
+        if (Array.isArray(parsed.slash_commands) && parsed.slash_commands.length > 0) updates.slashCommands = parsed.slash_commands;
         if (parsed.model) {
           const sessions = get(claudeCodeSessions);
           const session = sessions.get(id);
           updates.contextUsage = {
-            ...(session?.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+            ...getContextBase(session?.contextUsage),
             contextWindow: parseContextWindow(parsed.model),
           };
         }
@@ -345,7 +350,7 @@ function initListeners() {
           const sessions = get(claudeCodeSessions);
           const session = sessions.get(id);
           updates.contextUsage = {
-            ...(session?.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
+            ...getContextBase(session?.contextUsage),
             ...usage,
           };
         }
@@ -359,16 +364,8 @@ function initListeners() {
         cancelStreamFlush(id);
         pendingUsage.delete(id);
         streamingState.delete(id);
-        const resultUsage = parsed.usage;
-        if (resultUsage) {
-          updates.contextUsage = {
-            ...(session?.contextUsage || { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, contextWindow: 200_000 }),
-            inputTokens: resultUsage.input_tokens || 0,
-            outputTokens: resultUsage.output_tokens || 0,
-            cacheReadTokens: resultUsage.cache_read_input_tokens || 0,
-            cacheCreationTokens: resultUsage.cache_creation_input_tokens || 0,
-          };
-        }
+        // Note: CLI result events don't carry a usage field.
+        // Context usage is tracked via message_start/message_delta stream events.
         // Append result message so the cost summary card renders in the UI
         const msgs = getMessages();
         msgs.push({ type: "result" as const, raw: parsed, timestamp: Date.now(), seq: messageSeq++ });
@@ -437,7 +434,7 @@ function initListeners() {
   });
 }
 
-async function ensureProcess(session: ClaudeCodeSession): Promise<void> {
+async function ensureProcess(session: ClaudeCodeSession, prompt?: string): Promise<void> {
   if (session.processAlive) return;
   const extraArgs: string[] = [];
   if (session.selectedModel) {
@@ -447,7 +444,7 @@ async function ensureProcess(session: ClaudeCodeSession): Promise<void> {
   if (session.claudeSessionId) {
     extraArgs.push("--resume", session.claudeSessionId);
   }
-  await spawnClaudeCode(session.id, session.cwd, extraArgs);
+  await spawnClaudeCode(session.id, session.cwd, extraArgs, prompt);
   updateSession(session.id, () => ({ processAlive: true }));
 }
 
@@ -514,6 +511,29 @@ export async function sendToClaudeCode(id: string, message: string, images?: Ima
       if (!current) throw new Error("Session lost during model restart");
     }
 
+    // Check if message is a CLI slash command (e.g. /compact, /clear)
+    // These must be sent via one-shot -p mode, not stdin JSON protocol
+    const slashMatch = message.match(/^\/(\S+)/);
+    const isCliSlashCommand = slashMatch &&
+      current.slashCommands.includes(slashMatch[1]);
+
+    if (isCliSlashCommand && current.claudeSessionId) {
+      // Kill current pipe-mode process
+      if (current.processAlive) {
+        updateSession(id, () => ({ deliberateKill: true }));
+        await closeClaudeCode(id);
+        updateSession(id, () => ({ processAlive: false, deliberateKill: false }));
+        current = get(claudeCodeSessions).get(id);
+        if (!current) throw new Error("Session lost during slash command");
+      }
+      // Mark as deliberate so claude-code-closed always resolves to "ready"
+      // (slash commands may exit non-zero for "nothing to do" which isn't an error)
+      updateSession(id, () => ({ deliberateKill: true }));
+      // Spawn one-shot process with -p "/compact" --resume
+      await ensureProcess({ ...current, processAlive: false }, message);
+      return; // Don't write to stdin; -p already carries the message
+    }
+
     await ensureProcess(current);
 
     // Build content: text + optional images in Anthropic content block format
@@ -578,6 +598,21 @@ export function removeClaudeCodeSession(id: string): void {
   pendingUsage.delete(id);
   const sessions = get(claudeCodeSessions);
   const session = sessions.get(id);
+  // Save session to disk for chat history before removing from memory
+  if (session && session.messages.length > 0) {
+    const data: SerializedCCSession = {
+      id: session.id,
+      messages: session.messages,
+      claudeSessionId: session.claudeSessionId,
+      selectedModel: session.selectedModel,
+      totalCost: session.totalCost,
+      contextUsage: session.contextUsage,
+      cwd: session.cwd,
+      model: session.model,
+      slashCommands: session.slashCommands,
+    };
+    saveChatSession(`cc-${id}`, JSON.stringify(data)).catch(() => {});
+  }
   if (session?.processAlive) {
     closeClaudeCode(id).catch(() => {});
   }
@@ -587,8 +622,6 @@ export function removeClaudeCodeSession(id: string): void {
     return next;
   });
   closeClaudeCodeTab(id);
-  // Remove persisted session
-  deleteChatSession(`cc-${id}`).catch(() => {});
 }
 
 // ── Persistence ─────────────────────────────────────────────────────

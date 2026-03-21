@@ -303,8 +303,9 @@ export async function spawnClaudeCode(
   id: string,
   cwd: string,
   args: string[] = [],
+  prompt?: string,
 ): Promise<void> {
-  return invoke("spawn_claude_code", { id, cwd, args });
+  return invoke("spawn_claude_code", { id, cwd, args, prompt: prompt ?? null });
 }
 
 export async function closeClaudeCode(id: string): Promise<void> {

@@ -4,6 +4,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import FileTree from "$lib/components/FileTree.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
+  import ChatHistory from "$lib/components/ChatHistory.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import ContentArea from "$lib/components/ContentArea.svelte";
   import TerminalPanel from "$lib/components/TerminalPanel.svelte";
@@ -31,7 +32,7 @@
   import UpdateNotification from "$lib/components/UpdateNotification.svelte";
 
   let paletteVisible = $state(false);
-  let sidebarView = $state<"explorer" | "search">("explorer");
+  let sidebarView = $state<"explorer" | "search" | "history">("explorer");
 
   // Keep persistence module in sync with local sidebarView state
   $effect(() => {
@@ -354,6 +355,8 @@
         <div class="flex-1 overflow-hidden metal-frame rounded-xl">
           {#if sidebarView === "search"}
             <SearchPanel onClose={() => sidebarView = "explorer"} />
+          {:else if sidebarView === "history"}
+            <ChatHistory />
           {:else}
             <FileTree />
           {/if}
