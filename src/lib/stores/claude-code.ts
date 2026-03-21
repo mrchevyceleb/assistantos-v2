@@ -513,9 +513,11 @@ export async function sendToClaudeCode(id: string, message: string, images?: Ima
 
     // Check if message is a CLI slash command (e.g. /compact, /clear)
     // These must be sent via one-shot -p mode, not stdin JSON protocol
+    // Fallback list covers fresh/restored sessions where slashCommands hasn't been populated yet
+    const KNOWN_CLI_COMMANDS = ["compact", "clear", "config", "cost", "doctor", "help", "init", "login", "logout", "memory", "mcp", "permissions", "review", "status", "terminal-setup"];
     const slashMatch = message.match(/^\/(\S+)/);
     const isCliSlashCommand = slashMatch &&
-      current.slashCommands.includes(slashMatch[1]);
+      (current.slashCommands.includes(slashMatch[1]) || KNOWN_CLI_COMMANDS.includes(slashMatch[1]));
 
     if (isCliSlashCommand && current.claudeSessionId) {
       // Kill current pipe-mode process

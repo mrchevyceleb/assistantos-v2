@@ -29,10 +29,10 @@
     const allRows = result.data;
     if (allRows.length === 0) return { headers: [], rows: [], delimiter: result.meta.delimiter };
 
-    const maxCols = allRows.reduce((max, row) => Math.max(max, row.length), 0);
+    const maxCols = allRows.reduce((max: number, row: string[]) => Math.max(max, row.length), 0);
 
     // Pad ragged rows
-    const padded = allRows.map((row) => {
+    const padded = allRows.map((row: string[]) => {
       if (row.length < maxCols) return [...row, ...Array(maxCols - row.length).fill("")];
       return row;
     });
