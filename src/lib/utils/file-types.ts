@@ -10,6 +10,7 @@ export type ViewerType =
   | "terminal"
   | "chat"
   | "claude-code"
+  | "browser"
   | "unsupported";
 
 const MARKDOWN_EXTS = new Set(["md", "markdown", "mdx"]);

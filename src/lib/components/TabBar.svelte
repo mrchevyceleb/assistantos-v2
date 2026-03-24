@@ -13,6 +13,7 @@
   import { removeChat } from "$lib/stores/chat-instances";
   import { destroyInstanceState } from "$lib/stores/chat-instance-state";
   import { launchClaudeCode, removeClaudeCodeSession } from "$lib/stores/claude-code";
+  import { removeBrowser, addBrowser } from "$lib/stores/browser";
 
   // Context menu state
   let contextMenu = $state<{
@@ -220,6 +221,15 @@
       return;
     }
 
+    // Clean up browser instance when closing its tab.
+    if (tab.path.startsWith("__browser__:")) {
+      const browserId = tab.path.slice("__browser__:".length);
+      if (browserId) {
+        removeBrowser(browserId);
+      }
+      return;
+    }
+
     if (tab.viewerType === "terminal") {
       closeTab(tabId, { forceTerminal: true, skipConfirm: true });
     } else {
@@ -301,6 +311,7 @@
       { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
       { label: "New Chat", action: () => addChat(get(settings).aiModel, get(settings).aiProvider, 'tab') },
       { label: "Launch Claude Code", action: () => launchClaudeCode(get(workspacePath) || "") },
+      { label: "New Browser", shortcut: "Ctrl+Shift+B", action: () => addBrowser("https://www.google.com", "tab") },
     ];
   }
 
@@ -315,6 +326,7 @@
       { label: "New Terminal", action: () => addTerminal(get(workspacePath) || "", get(settings).defaultTerminalDock) },
       { label: "New Chat", action: () => addChat(get(settings).aiModel, get(settings).aiProvider, 'tab') },
       { label: "Launch Claude Code", action: () => launchClaudeCode(get(workspacePath) || "") },
+      { label: "New Browser", shortcut: "Ctrl+Shift+B", action: () => addBrowser("https://www.google.com", "tab") },
       ...(get(tabs).length > 0 ? [
         { label: "", separator: true, action: () => {} },
         { label: "Close All Tabs", action: () => closeAllTabs(), danger: true },

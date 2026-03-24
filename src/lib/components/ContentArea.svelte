@@ -6,6 +6,7 @@
   import { workspacePath, fileTree, workspaceName } from "$lib/stores/workspace";
   import { addTerminal } from "$lib/stores/terminal";
   import { launchClaudeCode } from "$lib/stores/claude-code";
+  import { addBrowser } from "$lib/stores/browser";
   import MarkdownViewer from "./MarkdownViewer.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import CodeViewer from "./CodeViewer.svelte";
@@ -17,6 +18,7 @@
   import TerminalTab from "./TerminalTab.svelte";
   import ChatPanel from "./chat/ChatPanel.svelte";
   import ClaudeCodePanel from "./claude-code/ClaudeCodePanel.svelte";
+  import BrowserView from "./BrowserView.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import type { MenuItem } from "./ContextMenu.svelte";
 
@@ -73,6 +75,13 @@
           launchClaudeCode($workspacePath || "");
         },
       },
+      {
+        label: "New Browser",
+        shortcut: "Ctrl+Shift+B",
+        action: () => {
+          addBrowser("https://www.google.com", "tab");
+        },
+      },
     ];
 
     if ($workspacePath) {
@@ -116,8 +125,9 @@
   let terminalTabs = $derived($tabs.filter((t) => t.viewerType === "terminal"));
   let chatTabs = $derived($tabs.filter((t) => t.viewerType === "chat"));
   let claudeCodeTabs = $derived($tabs.filter((t) => t.viewerType === "claude-code"));
+  let browserTabs = $derived($tabs.filter((t) => t.viewerType === "browser"));
   // Is the active tab a special always-mounted type?
-  let activeIsSpecial = $derived($activeTab?.viewerType === "terminal" || $activeTab?.viewerType === "chat" || $activeTab?.viewerType === "claude-code");
+  let activeIsSpecial = $derived($activeTab?.viewerType === "terminal" || $activeTab?.viewerType === "chat" || $activeTab?.viewerType === "claude-code" || $activeTab?.viewerType === "browser");
 
   async function handleSave(content: string) {
     const tab = $activeTab;
@@ -188,6 +198,20 @@
       class:hidden={$activeTabId !== cctab.id}
     >
       <ClaudeCodePanel sessionId={cctab.path.replace("__claude-code__:", "")} />
+    </div>
+  {/each}
+
+  <!-- Browser tabs: always mounted to preserve native webview state -->
+  {#each browserTabs as btab (btab.id)}
+    <div
+      style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"
+      class:hidden={$activeTabId !== btab.id}
+    >
+      <BrowserView
+        instanceId={btab.path.replace("__browser__:", "")}
+        dock="tab"
+        isVisible={$activeTabId === btab.id}
+      />
     </div>
   {/each}
 

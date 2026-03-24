@@ -94,7 +94,7 @@ export async function closeTab(id: string, options?: { forceTerminal?: boolean; 
   }
 
   // Track recently closed tabs so users can recover accidental closes.
-  if (!closingTab.path.startsWith("__terminal__:") && !closingTab.path.startsWith("__chat__") && !closingTab.path.startsWith("__claude-code__:")) {
+  if (!closingTab.path.startsWith("__terminal__:") && !closingTab.path.startsWith("__chat__") && !closingTab.path.startsWith("__claude-code__:") && !closingTab.path.startsWith("__browser__:")) {
     const entry: ClosedTabEntry = {
       path: closingTab.path,
       name: closingTab.name,
@@ -328,6 +328,42 @@ export function closeClaudeCodeTab(sessionId: string) {
 export function closeChatInstanceTab(chatId: string) {
   const currentTabs = get(tabs);
   const path = `__chat__:${chatId}`;
+  const tab = currentTabs.find((t) => t.path === path);
+  if (tab) {
+    closeTab(tab.id, { skipConfirm: true });
+  }
+}
+
+/** Open a browser instance as a document tab */
+export function openBrowserTab(browserId: string, title: string): string {
+  const currentTabs = get(tabs);
+  const path = `__browser__:${browserId}`;
+  const existing = currentTabs.find((t) => t.path === path);
+  if (existing) {
+    activeTabId.set(existing.id);
+    return existing.id;
+  }
+
+  const newTab: Tab = {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    path,
+    name: title,
+    ext: undefined,
+    viewerType: "browser" as ViewerType,
+    isModified: false,
+    isLoading: false,
+    editMode: false,
+  };
+
+  tabs.update((t) => [...t, newTab]);
+  activeTabId.set(newTab.id);
+  return newTab.id;
+}
+
+/** Remove browser tab for a given browser ID */
+export function closeBrowserTab(browserId: string) {
+  const currentTabs = get(tabs);
+  const path = `__browser__:${browserId}`;
   const tab = currentTabs.find((t) => t.path === path);
   if (tab) {
     closeTab(tab.id, { skipConfirm: true });

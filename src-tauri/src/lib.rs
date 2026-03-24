@@ -2906,6 +2906,191 @@ fn delete_chat_session(app: tauri::AppHandle, session_id: String) -> Result<(), 
         .map_err(|e| format!("Failed to delete chat session: {}", e))
 }
 
+// ── Browser Webview ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale_factor: f64,
+}
+
+fn browser_to_physical(
+    bounds: &BrowserBounds,
+) -> (
+    tauri::PhysicalPosition<i32>,
+    tauri::PhysicalSize<u32>,
+) {
+    let scale = if bounds.scale_factor > 0.0 {
+        bounds.scale_factor
+    } else {
+        1.0
+    };
+    let x = (bounds.x * scale).round() as i32;
+    let y = (bounds.y * scale).round() as i32;
+    let width = (bounds.width * scale).round().max(1.0) as u32;
+    let height = (bounds.height * scale).round().max(1.0) as u32;
+    (
+        tauri::PhysicalPosition::new(x, y),
+        tauri::PhysicalSize::new(width, height),
+    )
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct BrowserPageLoadEvent {
+    event: String,
+    url: String,
+    browser_id: String,
+}
+
+#[tauri::command]
+async fn create_browser_webview(
+    app: tauri::AppHandle,
+    id: String,
+    url: String,
+    bounds: BrowserBounds,
+) -> Result<(), String> {
+    use tauri::webview::{PageLoadEvent, WebviewBuilder};
+    use tauri::WebviewUrl;
+
+    let label = format!("browser-{}", id);
+    let parsed_url: url::Url = url.parse().map_err(|e| format!("Invalid URL: {}", e))?;
+
+    // If webview already exists, just navigate
+    if let Some(webview) = app.get_webview(&label) {
+        webview
+            .navigate(parsed_url)
+            .map_err(|e| format!("Failed to navigate: {}", e))?;
+        return Ok(());
+    }
+
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+
+    let (position, size) = browser_to_physical(&bounds);
+
+    let browser_id = id.clone();
+    let app_handle = app.clone();
+    let app_handle_new_window = app.clone();
+    let label_new_window = label.clone();
+
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed_url))
+        .devtools(true)
+        .on_new_window(move |url, _features| {
+            // Intercept target="_blank" and window.open() calls.
+            // Only allow http/https URLs (block data:, file:, blob:, javascript:, etc.)
+            let scheme = url.scheme();
+            if (scheme == "http" || scheme == "https") {
+                if let Some(webview) = app_handle_new_window.get_webview(&label_new_window) {
+                    let _ = webview.navigate(url);
+                }
+            }
+            tauri::webview::NewWindowResponse::Deny
+        })
+        .on_page_load(move |wv, payload| {
+            let event_type = match payload.event() {
+                PageLoadEvent::Started => "started",
+                PageLoadEvent::Finished => "finished",
+                _ => return,
+            };
+            let _ = app_handle.emit(
+                "browser-page-load",
+                BrowserPageLoadEvent {
+                    event: event_type.to_string(),
+                    url: payload.url().to_string(),
+                    browser_id: browser_id.clone(),
+                },
+            );
+            let _ = wv; // suppress unused warning
+        });
+
+    window
+        .add_child(builder, position, size)
+        .map_err(|e| format!("Failed to create browser webview: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn navigate_browser(app: tauri::AppHandle, id: String, url: String) -> Result<(), String> {
+    let label = format!("browser-{}", id);
+    let parsed_url: url::Url = url.parse().map_err(|e| format!("Invalid URL: {}", e))?;
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("Browser webview not found: {}", label))?;
+    webview
+        .navigate(parsed_url)
+        .map_err(|e| format!("Failed to navigate: {}", e))
+}
+
+#[tauri::command]
+async fn set_browser_bounds(
+    app: tauri::AppHandle,
+    id: String,
+    bounds: BrowserBounds,
+) -> Result<(), String> {
+    let label = format!("browser-{}", id);
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("Browser webview not found: {}", label))?;
+
+    if bounds.width <= 1.0 || bounds.height <= 1.0 {
+        webview.hide().map_err(|e: tauri::Error| e.to_string())?;
+        return Ok(());
+    }
+
+    let (position, size) = browser_to_physical(&bounds);
+    webview
+        .set_position(position)
+        .map_err(|e| format!("Failed to set position: {}", e))?;
+    webview
+        .set_size(size)
+        .map_err(|e| format!("Failed to set size: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn show_browser(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let label = format!("browser-{}", id);
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("Browser webview not found: {}", label))?;
+    webview.show().map_err(|e: tauri::Error| e.to_string())
+}
+
+#[tauri::command]
+async fn hide_browser(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let label = format!("browser-{}", id);
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("Browser webview not found: {}", label))?;
+    webview.hide().map_err(|e: tauri::Error| e.to_string())
+}
+
+#[tauri::command]
+async fn close_browser_webview(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let label = format!("browser-{}", id);
+    if let Some(webview) = app.get_webview(&label) {
+        webview.close().map_err(|e: tauri::Error| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn reload_browser(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let label = format!("browser-{}", id);
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("Browser webview not found: {}", label))?;
+    webview
+        .eval("window.location.reload()")
+        .map_err(|e| format!("Failed to reload: {}", e))
+}
+
 // ── App Entry ────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2967,6 +3152,13 @@ pub fn run() {
             spawn_claude_code,
             write_claude_code,
             close_claude_code,
+            create_browser_webview,
+            navigate_browser,
+            set_browser_bounds,
+            show_browser,
+            hide_browser,
+            close_browser_webview,
+            reload_browser,
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

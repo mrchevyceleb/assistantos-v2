@@ -1,6 +1,7 @@
 <script lang="ts">
   import { settingsVisible, aiSettingsVisible, settings } from "$lib/stores/settings";
   import { chatInstances, chatVisible, addChat } from "$lib/stores/chat-instances";
+  import { addBrowser } from "$lib/stores/browser";
   import { get } from "svelte/store";
 
   interface Props {
@@ -68,6 +69,19 @@
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M12 2L9 12l-7 4 7 4 3 10 3-10 7-4-7-4z"/>
+      </svg>
+    </button>
+
+    <!-- Browser -->
+    <button
+      class="rail-icon"
+      onclick={() => addBrowser("https://www.google.com", "tab")}
+      title="New Browser (Ctrl+Shift+B)"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
       </svg>
     </button>
 

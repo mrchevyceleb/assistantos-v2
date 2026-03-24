@@ -378,3 +378,48 @@ export async function stdioMcpCallTool(
 export async function stdioMcpStatus(serverId: string): Promise<string> {
   return invoke("stdio_mcp_status", { serverId });
 }
+
+// ── Browser Webview ──────────────────────────────────────────────────
+
+export interface BrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
+
+export async function createBrowserWebview(
+  id: string,
+  url: string,
+  bounds: BrowserBounds,
+): Promise<void> {
+  return invoke("create_browser_webview", { id, url, bounds });
+}
+
+export async function navigateBrowser(id: string, url: string): Promise<void> {
+  return invoke("navigate_browser", { id, url });
+}
+
+export async function setBrowserBounds(
+  id: string,
+  bounds: BrowserBounds,
+): Promise<void> {
+  return invoke("set_browser_bounds", { id, bounds });
+}
+
+export async function showBrowser(id: string): Promise<void> {
+  return invoke("show_browser", { id });
+}
+
+export async function hideBrowser(id: string): Promise<void> {
+  return invoke("hide_browser", { id });
+}
+
+export async function closeBrowserWebview(id: string): Promise<void> {
+  return invoke("close_browser_webview", { id });
+}
+
+export async function reloadBrowser(id: string): Promise<void> {
+  return invoke("reload_browser", { id });
+}

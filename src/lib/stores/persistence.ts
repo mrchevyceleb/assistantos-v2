@@ -32,6 +32,17 @@ import {
   getClaudeCodeSessionMeta,
   restoreClaudeCodeSession,
 } from "$lib/stores/claude-code";
+import {
+  browserInstances,
+  browserVisible,
+  browserPanelWidth,
+  browserPanelHeight,
+  activeBrowserId,
+  activeRightBrowserId,
+  browserBookmarks,
+  type BrowserDock,
+  type BrowserBookmark,
+} from "$lib/stores/browser";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -65,6 +76,11 @@ export interface AppState {
     cwd: string;
     model?: string;
   }>;
+  browserInstances?: Array<{ id: string; title: string; url: string; dock: BrowserDock }>;
+  browserVisible?: boolean;
+  browserPanelWidth?: number;
+  browserPanelHeight?: number;
+  browserBookmarks?: BrowserBookmark[];
 }
 
 // ── Save ─────────────────────────────────────────────────────────────
@@ -98,8 +114,13 @@ export async function saveState(): Promise<void> {
     chatVisible: get(chatVisible),
     expandedPaths: Array.from(get(expandedPaths)),
     claudeCodeSessions: getClaudeCodeSessionMeta(),
+    browserInstances: get(browserInstances).map(({ id, title, url, dock }) => ({ id, title, url, dock })),
+    browserVisible: get(browserVisible),
+    browserPanelWidth: get(browserPanelWidth),
+    browserPanelHeight: get(browserPanelHeight),
+    browserBookmarks: get(browserBookmarks),
     openTabs: $tabs
-      .filter((t) => !t.path.startsWith("__terminal__:") && !t.path.startsWith("__chat__"))
+      .filter((t) => !t.path.startsWith("__terminal__:") && !t.path.startsWith("__chat__") && !t.path.startsWith("__browser__:"))
       .map((t) => ({
         path: t.path,
         name: t.name,
@@ -212,8 +233,8 @@ export async function restoreState(): Promise<"explorer" | "search" | "history" 
   // Restore tabs — open each one and load content
   if (state.openTabs && state.openTabs.length > 0) {
     for (const tab of state.openTabs) {
-      // Skip terminal tabs — they can't be restored across sessions
-      if (tab.path.startsWith("__terminal__:") || tab.path.startsWith("__chat__")) continue;
+      // Skip synthetic tabs — restored separately
+      if (tab.path.startsWith("__terminal__:") || tab.path.startsWith("__chat__") || tab.path.startsWith("__browser__:")) continue;
 
       // Restore Claude Code tabs
       if (tab.path.startsWith("__claude-code__:")) {
@@ -284,6 +305,42 @@ export async function restoreState(): Promise<"explorer" | "search" | "history" 
     chatVisible.set(state.chatPanelVisible);
   }
 
+  // Restore browser instances
+  if (state.browserInstances && state.browserInstances.length > 0) {
+    // Restore instances with empty history (webview will be recreated on mount)
+    const restored = state.browserInstances.map((inst) => ({
+      ...inst,
+      history: [inst.url],
+      historyIndex: 0,
+      isLoading: false,
+    }));
+    browserInstances.set(restored);
+    // Set active IDs
+    const rightBrowser = restored.find((b) => b.dock === "right");
+    const bottomBrowser = restored.find((b) => b.dock === "bottom");
+    if (rightBrowser) activeRightBrowserId.set(rightBrowser.id);
+    if (bottomBrowser) activeBrowserId.set(bottomBrowser.id);
+    // Restore tab-docked browsers
+    for (const inst of restored) {
+      if (inst.dock === "tab") {
+        const { openBrowserTab } = await import("$lib/stores/tabs");
+        openBrowserTab(inst.id, inst.title);
+      }
+    }
+  }
+  if (state.browserVisible != null) {
+    browserVisible.set(state.browserVisible);
+  }
+  if (state.browserPanelWidth != null) {
+    browserPanelWidth.set(state.browserPanelWidth);
+  }
+  if (state.browserPanelHeight != null) {
+    browserPanelHeight.set(state.browserPanelHeight);
+  }
+  if (state.browserBookmarks) {
+    browserBookmarks.set(state.browserBookmarks);
+  }
+
   // Update sidebar view ref for future saves
   sidebarViewRef = state.sidebarView ?? "explorer";
 
@@ -321,6 +378,11 @@ export function startAutoSave() {
   unsubscribers.push(chatInstances.subscribe(() => debouncedSave()));
   unsubscribers.push(claudeCodeSessions.subscribe(() => debouncedSave()));
   unsubscribers.push(expandedPaths.subscribe(() => debouncedSave()));
+  unsubscribers.push(browserInstances.subscribe(() => debouncedSave()));
+  unsubscribers.push(browserVisible.subscribe(() => debouncedSave()));
+  unsubscribers.push(browserPanelWidth.subscribe(() => debouncedSave()));
+  unsubscribers.push(browserPanelHeight.subscribe(() => debouncedSave()));
+  unsubscribers.push(browserBookmarks.subscribe(() => debouncedSave()));
 }
 
 export function stopAutoSave() {

@@ -24,11 +24,16 @@
   import { settingsVisible, aiSettingsVisible, settings } from "$lib/stores/settings";
   import { refreshModelsOnStartup } from "$lib/stores/models";
   import ChatDockPanel from "$lib/components/chat/ChatDockPanel.svelte";
+  import BrowserPanel from "$lib/components/BrowserPanel.svelte";
   import AISettingsPage from "$lib/components/ai-settings/AISettingsPage.svelte";
   import {
     chatInstances, chatVisible, chatPanelWidth, chatPanelHeight,
     rightChats, bottomChats, addChat,
   } from "$lib/stores/chat-instances";
+  import {
+    browserInstances, browserVisible, browserPanelHeight, browserPanelWidth,
+    bottomBrowsers, rightBrowserPanelVisible, addBrowser,
+  } from "$lib/stores/browser";
   import UpdateNotification from "$lib/components/UpdateNotification.svelte";
 
   let paletteVisible = $state(false);
@@ -186,6 +191,15 @@
 
   let hasRightChats = $derived($rightChats.length > 0);
   let hasBottomChats = $derived($bottomChats.length > 0);
+  let hasBottomBrowsers = $derived($bottomBrowsers.length > 0);
+
+  function handleBrowserRightResize(delta: number) {
+    browserPanelWidth.update((w) => Math.max(300, Math.min(900, w - delta)));
+  }
+
+  function handleBrowserBottomResize(delta: number) {
+    browserPanelHeight.update((h) => Math.max(150, Math.min(600, h - delta)));
+  }
 
   const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
 
@@ -300,6 +314,13 @@
       return;
     }
 
+    // Ctrl+Shift+B: New Browser tab
+    if (mod(e) && e.shiftKey && (e.key === "B" || e.key === "b")) {
+      e.preventDefault();
+      addBrowser("https://www.google.com", "tab");
+      return;
+    }
+
     // Ctrl+B: Toggle sidebar
     if (mod(e) && e.key === "b") {
       e.preventDefault();
@@ -407,6 +428,23 @@
                 </div>
               </div>
             {/if}
+
+            <!-- Bottom browser panel -->
+            {#if hasBottomBrowsers}
+              <div class:hidden={!$browserVisible}>
+                <ResizeHandle direction="vertical" onResize={handleBrowserBottomResize} />
+              </div>
+              <div
+                style:height="{$browserPanelHeight}px"
+                style="padding: 4px 6px 6px 6px;"
+                class="shrink-0 overflow-hidden"
+                class:hidden={!$browserVisible}
+              >
+                <div class="h-full metal-frame rounded-xl overflow-hidden">
+                  <BrowserPanel dock="bottom" />
+                </div>
+              </div>
+            {/if}
           </div>
         </div>
 
@@ -416,6 +454,16 @@
           <div style:width="{$rightPanelWidth}px" class="shrink-0 overflow-hidden border-l border-border p-1.5">
             <div class="h-full metal-frame rounded-xl overflow-hidden">
               <TerminalPanel dock="right" />
+            </div>
+          </div>
+        {/if}
+
+        <!-- Browser Panel (right dock) -->
+        {#if $rightBrowserPanelVisible}
+          <ResizeHandle direction="horizontal" onResize={handleBrowserRightResize} />
+          <div style:width="{$browserPanelWidth}px" style="padding: 6px;" class="shrink-0 overflow-hidden border-l border-border">
+            <div class="h-full metal-frame rounded-xl overflow-hidden">
+              <BrowserPanel dock="right" />
             </div>
           </div>
         {/if}
