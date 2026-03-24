@@ -810,9 +810,11 @@ fn close_terminal(id: String, state: tauri::State<'_, TerminalState>) -> Result<
 
 // ── Claude Code Process Backend ──────────────────────────────────────
 //
-// Architecture: A persistent `claude` process is spawned per UI session using
-// `--input-format stream-json` on stdin and `--output-format stream-json` on stdout.
-// Messages are sent via `write_claude_code` which writes JSON to stdin.
+// Architecture: Two modes per UI session, both using `--output-format stream-json`:
+//   1. Persistent mode (no prompt): stdin is piped with `--input-format stream-json`.
+//      Messages are sent via `write_claude_code` which writes JSON to stdin.
+//   2. One-shot mode (prompt provided): `-p "message"` carries the prompt,
+//      stdin is null (avoids the 3s "no stdin data" warning on Windows).
 
 /// Monotonically increasing generation counter to prevent batcher threads from
 /// reaping a respawned process that reuses the same session ID.
@@ -904,8 +906,9 @@ fn find_claude_command() -> (String, Vec<String>) {
 }
 
 
-/// Spawn a persistent Claude Code process that accepts stream-json on stdin.
-/// `id` = UI session ID. Messages are sent via `write_claude_code`.
+/// Spawn a Claude Code process in persistent mode (no prompt, stdin piped for
+/// stream-json) or one-shot mode (prompt provided, stdin null).
+/// `id` = UI session ID. In persistent mode, messages are sent via `write_claude_code`.
 #[tauri::command]
 fn spawn_claude_code(
     id: String,
@@ -969,8 +972,16 @@ fn spawn_claude_code(
         cmd.env(key, value);
     }
 
-    cmd.stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
+    // One-shot mode (prompt provided): redirect stdin from null so the CLI
+    // knows immediately there is no piped input. This avoids the 3-second
+    // "no stdin data received" warning that breaks MCP tool calls on Windows.
+    // Persistent mode (no prompt): keep stdin piped for stream-json input.
+    if prompt.is_some() {
+        cmd.stdin(std::process::Stdio::null());
+    } else {
+        cmd.stdin(std::process::Stdio::piped());
+    }
+    cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
     // On Windows, prevent console window from appearing
@@ -2978,8 +2989,12 @@ async fn create_browser_webview(
     let app_handle_new_window = app.clone();
     let label_new_window = label.clone();
 
+    // Disable Tauri's drag-drop interception so the browser engine (WebView2/WebKit)
+    // handles drag-drop natively. Without this, Tauri captures OLE drag events on
+    // Windows, which breaks HTML5 drag-and-drop in web pages (Kanban boards, etc.).
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed_url))
         .devtools(true)
+        .disable_drag_drop_handler()
         .on_new_window(move |url, _features| {
             // Intercept target="_blank" and window.open() calls.
             // Only allow http/https URLs (block data:, file:, blob:, javascript:, etc.)
