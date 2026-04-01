@@ -417,7 +417,7 @@ function initListeners() {
         }
       }
       // Only set error status if the process crashed unexpectedly while running.
-      // If status is already "ready" (deliberate stop/steer) or "error", don't override.
+      // If status is already "ready" (deliberate stop) or "error", don't override.
       if (s.status === "running") {
         if (s.deliberateKill) {
           updates.status = "ready";
@@ -440,7 +440,7 @@ async function ensureProcess(session: ClaudeCodeSession, prompt?: string): Promi
   if (session.selectedModel) {
     extraArgs.push("--model", session.selectedModel);
   }
-  // Resume from CLI session if respawning after a kill (steer, stop, model change)
+  // Resume from CLI session if respawning after a kill (stop, model change)
   if (session.claudeSessionId) {
     extraArgs.push("--resume", session.claudeSessionId);
   }
@@ -592,6 +592,46 @@ export async function stopClaudeCode(id: string): Promise<void> {
   updateSession(id, () => ({ deliberateKill: true }));
   await closeClaudeCode(id);
   updateSession(id, () => ({ status: "ready", processAlive: false }));
+}
+
+/**
+ * Send a steering message to a running Claude Code session.
+ * Unlike sendToClaudeCode, this writes to stdin while the process is actively
+ * generating, allowing the CLI to incorporate the guidance at the next tool
+ * boundary without killing/restarting the process.
+ */
+export async function steerClaudeCode(id: string, message: string): Promise<void> {
+  if (!message?.trim()) return;
+
+  const sessions = get(claudeCodeSessions);
+  const session = sessions.get(id);
+  if (!session) throw new Error("Session not found");
+  if (!session.processAlive) throw new Error("No running process to steer");
+  if (session.status !== "running") throw new Error("Cannot steer when not running");
+
+  // Add the steering message to the conversation UI
+  updateSession(id, (s) => ({
+    messages: [...s.messages, {
+      type: "user" as const,
+      raw: { text: message },
+      timestamp: Date.now(),
+      seq: messageSeq++,
+    }],
+  }));
+
+  // Write to stdin using the stream-json protocol. The CLI will pick this up
+  // at the next tool call boundary and incorporate it into its reasoning.
+  const inputMsg = JSON.stringify({
+    type: "user",
+    message: { role: "user", content: message }
+  });
+  console.debug("[CC] steering via stdin:", inputMsg.slice(0, 120));
+  try {
+    await writeClaudeCode(id, inputMsg);
+  } catch (err) {
+    console.error("[CC] steer write error:", err);
+    updateSession(id, () => ({ status: "error", error: `Steer failed: ${String(err)}` }));
+  }
 }
 
 export function removeClaudeCodeSession(id: string): void {

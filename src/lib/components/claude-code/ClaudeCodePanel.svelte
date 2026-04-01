@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { claudeCodeSessions, sendToClaudeCode, stopClaudeCode, removeClaudeCodeSession, setClaudeCodeModel } from '$lib/stores/claude-code';
+  import { claudeCodeSessions, sendToClaudeCode, steerClaudeCode, stopClaudeCode, removeClaudeCodeSession, setClaudeCodeModel } from '$lib/stores/claude-code';
   import { settings, aiSettingsVisible } from '$lib/stores/settings';
   import CCMessage from './ClaudeCodeMessage.svelte';
   import ChatInput from '../chat/ChatInput.svelte';
@@ -117,8 +117,8 @@
   }
 
   function handleSteer(steer: string) {
-    stopClaudeCode(sessionId).then(() => {
-      setTimeout(() => sendToClaudeCode(sessionId, steer), 200);
+    steerClaudeCode(sessionId, steer).catch((err) => {
+      console.error("[CC] steer failed:", err);
     });
   }
 
