@@ -550,7 +550,7 @@
   });
 </script>
 
-<div style="padding: 16px 16px 14px 16px;">
+<div style="padding: 8px 10px 8px 10px;">
   {#if disabled}
     <div class="text-text-muted text-center bg-bg-secondary/40 rounded-xl border border-border/20" style="font-size: calc(15px * var(--ui-zoom)); padding: 16px 0;">
       Set your API key in Settings to get started
@@ -606,7 +606,7 @@
           rows="2"
           class="w-full bg-transparent text-text-primary resize-none outline-none leading-[1.6] placeholder:text-text-muted/50"
           class:drop-highlight={dragOver}
-          style="padding: 14px 18px 10px 18px; font-size: calc(18px * var(--ui-zoom)); min-height: 3.2em;"
+          style="padding: 10px 14px 6px 14px; font-size: calc(16px * var(--ui-zoom)); min-height: 2.2em;"
         ></textarea>
 
         {#if mentionSuggestions.length > 0}
@@ -642,7 +642,7 @@
         {/if}
       </div>
 
-      <div class="flex items-center justify-between" style="padding: 0 12px 10px 12px;">
+      <div class="flex items-center justify-between" style="padding: 0 10px 6px 10px;">
         <div class="text-text-muted/50 select-none" style="font-size: calc(13px * var(--ui-zoom));">
           {#if isLoading}
             <span class="working-indicator" role="status" aria-label="Assistant is working">

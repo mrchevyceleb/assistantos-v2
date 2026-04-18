@@ -885,10 +885,15 @@ fn find_claude_command() -> (String, Vec<String>) {
         if std::path::Path::new(&local_bin).exists() {
             return (local_bin, vec![]);
         }
-        // npm global install: bypass claude.cmd to avoid cmd.exe stdin pipe issues.
-        // claude.cmd → cmd.exe /c → node cli.js breaks stdin inheritance with CREATE_NO_WINDOW.
-        // Directly invoking node + cli.js avoids the cmd.exe layer entirely.
+        // npm global install (newer layout): native binary at bin\claude.exe.
+        // Invoke directly to bypass the claude.cmd shim (cmd.exe breaks stdin piping).
         let appdata = std::env::var("APPDATA").unwrap_or_default();
+        let npm_native = format!("{}\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe", appdata);
+        if std::path::Path::new(&npm_native).exists() {
+            return (npm_native, vec![]);
+        }
+        // npm global install (legacy layout): cli.js invoked via node.
+        // Directly invoking node + cli.js avoids the cmd.exe layer entirely.
         let cli_js = format!("{}\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js", appdata);
         if std::path::Path::new(&cli_js).exists() {
             return ("node".to_string(), vec![cli_js]);

@@ -571,8 +571,8 @@
 
 <div class="flex flex-col h-full metal-frame rounded-xl overflow-hidden panel-lift" style="font-size: {$settings.aiChatFontSize}px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-weight: 500;">
   <!-- Header -->
-  <div class="shrink-0 border-b border-border/40 bg-bg-secondary/65 metal-sheen" style="padding: 10px 12px 8px 12px;">
-    <!-- Row 1: model + actions -->
+  <div class="shrink-0 border-b border-border/40 bg-bg-secondary/65 metal-sheen" style="padding: 6px 10px 4px 10px;">
+    <!-- Row 1: model + prompt + actions -->
     <div class="flex items-center justify-between" style="gap: 8px;">
       <div class="flex items-center min-w-0 flex-1" style="gap: 8px;">
         <!-- Model quick switcher -->
@@ -700,48 +700,8 @@
         </div>
       {/if}
       </div>
-      <!-- Action buttons -->
-      <div class="flex items-center shrink-0" style="gap: 1px;">
-        <button
-          class="rounded-md text-text-muted/60 hover:text-text-primary hover:bg-white/5 transition-all flex items-center justify-center"
-          style="width: 28px; height: 28px;"
-          onclick={handleNewChat}
-          title="Clear chat"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/>
-          </svg>
-        </button>
-        <button
-          class="rounded-md text-text-muted/60 hover:text-text-primary hover:bg-white/5 transition-all flex items-center justify-center"
-          style="width: 28px; height: 28px;"
-          onclick={cycleDock}
-          title={nextDockLabel()}
-        >
-          {#if currentDock() === 'right'}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
-          {:else if currentDock() === 'bottom'}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
-          {:else}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-          {/if}
-        </button>
-        <button
-          class="rounded-md text-text-muted/60 hover:text-error hover:bg-error/10 transition-all flex items-center justify-center"
-          style="width: 28px; height: 28px;"
-          onclick={handleClose}
-          title="Close chat"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-    <!-- Row 2: prompt profile -->
-    <div class="flex items-center" style="margin-top: 6px; gap: 6px;">
-      <!-- Prompt profile selector -->
-      <div class="relative">
+      <!-- Prompt profile selector (inline) -->
+      <div class="relative shrink-0">
         <button
           bind:this={promptSelectorBtn}
           class="flex items-center hover:text-accent transition-colors
@@ -789,17 +749,54 @@
           </div>
         {/if}
       </div>
+      <!-- Action buttons -->
+      <div class="flex items-center shrink-0" style="gap: 1px;">
+        <button
+          class="rounded-md text-text-muted/60 hover:text-text-primary hover:bg-white/5 transition-all flex items-center justify-center"
+          style="width: 28px; height: 28px;"
+          onclick={handleNewChat}
+          title="Clear chat"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/>
+          </svg>
+        </button>
+        <button
+          class="rounded-md text-text-muted/60 hover:text-text-primary hover:bg-white/5 transition-all flex items-center justify-center"
+          style="width: 28px; height: 28px;"
+          onclick={cycleDock}
+          title={nextDockLabel()}
+        >
+          {#if currentDock() === 'right'}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+          {:else if currentDock() === 'bottom'}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          {/if}
+        </button>
+        <button
+          class="rounded-md text-text-muted/60 hover:text-error hover:bg-error/10 transition-all flex items-center justify-center"
+          style="width: 28px; height: 28px;"
+          onclick={handleClose}
+          title="Close chat"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- Context bar -->
-  <div class="border-b border-border/20" style="padding: 6px 12px; background: rgba(0,0,0,0.15);">
+  <div class="border-b border-border/20" style="padding: 3px 10px; background: rgba(0,0,0,0.15);">
     <div class="flex items-center" style="gap: 10px;">
       <div class="flex-1 min-w-0">
-        <div class="rounded-full overflow-hidden" style="height: 3px; background: rgba(255,255,255,0.06);">
+        <div class="rounded-full overflow-hidden" style="height: 2px; background: rgba(255,255,255,0.06);">
           <div class="h-full rounded-full transition-all duration-500 ease-out" style={`width: ${contextProgressWidth()}; background: ${contextProgressColor()}; opacity: 0.8;`}></div>
         </div>
-        <div class="flex items-center text-text-muted/60" style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; margin-top: 3px; gap: 6px;">
+        <div class="flex items-center text-text-muted/60" style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; margin-top: 1px; gap: 6px;">
           <span class="shrink-0 font-medium">{contextPercentText()}</span>
           <span class="font-mono truncate" style="opacity: 0.7;">{contextTokenText()}</span>
           {#if cacheText()}
@@ -809,7 +806,7 @@
       </div>
       <button
         class="rounded-md shrink-0 whitespace-nowrap text-text-muted/50 hover:text-text-primary hover:bg-white/5 transition-all {isCompacting ? 'opacity-50 cursor-wait' : ''}"
-        style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px;"
+        style="font-size: {Math.max(9, $settings.aiChatFontSize - 3)}px; height: 20px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px;"
         onclick={handleCompactNow}
         disabled={$instanceIsLoading || isCompacting}
         title="Compact context now"
@@ -821,7 +818,7 @@
 
   <!-- Messages -->
   <div
-    class="flex-1 overflow-y-auto metal-inset rounded-lg" style="margin: 10px 10px 4px 10px;"
+    class="flex-1 overflow-y-auto metal-inset rounded-lg" style="margin: 6px 8px 2px 8px;"
     bind:this={messagesContainer}
     onscroll={handleMessagesScroll}
   >
